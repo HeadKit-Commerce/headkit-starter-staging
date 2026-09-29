@@ -266,8 +266,15 @@ changeset, or a direct bump to `packages/sdk/package.json`). Merging to `main` p
 
 Two ordering notes:
 
-1. `Version and Publish` and `Mirror Starter` race on the same push. The mirror's registry gate fails
-   closed on `main`, so on a bump merge it will refuse with `does not resolve in <registry>`. That is
-   correct behaviour — re-run the mirror after the publish finishes, do not weaken the gate.
+1. `Version and Publish` and `Mirror Starter` used to race on the same push, and the mirror lost:
+   its registry gate fails closed on the production estate, so on a bump merge it refused with
+   `does not resolve in <registry>` and nothing retried. The mirror's **production leg now runs on
+   `workflow_run` of `Version and Publish`** instead of on push, so the publish is finished before
+   the gate reads the version. The gate itself is unchanged and must stay unchanged — mirroring a
+   version the registry cannot resolve ships a template that cannot `bun install` at all.
+   Two consequences worth knowing: a FAILED publish means the production mirror never runs (that
+   hole is alarmed by `.github/workflows/starter-template-freshness.yml`, which opens an issue when
+   `headkit-starter@main` drifts from `main`), and `workflow_dispatch` with estate `production`
+   remains the manual recovery path.
 2. A red `Version and Publish` does not mean nothing published. The GitHub Release step runs after the
    npm publish and fails independently. Check Artifact Registry before concluding anything.
