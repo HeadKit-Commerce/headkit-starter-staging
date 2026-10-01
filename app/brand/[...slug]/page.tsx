@@ -5,6 +5,7 @@ import { cacheLife, cacheTag } from "next/cache";
 import { headkit as sdk } from "@/lib/sdk";
 import { TAG } from "@/lib/cache-tags";
 import { getCatalogFilters } from "@/lib/catalog-filters";
+import { collectAllBrands } from "@/lib/brand-list";
 import { BrandHeader } from "@/components/headkit-ui/brand/brand-header";
 import { CollectionPage } from "@/components/headkit-ui/collection/collection-page";
 import {
@@ -99,16 +100,6 @@ async function BrandProductsShell({
   );
 }
 
-/** Page size for the brand walk — `headkit/v2/brands` 400s above 100. */
-const BRAND_PER_PAGE = 100;
-
-/**
- * Fail-safe bound on pages walked, mirroring `app/sitemap.ts`'s `MAX_LIST_PAGES`.
- * It exists so a provider reporting a wrong `totalPages` cannot spin the build,
- * not as a content limit.
- */
-const BRAND_MAX_PAGES = 100;
-
 /**
  * Prerender known brand PLPs so awaiting `params` in the default export is
  * valid under Cache Components (blocking-route docs: generateStaticParams).
@@ -126,33 +117,21 @@ const BRAND_MAX_PAGES = 100;
  * 1.15s. Identical defect, identical endpoint, fixed in one emitter and not the
  * other; `app/product-url-emitter-parity.test.ts` now fails if they diverge again.
  *
- * Terminator rules match `collectListPages`: stop on the endpoint's own
- * `totalPages` and on an EMPTY page, but NEVER on a short page — only the
- * endpoint knows whether it dropped a row, and treating a short page as the last
- * one is how a paginated walk quietly truncates.
+ * The loop itself now lives in `lib/brand-list.ts`, which `app/brand/page.tsx`
+ * reads too — the brand INDEX was a THIRD reader of this endpoint and had the
+ * same defect in its most basic form (no page argument at all, so 24 of 110
+ * brands). That file owns the terminator rules and the page bound; keep them
+ * there rather than re-deriving either here.
  *
  * A failure mid-walk keeps what was already collected rather than discarding it:
  * prerendering 100 brands beats falling back to the placeholder and prerendering
  * none.
  */
 export async function generateStaticParams(): Promise<{ slug: string[] }[]> {
-  const slugs: string[] = [];
-
-  try {
-    for (let page = 1; page <= BRAND_MAX_PAGES; page++) {
-      const result = await sdk.brands.list({ page, perPage: BRAND_PER_PAGE });
-      const pageSlugs = result.brands
-        .map((brand) => brand?.slug)
-        .filter((slug): slug is string => Boolean(slug));
-      slugs.push(...pageSlugs);
-
-      if (result.brands.length === 0) break;
-      const { totalPages } = result;
-      if (!Number.isFinite(totalPages) || page >= totalPages) break;
-    }
-  } catch {
-    /* Brands API unreachable at build — keep whatever the walk collected. */
-  }
+  const { brands } = await collectAllBrands();
+  const slugs = brands
+    .map((brand) => brand?.slug)
+    .filter((slug): slug is string => Boolean(slug));
 
   if (slugs.length > 0) return slugs.map((slug) => ({ slug: [slug] }));
   return [{ slug: [STATIC_GEN_PLACEHOLDER_SLUG] }];

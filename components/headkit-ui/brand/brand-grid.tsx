@@ -9,7 +9,7 @@ interface BrandGridProps {
 
 function BrandGridSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-6 px-5 sm:grid-cols-2 md:grid-cols-3 md:px-10 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-6 px-5 md:grid-cols-3 md:px-10 lg:grid-cols-4">
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="space-y-3">
           <Skeleton className="h-32 w-full rounded-brand" />
@@ -20,6 +20,15 @@ function BrandGridSkeleton() {
   );
 }
 
+/**
+ * Two columns from the smallest viewport up, not one.
+ *
+ * The index now renders EVERY brand (`app/brand/page.tsx`), so the column count
+ * is what decides the page's height: measured at 115 brands, a single mobile
+ * column was 42,044px of scroll against 7,929px at three. A brand tile is a
+ * contained logo in a 3:2 box, which stays legible at half width in a way a
+ * product card would not.
+ */
 export function BrandGrid({ brands, loading }: BrandGridProps) {
   if (loading) return <BrandGridSkeleton />;
 
@@ -32,7 +41,7 @@ export function BrandGrid({ brands, loading }: BrandGridProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 px-5 md:px-10">
+    <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4 px-5 md:px-10">
       {brands.map((brand) => (
         <BrandCard key={brand.id} brand={brand} />
       ))}

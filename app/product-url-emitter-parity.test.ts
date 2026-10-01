@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { isValidElement, Suspense } from "react";
 
 /**
- * TWO EMITTERS, ONE SET — the guard the brand-pagination fix and the colourway
- * prerender both exist because of.
+ * THREE EMITTERS, ONE SET — the guard the brand-pagination fixes and the
+ * colourway prerender all exist because of.
  *
  * A URL class has two independent emitters that must name exactly the same
  * strings: `app/sitemap.ts` says which URLs exist, and a route's
@@ -12,11 +13,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * stopped, so every brand past the first 100 was advertised and never built and
  * charged its first visitor a cold render.
  *
- * WHAT THIS COVERS: set equality between the two emitters' OUTPUT for the
- * `/brand` family, driven through ONE fixture catalogue so a change that teaches
- * one emitter a rule and not the other fails here; plus the two fallbacks the
- * brand walk owns (an unreachable endpoint still yields a param; a mid-walk
- * failure keeps what it already collected).
+ * The brand INDEX is the THIRD reader of that endpoint, and it was the same
+ * defect in its plainest form: `app/brand/page.tsx` called `sdk.brands.list()`
+ * with no arguments at all, so the SDK's `perPage` default of 24 decided how
+ * many brands a shopper could reach. On the store above that was 24 of 110,
+ * with no page control and no notice. The index does not emit URLs, so it is
+ * compared on the LINKS it renders rather than on params.
+ *
+ * WHAT THIS COVERS: set equality between the emitters' OUTPUT for the `/brand`
+ * family — the sitemap, the route's params and the index's rendered links —
+ * driven through ONE fixture catalogue so a change that teaches one emitter a
+ * rule and not the other fails here; plus the two fallbacks the brand walk owns
+ * (an unreachable endpoint still yields a param; a mid-walk failure keeps what
+ * it already collected).
  *
  * WHAT IT DOES NOT COVER, and none of these is implied by a green run:
  *
@@ -71,6 +80,10 @@ vi.mock("next/cache", () => ({
   cacheTag: (): void => {},
   revalidateTag: (): void => {},
   updateTag: (): void => {},
+}));
+
+vi.mock("@/lib/cache-profile", () => ({
+  cacheLifeForProfile: (): void => {},
 }));
 
 vi.mock("@/lib/branding", () => ({
@@ -130,6 +143,8 @@ vi.mock("@/lib/sdk", () => ({
 import sitemap from "./sitemap";
 import { generateStaticParams as shopParams } from "./shop/[...slug]/page";
 import { generateStaticParams as brandParams } from "./brand/[...slug]/page";
+import BrandIndexPage from "./brand/page";
+import { BrandPage } from "@/components/headkit-ui/brand/brand-page";
 
 /**
  * ONE fixture catalogue, shaped so both emitters read the same rows:
@@ -204,6 +219,9 @@ beforeEach(() => {
       brands: (BRAND_PAGES[(args?.page ?? 1) - 1] ?? []).map((slug) => ({
         slug,
       })),
+      // The endpoint's own count, which is what the index measures itself
+      // against before claiming to be showing every brand.
+      total: BRAND_PAGES.flat().length,
       totalPages: BRAND_PAGES.length,
     }),
   );
@@ -240,6 +258,51 @@ function builtPaths(params: { slug: string[] }[], prefix: string): Set<string> {
       .filter((slug) => slug[0] !== "__hk_static_placeholder")
       .map((slug) => `${prefix}/${slug.join("/")}`),
   );
+}
+
+/**
+ * The brands the INDEX actually renders. Walks the real server composition of
+ * `app/brand/page.tsx`, failing on any `<Suspense>` on the way: a boundary over
+ * React's 12,800-byte `progressiveChunkSize` is outlined into a hidden segment,
+ * so a brand inside one is not rendered for a crawler that runs no JavaScript —
+ * which is the second half of how this index hid its brands.
+ * `app/brand/page.composition.test.tsx` owns that rule; this reads the props to
+ * compare the SET.
+ */
+async function indexBrandPaths(): Promise<Set<string>> {
+  const collected = new Set<string>();
+
+  async function walk(node: unknown): Promise<void> {
+    if (Array.isArray(node)) {
+      for (const child of node) await walk(child);
+      return;
+    }
+    if (!isValidElement<Record<string, unknown>>(node)) return;
+    expect(node.type, "no boundary may wrap the brand index's grid").not.toBe(
+      Suspense,
+    );
+    if (node.type === BrandPage) {
+      expect(
+        node.props.complete,
+        "the index must not claim a complete list it cannot prove",
+      ).toBe(true);
+      for (const brand of node.props.brands as { slug: string }[]) {
+        collected.add(`/brand/${brand.slug}`);
+      }
+      return;
+    }
+    if (typeof node.type === "function") {
+      const component = node.type as (
+        props: Record<string, unknown>,
+      ) => unknown;
+      await walk(await component(node.props));
+      return;
+    }
+    await walk(node.props.children);
+  }
+
+  await walk(BrandIndexPage());
+  return collected;
 }
 
 describe("product and brand URL emitters agree", () => {
@@ -284,6 +347,20 @@ describe("product and brand URL emitters agree", () => {
     expect(built.size).toBe(6);
 
     expect(built).toEqual(advertisedBrands);
+  });
+
+  it("renders on /brand exactly the brands the sitemap advertises", async () => {
+    // The index is not an emitter of URLs, but it is the only surface a shopper
+    // reaches a brand THROUGH, so a brand missing here is unreachable however
+    // correctly the sitemap and the prerender agree. It showed 24 of 110.
+    const [advertisedBrands, rendered] = await Promise.all([
+      advertised("/brand"),
+      indexBrandPaths(),
+    ]);
+
+    expect(rendered).toContain("/brand/zipp");
+    expect(rendered.size).toBe(6);
+    expect(rendered).toEqual(advertisedBrands);
   });
 
   it("still yields a param when the catalogue is unreachable", async () => {

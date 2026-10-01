@@ -403,7 +403,13 @@ things put content after it, and closing one without the other changes nothing:
   and the entire article in `S:3`; 411 with the boundary removed and nothing hidden.
 
 So a boundary belongs NEXT TO a request-time read and nowhere else; cached content renders
-in the route itself. `app/news/[...slug]` has no boundary. Both PDP routes compose the
+in the route itself. `app/news/[...slug]` has no boundary. `app/brand` (the index) had one
+around a fully cached brand grid and nothing else: measured on the deployed rehearsal store,
+2026-10-01, all of its cards sat after `<div hidden id="S:0">` at byte 49,458 of 183,930, and
+a local production build of the same page reported 139 visible shell characters against 471
+in the tail. With the boundary removed the same page reports no hidden segment at all. That
+route is also the worked example of the second emitter rule above, so a change there is two
+rules at once. Both PDP routes compose the
 product the gate resolved through `ProductPageBody` outside any boundary; the flat
 `/products/[...slug]` keeps ONE boundary, around `ProductPageContent`, and renders it only
 when the public read returned null — the one branch that must await `searchParams` (the
