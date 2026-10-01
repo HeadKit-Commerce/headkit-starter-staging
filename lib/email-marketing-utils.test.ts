@@ -5,6 +5,7 @@ import {
   isMarketingOptInLabel,
 } from "./email-marketing-utils";
 import { snakeCase } from "./gravity-form-utils";
+import { encodeCheckboxSelection } from "./gravity-form-fields";
 
 describe("isMarketingOptInLabel", () => {
   it("matches common marketing labels", () => {
@@ -63,5 +64,89 @@ describe("hasMarketingOptIn", () => {
         snakeCase,
       ),
     ).toBe(false);
+  });
+});
+
+describe("hasMarketingOptIn: both checkbox representations", () => {
+  // Criterion the multi-choice change must not break: a single-choice marketing
+  // opt-in has to keep reaching the subscribe path. Both shapes are live — a
+  // checkbox field with no choices still submits "true"/"false", while a
+  // Checkboxes field with choices submits its ticked choice values packed.
+
+  it("fires for the legacy single-box shape, by field label", () => {
+    const fields = [{ type: "checkbox", label: "Join our mailing list" }];
+    expect(
+      hasMarketingOptIn(fields, { join_our_mailing_list: "true" }, snakeCase),
+    ).toBe(true);
+    expect(
+      hasMarketingOptIn(fields, { join_our_mailing_list: "false" }, snakeCase),
+    ).toBe(false);
+  });
+
+  it("fires for a single-CHOICE Checkboxes field, by field label", () => {
+    const fields = [
+      {
+        type: "checkbox",
+        label: "Newsletter",
+        choices: [{ text: "Yes please", value: "Yes please" }],
+      },
+    ];
+    expect(
+      hasMarketingOptIn(
+        fields,
+        { newsletter: encodeCheckboxSelection(["Yes please"]) },
+        snakeCase,
+      ),
+    ).toBe(true);
+    expect(
+      hasMarketingOptIn(
+        fields,
+        { newsletter: encodeCheckboxSelection([]) },
+        snakeCase,
+      ),
+    ).toBe(false);
+  });
+
+  it("fires when the marketing wording is on the CHOICE, not the field label", () => {
+    // The common Gravity Forms shape: a neutral field label (often hidden) with
+    // the opt-in sentence typed as the choice.
+    const fields = [
+      {
+        type: "checkbox",
+        label: "Preferences",
+        choices: [
+          { text: "Ship to a different address", value: "ship-elsewhere" },
+          { text: "Add me to the mailing list", value: "subscribe" },
+        ],
+      },
+    ];
+    expect(
+      hasMarketingOptIn(
+        fields,
+        { preferences: encodeCheckboxSelection(["subscribe"]) },
+        snakeCase,
+      ),
+    ).toBe(true);
+    // A ticked NON-marketing choice on the same field must not opt anyone in.
+    expect(
+      hasMarketingOptIn(
+        fields,
+        { preferences: encodeCheckboxSelection(["ship-elsewhere"]) },
+        snakeCase,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not fire for a multi-choice field with nothing ticked", () => {
+    const fields = [
+      {
+        type: "checkbox",
+        label: "Newsletter",
+        choices: [{ text: "Yes", value: "Yes" }],
+      },
+    ];
+    expect(hasMarketingOptIn(fields, { newsletter: "" }, snakeCase)).toBe(
+      false,
+    );
   });
 });

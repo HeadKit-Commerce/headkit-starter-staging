@@ -1,5 +1,12 @@
 # @headkit/starter
 
+## 0.1.5
+
+### Patch Changes
+
+- Updated dependencies [59addc0]
+  - @headkit/sdk@1.6.0
+
 ## 0.1.4
 
 ### Patch Changes

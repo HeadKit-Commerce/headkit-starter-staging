@@ -4,6 +4,7 @@ import {
   buildFieldIdByName,
   buildFieldValues,
 } from "./gravity-form-utils";
+import { encodeCheckboxSelection } from "./gravity-form-fields";
 
 describe("snakeCase", () => {
   it("lowercases, replaces whitespace, strips punctuation", () => {
@@ -87,5 +88,64 @@ describe("buildFieldValues", () => {
     expect(
       buildFieldValues({ name: undefined as unknown as string }, fieldIdByName),
     ).toEqual([{ id: 1, value: "" }]);
+  });
+});
+
+describe("buildFieldValues: Checkboxes fields", () => {
+  const fieldIdByName = { interests: 3, email: 2 };
+  const choices = [
+    { text: "Road", value: "Road", inputId: "3.1" },
+    { text: "Gravel", value: "Gravel", inputId: "3.2" },
+    { text: "Track", value: "Track", inputId: "3.11" },
+  ];
+
+  it("expands a multi-choice selection into one value per ticked choice", () => {
+    // Gravity Forms reads a Checkboxes field only per input
+    // (`GF_Field_Checkbox::get_value_submission()` loops `$this->inputs`), so a
+    // single flat value under the field id is discarded with no error.
+    const values = {
+      interests: encodeCheckboxSelection(["Road", "Track"]),
+      email: "ada@example.com",
+    };
+    expect(
+      buildFieldValues(values, fieldIdByName, {
+        interests: { choices },
+      }),
+    ).toEqual([
+      { inputId: "3.1", value: "Road" },
+      { inputId: "3.11", value: "Track" },
+      { id: 2, value: "ada@example.com" },
+    ]);
+  });
+
+  it("sends nothing for a field with no box ticked", () => {
+    expect(
+      buildFieldValues(
+        { interests: encodeCheckboxSelection([]) },
+        fieldIdByName,
+        { interests: { choices } },
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps the single flat value for a checkbox with no choices", () => {
+    // The marketing opt-in shape, and what every form submitted before. Not
+    // listed in `checkboxFields`, so it falls through unchanged.
+    expect(buildFieldValues({ interests: "true" }, fieldIdByName, {})).toEqual([
+      { id: 3, value: "true" },
+    ]);
+  });
+
+  it("falls back to the field id when the theme sent no input id", () => {
+    // A store on a WordPress theme below 0.4.68 cannot tell us which input to
+    // post to. Dropping the shopper's answer would be worse than sending it
+    // where it has always been sent.
+    expect(
+      buildFieldValues(
+        { interests: encodeCheckboxSelection(["Road"]) },
+        fieldIdByName,
+        { interests: { choices: [{ text: "Road", value: "Road" }] } },
+      ),
+    ).toEqual([{ id: 3, value: "Road" }]);
   });
 });

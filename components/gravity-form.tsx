@@ -3,10 +3,11 @@
 import { useForm, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -34,7 +35,20 @@ import {
   snakeCase,
   buildFieldIdByName,
   buildFieldValues,
+  type CheckboxFieldSubmission,
 } from "@/lib/gravity-form-utils";
+import {
+  buildFormDefaultValues,
+  decodeCheckboxSelection,
+  encodeCheckboxSelection,
+  hasRenderableChoices,
+  isCheckboxChecked,
+  isDescriptionAbove,
+  isLabelVisible,
+  validationMessage,
+  type FormChoiceSettings,
+} from "@/lib/gravity-form-fields";
+import { cn } from "@/lib/utils";
 import { subscribeEmailAction } from "@/lib/email-marketing-actions";
 import { reportSubscribeOutcome } from "@/lib/subscribe-outcome";
 import {
@@ -73,10 +87,25 @@ interface FormFieldConfig {
   isRequired: boolean;
   placeholder?: string | undefined;
   defaultValue: string;
-  choices?: { text: string; value: string }[] | undefined;
+  /** Gravity Forms "Description" — field help text. */
+  description?: string | undefined;
+  /** Appearance -> Field Label Visibility: "" or "hidden_label". */
+  labelPlacement?: string | undefined;
+  /** Appearance -> Description Placement, resolved: "above" or "below". */
+  descriptionPlacement?: string | undefined;
+  /** Appearance -> Custom Validation Message. */
+  errorMessage?: string | undefined;
+  choices?: FormChoiceSettings[] | undefined;
   databaseId: number;
 }
 
+/**
+ * Zod schema for the rendered fields.
+ *
+ * A field's Custom Validation Message replaces the storefront's own copy for
+ * EVERY rule on that field, which is how Gravity Forms behaves: one message per
+ * field, whatever the failure.
+ */
 const generateValidationSchema = (fields: FormFieldConfig[]) => {
   const schemaFields: Record<string, z.ZodString> = {};
 
@@ -85,11 +114,14 @@ const generateValidationSchema = (fields: FormFieldConfig[]) => {
     let schema = z.string();
 
     if (field.isRequired) {
-      schema = schema.min(1, `${field.label} is required`);
+      schema = schema.min(
+        1,
+        validationMessage(field, `${field.label} is required`),
+      );
     }
 
     if (field.type === "email") {
-      schema = schema.email("Invalid email address");
+      schema = schema.email(validationMessage(field, "Invalid email address"));
     }
 
     schemaFields[fieldName] = schema;
@@ -103,6 +135,42 @@ interface RenderFieldProps {
   control: Control<z.infer<ReturnType<typeof generateValidationSchema>>>;
 }
 
+/**
+ * The parts of a field that are the same for every type: the label (hidden by
+ * Appearance -> Field Label Visibility), the description (above or below the
+ * inputs per Appearance -> Description Placement) and the validation message.
+ *
+ * A hidden label is hidden VISUALLY and kept in the accessibility tree, so the
+ * control retains an accessible name. Gravity Forms removes it outright; what a
+ * sighted shopper sees is the same either way.
+ */
+const FieldShell = ({
+  field,
+  className,
+  children,
+}: {
+  field: FormFieldConfig;
+  className?: string;
+  children: React.ReactNode;
+}) => {
+  const description = field.description?.trim();
+  const above = isDescriptionAbove(field);
+
+  return (
+    <FormItem className={className}>
+      <FormLabel className={cn(!isLabelVisible(field) && "sr-only")}>
+        {field.label}
+      </FormLabel>
+      {description && above && <FormDescription>{description}</FormDescription>}
+      {children}
+      {description && !above && (
+        <FormDescription>{description}</FormDescription>
+      )}
+      <FormMessage />
+    </FormItem>
+  );
+};
+
 const RenderField = ({ field, control }: RenderFieldProps) => {
   const fieldName = snakeCase(field.label);
 
@@ -115,17 +183,21 @@ const RenderField = ({ field, control }: RenderFieldProps) => {
           control={control}
           name={fieldName}
           render={({ field: formField }) => (
-            <FormItem>
-              <FormLabel>{field.label}</FormLabel>
+            <FieldShell field={field}>
               <FormControl>
                 <Input
                   type={field.type === "email" ? "email" : "text"}
                   placeholder={field.placeholder}
                   {...formField}
+                  // React Hook Form holds `undefined` for a field that is not
+                  // registered yet — the definition arrives in an effect — and
+                  // an input that starts undefined and then gains a value flips
+                  // from uncontrolled to controlled, which React warns about and
+                  // which loses the first keystroke in some browsers.
+                  value={formField.value ?? ""}
                 />
               </FormControl>
-              <FormMessage />
-            </FormItem>
+            </FieldShell>
           )}
         />
       );
@@ -136,17 +208,16 @@ const RenderField = ({ field, control }: RenderFieldProps) => {
           control={control}
           name={fieldName}
           render={({ field: formField }) => (
-            <FormItem>
-              <FormLabel>{field.label}</FormLabel>
+            <FieldShell field={field}>
               <FormControl>
                 <Textarea
                   placeholder={field.placeholder}
                   className="min-h-[120px]"
                   {...formField}
+                  value={formField.value ?? ""}
                 />
               </FormControl>
-              <FormMessage />
-            </FormItem>
+            </FieldShell>
           )}
         />
       );
@@ -157,11 +228,16 @@ const RenderField = ({ field, control }: RenderFieldProps) => {
           control={control}
           name={fieldName}
           render={({ field: formField }) => (
-            <FormItem>
-              <FormLabel>{field.label}</FormLabel>
+            <FieldShell field={field}>
+              {/*
+                CONTROLLED, not `defaultValue`. The form definition arrives in an
+                effect, so at mount this value is still "" and a `defaultValue`
+                would be captured empty — which is how an editor-set
+                pre-selected choice used to render as the placeholder.
+              */}
               <Select
                 onValueChange={formField.onChange}
-                defaultValue={formField.value}
+                value={formField.value ?? ""}
               >
                 <FormControl>
                   <SelectTrigger>
@@ -176,8 +252,7 @@ const RenderField = ({ field, control }: RenderFieldProps) => {
                   ))}
                 </SelectContent>
               </Select>
-              <FormMessage />
-            </FormItem>
+            </FieldShell>
           )}
         />
       );
@@ -188,12 +263,11 @@ const RenderField = ({ field, control }: RenderFieldProps) => {
           control={control}
           name={fieldName}
           render={({ field: formField }) => (
-            <FormItem className="space-y-3">
-              <FormLabel>{field.label}</FormLabel>
+            <FieldShell field={field} className="space-y-3">
               <FormControl>
                 <RadioGroup
                   onValueChange={formField.onChange}
-                  defaultValue={formField.value}
+                  value={formField.value ?? ""}
                   className="space-y-1"
                 >
                   {field.choices?.map((choice) => (
@@ -211,31 +285,98 @@ const RenderField = ({ field, control }: RenderFieldProps) => {
                   ))}
                 </RadioGroup>
               </FormControl>
-              <FormMessage />
-            </FormItem>
+            </FieldShell>
           )}
         />
       );
 
     case "checkbox":
+      // A Gravity Forms Checkboxes field is N boxes, one per choice. Rendering
+      // it as a single box labelled with the FIELD label dropped every choice
+      // past the first and submitted a value Gravity Forms reads for nothing.
+      if (hasRenderableChoices(field)) {
+        return (
+          <FormField
+            control={control}
+            name={fieldName}
+            render={({ field: formField }) => {
+              const selected = new Set(
+                decodeCheckboxSelection(formField.value),
+              );
+              const toggle = (value: string, checked: boolean) => {
+                const next = (field.choices ?? [])
+                  .map((choice) => choice.value)
+                  .filter((candidate) =>
+                    candidate === value ? checked : selected.has(candidate),
+                  );
+                formField.onChange(encodeCheckboxSelection(next));
+              };
+
+              return (
+                <FieldShell field={field} className="space-y-3">
+                  <div className="space-y-1">
+                    {(field.choices ?? []).map((choice) => (
+                      <FormItem
+                        key={choice.value}
+                        className="flex flex-row items-start space-x-3 space-y-0"
+                      >
+                        <FormControl>
+                          <Checkbox
+                            checked={selected.has(choice.value)}
+                            onCheckedChange={(checked) =>
+                              toggle(choice.value, checked === true)
+                            }
+                          />
+                        </FormControl>
+                        <FormLabel className="font-normal">
+                          {choice.text}
+                        </FormLabel>
+                      </FormItem>
+                    ))}
+                  </div>
+                </FieldShell>
+              );
+            }}
+          />
+        );
+      }
+
+      // No choices in the definition: keep the single boolean box, labelled
+      // with the field label and submitting "true"/"false". That is what every
+      // existing form renders, and what the marketing opt-in path reads.
       return (
         <FormField
           control={control}
           name={fieldName}
-          render={({ field: formField }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-              <FormControl>
-                <Checkbox
-                  checked={formField.value === "true"}
-                  onCheckedChange={(checked) => {
-                    formField.onChange(checked ? "true" : "false");
-                  }}
-                />
-              </FormControl>
-              <FormLabel className="font-normal">{field.label}</FormLabel>
-              <FormMessage />
-            </FormItem>
-          )}
+          render={({ field: formField }) => {
+            const description = field.description?.trim();
+            return (
+              <FormItem className="space-y-2">
+                <div className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Checkbox
+                      checked={isCheckboxChecked(formField.value)}
+                      onCheckedChange={(checked) => {
+                        formField.onChange(checked ? "true" : "false");
+                      }}
+                    />
+                  </FormControl>
+                  <FormLabel
+                    className={cn(
+                      "font-normal",
+                      !isLabelVisible(field) && "sr-only",
+                    )}
+                  >
+                    {field.label}
+                  </FormLabel>
+                  <FormMessage />
+                </div>
+                {description && (
+                  <FormDescription>{description}</FormDescription>
+                )}
+              </FormItem>
+            );
+          }}
         />
       );
 
@@ -348,10 +489,21 @@ export const GravityForm = ({
         databaseId: node.databaseId,
       };
       if (node.placeholder) config.placeholder = node.placeholder;
+      if (node.description) config.description = node.description;
+      // Absent on an older commerce build or theme, where every field was
+      // label-visible with its description below — which is what the helpers
+      // in lib/gravity-form-fields.ts default an absent value to.
+      if (node.labelPlacement) config.labelPlacement = node.labelPlacement;
+      if (node.descriptionPlacement) {
+        config.descriptionPlacement = node.descriptionPlacement;
+      }
+      if (node.errorMessage) config.errorMessage = node.errorMessage;
       if (node.choices?.nodes?.length) {
         config.choices = node.choices.nodes.map((choice) => ({
           text: choice?.text ?? "",
           value: choice?.value ?? "",
+          isSelected: Boolean(choice?.isSelected),
+          inputId: choice?.inputId ?? "",
         }));
       }
       return config;
@@ -371,19 +523,47 @@ export const GravityForm = ({
   // so injected product context submits with its numeric id (ENG-794).
   const fieldIdByName = buildFieldIdByName(formData?.gfForm?.formFields?.nodes);
 
+  // Every Checkboxes field with choices, keyed by its form field name. Gravity
+  // Forms reads such a field per choice, so the submission has to be expanded
+  // rather than sent as one value — see buildFieldValues.
+  const checkboxFields = formFields.reduce<
+    Record<string, CheckboxFieldSubmission>
+  >((acc, field) => {
+    if (field.type === "checkbox" && hasRenderableChoices(field)) {
+      acc[snakeCase(field.label)] = { choices: field.choices ?? [] };
+    }
+    return acc;
+  }, {});
+
   const validationSchema = generateValidationSchema(formFields ?? []);
+
+  // The values the form DEFINITION asks to start with, a choice's editor-set
+  // pre-selected tick included. See lib/gravity-form-fields.ts for the rule.
+  const definitionDefaults = buildFormDefaultValues(formFields, snakeCase);
 
   const form = useForm<z.infer<typeof validationSchema>>({
     resolver: zodResolver(validationSchema),
-    defaultValues:
-      formFields?.reduce<Record<string, string>>(
-        (acc, field) => ({
-          ...acc,
-          [snakeCase(field.label)]: field.defaultValue,
-        }),
-        {},
-      ) ?? {},
+    defaultValues: definitionDefaults,
   });
+
+  // The definition arrives in an EFFECT, so the first render has no fields and
+  // `useForm` above captured `{}`. React Hook Form reads `defaultValues` on
+  // mount only, so without this the definition's defaults are discarded for
+  // every field — measured live: form 2's Email field carries
+  // `defaultValue: "{user:user_email}"` and rendered empty.
+  //
+  // Re-apply them exactly ONCE, keyed on their serialised value, so a later
+  // render never clobbers what the shopper has since typed. The effect depends
+  // on the JSON rather than the object (new identity every render) and rebuilds
+  // the map from it, which also keeps the ref out of the render pass.
+  const definitionDefaultsJson = JSON.stringify(definitionDefaults);
+  const appliedDefaultsJson = useRef<string | null>(null);
+  useEffect(() => {
+    if (appliedDefaultsJson.current === definitionDefaultsJson) return;
+    appliedDefaultsJson.current = definitionDefaultsJson;
+    if (definitionDefaultsJson === "{}") return;
+    form.reset(JSON.parse(definitionDefaultsJson) as Record<string, string>);
+  }, [definitionDefaultsJson, form]);
 
   // No form available (Gravity Forms not installed, form id missing, or fetch
   // failed) — render the caller's fallback, or a neutral default.
@@ -420,7 +600,7 @@ export const GravityForm = ({
       const response = await submitGravityForm({
         id: formId,
         saveAsDraft: false,
-        fieldValues: buildFieldValues(allValues, fieldIdByName),
+        fieldValues: buildFieldValues(allValues, fieldIdByName, checkboxFields),
       });
 
       // Opt-in mailing list: when a marketing checkbox is checked and an email
