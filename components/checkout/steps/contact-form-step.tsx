@@ -24,6 +24,7 @@ import { useCheckoutActions } from "@/app/checkout/checkout-actions-context";
 import { useToast } from "@/hooks/use-toast";
 import { CheckoutFormStepEnum } from "@/components/checkout/utils";
 import { subscribeEmailAction } from "@/lib/email-marketing-actions";
+import { reportSubscribeOutcome } from "@/lib/subscribe-outcome";
 import { useCartContext } from "@/components/headkit-ui/cart-context";
 
 const contactSchema = z.object({
@@ -108,10 +109,13 @@ const ContactFormStep: React.FC<ContactFormStepProps> = ({
   const maybeSubscribe = (data: z.infer<typeof contactSchema>) => {
     // Best-effort list subscribe — never blocks checkout.
     if (emailMarketingEnabled && data.newsletter) {
-      void subscribeEmailAction({
-        email: data.email,
-        source: "checkout",
-      });
+      void reportSubscribeOutcome(
+        subscribeEmailAction({
+          email: data.email,
+          source: "checkout",
+        }),
+        { source: "checkout" },
+      );
     }
   };
 

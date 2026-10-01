@@ -36,6 +36,7 @@ import {
   buildFieldValues,
 } from "@/lib/gravity-form-utils";
 import { subscribeEmailAction } from "@/lib/email-marketing-actions";
+import { reportSubscribeOutcome } from "@/lib/subscribe-outcome";
 import {
   extractEmailFromFormValues,
   hasMarketingOptIn,
@@ -431,7 +432,11 @@ export const GravityForm = ({
       ) {
         const email = extractEmailFromFormValues(stringValues);
         if (email) {
-          void subscribeEmailAction({ email, source: "form" });
+          // Non-blocking by design; the handler only records the outcome.
+          void reportSubscribeOutcome(
+            subscribeEmailAction({ email, source: "form" }),
+            { source: "form" },
+          );
         }
       }
 
