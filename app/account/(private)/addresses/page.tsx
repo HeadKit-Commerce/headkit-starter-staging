@@ -11,6 +11,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/headkit-ui/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -27,10 +28,6 @@ const LOAD_ERROR =
   "We couldn't load this right now. Refresh the page, or try again in a moment.";
 const SAVE_ERROR =
   "We couldn't save your address right now. Please try again in a moment.";
-
-// Shared input class — min height 40px to meet the UI-SPEC mobile touch target.
-const INPUT_CLASS =
-  "w-full min-h-[40px] px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary";
 
 type Section = "billing" | "shipping";
 
@@ -54,12 +51,7 @@ function AddressFields({
         <FormItem>
           <FormLabel>{label}</FormLabel>
           <FormControl>
-            <input
-              type={type}
-              placeholder={placeholder}
-              className={INPUT_CLASS}
-              {...field}
-            />
+            <Input type={type} placeholder={placeholder} {...field} />
           </FormControl>
           <FormMessage />
         </FormItem>

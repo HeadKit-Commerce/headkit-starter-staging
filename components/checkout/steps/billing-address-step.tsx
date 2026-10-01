@@ -18,6 +18,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   isValidCheckoutPhone,
   CHECKOUT_PHONE_MESSAGE,
@@ -283,12 +284,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
             <FormItem>
               <FormLabel>First Name</FormLabel>
               <FormControl>
-                <input
-                  type="text"
-                  placeholder="First Name"
-                  className="border rounded-md p-2 w-full"
-                  {...field}
-                />
+                <Input type="text" placeholder="First Name" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -301,12 +297,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
             <FormItem>
               <FormLabel>Last Name</FormLabel>
               <FormControl>
-                <input
-                  type="text"
-                  placeholder="Last Name"
-                  className="border rounded-md p-2 w-full"
-                  {...field}
-                />
+                <Input type="text" placeholder="Last Name" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -319,12 +310,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
             <FormItem>
               <FormLabel>Address Line 1</FormLabel>
               <FormControl>
-                <input
-                  type="text"
-                  placeholder="Address Line 1"
-                  className="border rounded-md p-2 w-full"
-                  {...field}
-                />
+                <Input type="text" placeholder="Address Line 1" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -337,12 +323,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
             <FormItem>
               <FormLabel>Address Line 2 (Optional)</FormLabel>
               <FormControl>
-                <input
-                  type="text"
-                  placeholder="Address Line 2"
-                  className="border rounded-md p-2 w-full"
-                  {...field}
-                />
+                <Input type="text" placeholder="Address Line 2" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -356,12 +337,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
               <FormItem>
                 <FormLabel>City</FormLabel>
                 <FormControl>
-                  <input
-                    type="text"
-                    placeholder="City"
-                    className="border rounded-md p-2 w-full"
-                    {...field}
-                  />
+                  <Input type="text" placeholder="City" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -374,12 +350,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
               <FormItem>
                 <FormLabel>State</FormLabel>
                 <FormControl>
-                  <input
-                    type="text"
-                    placeholder="State"
-                    className="border rounded-md p-2 w-full"
-                    {...field}
-                  />
+                  <Input type="text" placeholder="State" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -394,12 +365,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
               <FormItem>
                 <FormLabel>Country</FormLabel>
                 <FormControl>
-                  <input
-                    type="text"
-                    placeholder="Country"
-                    className="border rounded-md p-2 w-full"
-                    {...field}
-                  />
+                  <Input type="text" placeholder="Country" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -412,12 +378,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
               <FormItem>
                 <FormLabel>Postal Code</FormLabel>
                 <FormControl>
-                  <input
-                    type="text"
-                    placeholder="Postal Code"
-                    className="border rounded-md p-2 w-full"
-                    {...field}
-                  />
+                  <Input type="text" placeholder="Postal Code" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

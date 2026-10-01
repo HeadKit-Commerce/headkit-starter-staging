@@ -17,6 +17,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { updateCustomerAddressAction } from "@/lib/cart-actions";
 import { decideContactSubmit } from "@/lib/contact-email-submit";
@@ -232,12 +233,7 @@ const ContactFormStep: React.FC<ContactFormStepProps> = ({
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <input
-                      type="email"
-                      placeholder="Email"
-                      className="border rounded-md p-2 w-full"
-                      {...field}
-                    />
+                    <Input type="email" placeholder="Email" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

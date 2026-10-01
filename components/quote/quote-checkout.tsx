@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { FORM_CONTROL_SURFACE } from "@/components/ui/form-control-surface";
+import { cn } from "@/lib/utils";
 import { useCartContext } from "@/components/headkit-ui/cart-context";
 import { processCheckoutAction } from "@/app/checkout/actions";
 import { EMPTY_CART } from "@/components/checkout/clear-cart";
@@ -33,8 +35,14 @@ const INITIAL_FORM: QuoteFormDetails = {
   comments: "",
 };
 
-const selectClassName =
-  "mt-1.5 flex h-10 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm";
+// The one native `<select>` left in the template — Radix's `SelectTrigger` is
+// not used here because these two fields are plain controlled elements outside
+// react-hook-form. It still reads the shared surface so it cannot drift from
+// the `Input`s above it; only sizing is local.
+const selectClassName = cn(
+  "mt-1.5 flex h-10 w-full px-3 py-2 text-sm",
+  FORM_CONTROL_SURFACE,
+);
 
 export type QuoteCheckoutProps = {
   initialCart: CartFieldsFragment;
@@ -284,7 +292,7 @@ export function QuoteCheckout({
               <Label htmlFor="quote-comments">Comments</Label>
               <Textarea
                 id="quote-comments"
-                className="mt-1.5 bg-white dark:bg-white dark:border-neutral-200 dark:text-neutral-950 dark:placeholder:text-neutral-500"
+                className="mt-1.5 bg-white"
                 rows={5}
                 placeholder="How can we help? Please provide as much information about your project and products required..."
                 value={form.comments}

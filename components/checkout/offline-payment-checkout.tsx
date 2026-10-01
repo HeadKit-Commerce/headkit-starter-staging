@@ -181,10 +181,16 @@ export function OfflinePaymentCheckout({
                 {gateways.map((gateway) => (
                   <label
                     key={gateway.id}
-                    className="flex cursor-pointer items-center gap-3 rounded-md border border-neutral-200 px-3 py-2"
+                    className="flex cursor-pointer items-center gap-3 rounded-md border border-primary px-3 py-2"
                   >
+                    {/* A native radio, not `RadioGroupItem`: this row is a
+                        plain `<label>` outside react-hook-form, and `accent-primary`
+                        is the only lever a UA-drawn radio exposes. The ROW's
+                        border is the brand edge the shared surface states —
+                        see `components/ui/form-control-surface.ts`. */}
                     <input
                       type="radio"
+                      className="accent-primary"
                       name="offline-gateway"
                       value={gateway.id}
                       checked={gatewayId === gateway.id}

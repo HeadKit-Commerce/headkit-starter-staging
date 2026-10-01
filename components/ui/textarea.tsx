@@ -1,7 +1,15 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { FORM_CONTROL_SURFACE } from "./form-control-surface";
 
+/**
+ * Multi-line sibling of `Input`, on the same {@link FORM_CONTROL_SURFACE}.
+ *
+ * The `dark:` variants this carried are gone on purpose — they were live under
+ * `@media (prefers-color-scheme: dark)` and pinned the old neutral placeholder
+ * and focus ring for dark-mode visitors. See the surface module's header.
+ */
 const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.ComponentProps<"textarea">
@@ -9,7 +17,8 @@ const Textarea = React.forwardRef<
   return (
     <textarea
       className={cn(
-        "flex min-h-[80px] w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-base ring-offset-white placeholder:text-neutral-500 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:border-neutral-200 dark:bg-white dark:ring-offset-white dark:placeholder:text-neutral-500 dark:focus-visible:ring-neutral-950",
+        "flex min-h-[80px] w-full px-3 py-2 text-base md:text-sm",
+        FORM_CONTROL_SURFACE,
         className,
       )}
       ref={ref}

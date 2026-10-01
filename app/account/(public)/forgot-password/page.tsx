@@ -12,6 +12,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import { sendPasswordResetEmail } from "@/lib/account-actions";
 
@@ -75,10 +76,9 @@ export default function Page() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <input
+                    <Input
                       type="email"
                       placeholder="Enter your email"
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                       {...field}
                     />
                   </FormControl>

@@ -12,6 +12,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { resetUserPassword } from "@/lib/account-actions";
@@ -95,10 +96,9 @@ function ResetPasswordForm() {
                 <FormItem>
                   <FormLabel>New Password</FormLabel>
                   <FormControl>
-                    <input
+                    <Input
                       type="password"
                       placeholder="Enter your new password"
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                       {...field}
                     />
                   </FormControl>
@@ -113,10 +113,9 @@ function ResetPasswordForm() {
                 <FormItem>
                   <FormLabel>Confirm Password</FormLabel>
                   <FormControl>
-                    <input
+                    <Input
                       type="password"
                       placeholder="Confirm your new password"
-                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                       {...field}
                     />
                   </FormControl>

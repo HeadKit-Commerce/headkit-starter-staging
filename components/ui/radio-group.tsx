@@ -28,7 +28,14 @@ const RadioGroupItem = React.forwardRef<
     <RadioGroupPrimitive.Item
       ref={ref}
       className={cn(
-        "aspect-square h-4 w-4 rounded-full border border-neutral-200 text-primary ring-offset-white focus:outline-hidden focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-800 data-[state=checked]:border-primary dark:text-primary dark:ring-offset-neutral-950 dark:focus-visible:ring-neutral-300",
+        // The dot is drawn by the indicator below in `currentColor`, so this
+        // control keeps a WHITE fill and `text-primary` when checked rather
+        // than taking the boolean surface's filled `data-[state=checked]:bg-*`
+        // — a filled circle would swallow its own dot. Everything else is the
+        // surface vocabulary: see `form-control-surface.ts`.
+        "aspect-square h-4 w-4 rounded-full border border-primary bg-white text-primary",
+        "focus:outline-hidden focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-offset-0",
+        "disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-primary data-[checked]:border-primary",
         className,
       )}
       {...props}

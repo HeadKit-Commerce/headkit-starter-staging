@@ -14,6 +14,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input-lazy";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -683,12 +684,7 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                   <FormItem>
                     <FormLabel>First Name</FormLabel>
                     <FormControl>
-                      <input
-                        type="text"
-                        placeholder="First Name"
-                        className="border rounded-md p-2 w-full"
-                        {...field}
-                      />
+                      <Input type="text" placeholder="First Name" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -701,12 +697,7 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                   <FormItem>
                     <FormLabel>Last Name</FormLabel>
                     <FormControl>
-                      <input
-                        type="text"
-                        placeholder="Last Name"
-                        className="border rounded-md p-2 w-full"
-                        {...field}
-                      />
+                      <Input type="text" placeholder="Last Name" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -719,10 +710,9 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                   <FormItem>
                     <FormLabel>Address Line 1</FormLabel>
                     <FormControl>
-                      <input
+                      <Input
                         type="text"
                         placeholder="Address Line 1"
-                        className="border rounded-md p-2 w-full"
                         {...field}
                       />
                     </FormControl>
@@ -737,10 +727,9 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                   <FormItem>
                     <FormLabel>Address Line 2</FormLabel>
                     <FormControl>
-                      <input
+                      <Input
                         type="text"
                         placeholder="Address Line 2"
-                        className="border rounded-md p-2 w-full"
                         {...field}
                       />
                     </FormControl>
@@ -755,12 +744,7 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                   <FormItem>
                     <FormLabel>City</FormLabel>
                     <FormControl>
-                      <input
-                        type="text"
-                        placeholder="City"
-                        className="border rounded-md p-2 w-full"
-                        {...field}
-                      />
+                      <Input type="text" placeholder="City" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -773,12 +757,7 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                   <FormItem>
                     <FormLabel>State</FormLabel>
                     <FormControl>
-                      <input
-                        type="text"
-                        placeholder="State"
-                        className="border rounded-md p-2 w-full"
-                        {...field}
-                      />
+                      <Input type="text" placeholder="State" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -791,12 +770,7 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                   <FormItem>
                     <FormLabel>Country</FormLabel>
                     <FormControl>
-                      <input
-                        type="text"
-                        placeholder="Country"
-                        className="border rounded-md p-2 w-full"
-                        {...field}
-                      />
+                      <Input type="text" placeholder="Country" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -809,12 +783,7 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                   <FormItem>
                     <FormLabel>Postal Code</FormLabel>
                     <FormControl>
-                      <input
-                        type="text"
-                        placeholder="Postal Code"
-                        className="border rounded-md p-2 w-full"
-                        {...field}
-                      />
+                      <Input type="text" placeholder="Postal Code" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

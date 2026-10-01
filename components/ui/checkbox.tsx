@@ -5,7 +5,17 @@ import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import { CheckIcon } from "@/components/icon";
 
 import { cn } from "@/lib/utils";
+import { FORM_CONTROL_BOOLEAN_SURFACE } from "./form-control-surface";
 
+/**
+ * Brand checkbox, on {@link FORM_CONTROL_BOOLEAN_SURFACE} — the HTML twin of
+ * Stripe's `.CheckboxInput` family, which is what the shopper sees one step
+ * later at checkout.
+ *
+ * `rounded-sm` (= `calc(var(--radius) * 0.5)`) is kept rather than the full
+ * `--radius` Stripe applies: at 16px square an 8px radius reads as a circle,
+ * i.e. as a radio button. The two controls must stay tellable apart.
+ */
 const Checkbox = React.forwardRef<
   React.ElementRef<typeof CheckboxPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root>
@@ -13,7 +23,8 @@ const Checkbox = React.forwardRef<
   <CheckboxPrimitive.Root
     ref={ref}
     className={cn(
-      "peer h-4 w-4 shrink-0 rounded-sm border border-neutral-200 border-neutral-900 ring-offset-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-neutral-900 data-[state=checked]:text-neutral-50 dark:border-neutral-800 dark:border-neutral-50 dark:ring-offset-neutral-950 dark:focus-visible:ring-neutral-300 dark:data-[state=checked]:bg-neutral-50 dark:data-[state=checked]:text-neutral-900",
+      "peer h-4 w-4 shrink-0 rounded-sm",
+      FORM_CONTROL_BOOLEAN_SURFACE,
       className,
     )}
     {...props}

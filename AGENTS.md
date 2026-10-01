@@ -562,6 +562,55 @@ Making that per-store DATA rather than a fork is an OPEN DECISION with no ticket
 would span, and why leaving it open is safe, are stated once where the prop is absent, in
 `app/layout.tsx`.
 
+### Form controls are ONE surface, and checkout is what "correct" means
+
+`components/ui/form-control-surface.ts` is the only place a form control's
+colour, radius or state lives; `Input`, `Textarea`, `SelectTrigger`, `Checkbox`
+and `RadioGroupItem` compose it and add sizing only. The module header carries
+the full reasoning and the measurements — read it before changing any of them.
+Four things are worth knowing before you go looking:
+
+- **The reference is CHECKOUT, and checkout is Stripe.** Checkout's fields are
+  Stripe Elements styled by `lib/stripe-appearance.ts`, which reads
+  `--color-primary` and `--radius` off `:root`. The shared surface is not a new
+  palette — it is the same tokens expressed as Tailwind utilities, so the two
+  agree by construction. Change one side's geometry or type ramp and you change
+  the other (`SITE_TYPE.inputFontSize*` mirrors `text-base md:text-sm`).
+- **No literal colour, ever, in this template.** `apps/starter` is the template
+  every customer store is generated from, so a hex pins every store to one
+  brand; the utilities name the tokens `app/layout.tsx` overrides per store from
+  dashboard branding. `form-control-surface.test.tsx` refuses a hex in any of
+  the five controls.
+- **A hand-rolled `<input>` is the defect, not a shortcut.** Four
+  implementations were live at once — these components, checkout's own steps, the
+  account/auth pages, and Stripe — and only Stripe was branded. The same guard
+  fails at SOURCE level if any of the eight former call sites re-inlines one.
+- **`dark:` on a form control is not dead.** `apps/starter` declares no
+  `@custom-variant dark` (the directive appears nowhere in the repo), so
+  Tailwind v4 compiles those under `@media (prefers-color-scheme: dark)` — live
+  for any visitor whose OS is dark, even though nothing puts a `dark` class on
+  `<html>`. Four of the five properties the old overrides touched would have
+  beaten the branded base on source order; only `border-primary` survives, and
+  only because `app/globals.css` hand-writes a SECOND copy of it in
+  `@layer utilities` after the dark block. Measured byte offsets are in the
+  module header. The guard refuses any `dark:` on these five.
+
+Known gap, deliberately not closed: the HTML controls' invalid edge is
+`red-500`, matching the error TEXT `FormMessage` already renders, while Stripe's
+is the `#E01577` `danger` literal in `stripe-appearance.ts`'s `FALLBACKS`. There
+is no `--color-danger` token to unify them, and one was not invented here.
+`form.tsx` also still carries `dark:text-red-900` on the error text, so under a
+dark OS the sentence moves while the field edge does not — same missing token.
+
+Out of scope on purpose, and still neutral: the quantity stepper
+(`components/headkit-ui/quantity-stepper.tsx` and the copy inside
+`product-detail.tsx`) is a composite segmented control whose grey frame is the
+widget, not a field edge; the three facet checkboxes
+(`collection/{attribute,brand,category}-filter.tsx`) are `sr-only` by design;
+the carousel scrollbars are `type="range"`. `command.tsx`, `popover.tsx`,
+`toast.tsx`, `scroll-area.tsx` and `form.tsx` still carry live `dark:`
+variants — same mechanism, wider blast radius, not this surface.
+
 ### A guard must state the domain it actually exercises — and where it stops
 
 A test name, an assertion message and a "this proves X" comment are documentation, and the
