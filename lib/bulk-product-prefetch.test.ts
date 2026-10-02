@@ -31,15 +31,19 @@ function fakeSdk(input: {
   statusError?: Error;
 }): BulkPrefetchSdk & { calls: string[] } {
   const total = input.total ?? input.status.total ?? 0;
-  const status: BulkProductStatus = {
-    enabled: false,
+  // Field-by-field, then a double assertion. Workspace `BulkProductStatus`
+  // requires `prerender`; the published SDK this file is also type-checked
+  // against does not have that field yet. A spread of `Partial` fails the
+  // first, and naming `prerender` fails the second. The prefetch only reads
+  // the gate fields below.
+  const status = {
+    enabled: input.status.enabled ?? false,
     total,
-    threshold: 500,
-    pageSize: 20,
-    maxPerPage: 25,
-    reason: "BELOW_THRESHOLD",
-    ...input.status,
-  };
+    threshold: input.status.threshold ?? 500,
+    pageSize: input.status.pageSize ?? 20,
+    maxPerPage: input.status.maxPerPage ?? 25,
+    reason: input.status.reason ?? "BELOW_THRESHOLD",
+  } as unknown as BulkProductStatus;
   const calls: string[] = [];
   return {
     calls,

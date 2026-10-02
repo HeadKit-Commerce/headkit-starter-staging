@@ -29,16 +29,13 @@ import { isValidElement, Suspense } from "react";
  *
  * WHAT IT DOES NOT COVER, and none of these is implied by a green run:
  *
- *   - Unconditional equality for the `/shop` COLOURWAY family, because whether
- *     those URLs are built is now a per-store BUDGET rather than an open gap
- *     (`HEADKIT_PRERENDER_PRODUCT_COLOURWAYS`, `lib/prerender-budget.ts`), and
- *     its platform default is ZERO. Both ends are asserted instead: at the
- *     default, every `/shop` param the build emits is a URL the sitemap
- *     advertises (no build effort spent on a URL nothing links to) and the
- *     colourway URLs are the advertised-only remainder; with the budget open,
- *     the two sets are EQUAL. What stays shared in both is the RULE —
- *     `productColourSlugs` in `lib/canonical-path.ts` — which is the thing a
- *     second copy would break.
+ *   - Unconditional equality for the `/shop` family when the prerender plan
+ *     (`lib/product-prerender-plan.ts`) says `on-demand`. The default fixture
+ *     is under the ceiling, so the build and the sitemap name the same `/shop`
+ *     URLs, colourways included, via `productColourSlugs`. When the plan is
+ *     `on-demand` the sitemap still advertises them and the build emits only
+ *     the placeholder (or the paths commerce named). That divergence is the
+ *     plan, not drift.
  *   - Whether either set is CORRECT. Both emitters reading the same wrong rule
  *     is a green run. `app/sitemap.test.ts` owns the sitemap's own rules and
  *     `app/canonical-url-shape.test.tsx` owns the canonical shape.
@@ -71,6 +68,7 @@ const productsList =
   vi.fn<(filter: unknown, page: number, perPage: number) => Promise<unknown>>();
 const brandsList =
   vi.fn<(args: { page?: number; perPage?: number }) => Promise<unknown>>();
+const bulkStatus = vi.fn<() => Promise<unknown>>();
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/sitemap.config", () => ({ storeSitemapRoutes: [] }));
@@ -116,6 +114,7 @@ vi.mock("@/lib/sdk", () => ({
         page: number,
         perPage: number,
       ): Promise<unknown> => productsList(filter, page, perPage),
+      bulkStatus: (): Promise<unknown> => bulkStatus(),
     },
     brands: {
       list: (args: { page?: number; perPage?: number }): Promise<unknown> =>
@@ -207,6 +206,9 @@ const BRAND_PAGES: string[][] = [
 beforeEach(() => {
   productsList.mockReset();
   brandsList.mockReset();
+  bulkStatus.mockReset();
+  // Under the platform ceiling, so the catalogue walk still runs.
+  bulkStatus.mockResolvedValue({ total: 4, reason: "BELOW_THRESHOLD" });
 
   productsList.mockImplementation((_filter, page) =>
     Promise.resolve({
@@ -230,14 +232,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
 });
-
-/** Every base param the fixture can produce, in the shape the route emits. */
-const BASE_PATHS = [
-  "/shop/water-bottles/plain-bidon",
-  "/shop/apparel/trail-jacket",
-  "/shop/components/bars/deep-bar-tape",
-  "/shop/apparel/jerseys/club-jersey",
-] as const;
 
 /** Sitemap entries beneath a prefix, excluding the family's own index URL. */
 async function advertised(prefix: string): Promise<Set<string>> {
@@ -324,14 +318,10 @@ describe("product and brand URL emitters agree", () => {
       "a param the sitemap does not advertise is build time spent on a URL nothing links to",
     ).toEqual([]);
 
-    // The reverse containment is the BUDGET's doing, not a gap: at the platform
-    // default of zero the sitemap advertises one URL per colourway and this
-    // route emits only base params. The case below asserts the equality that
-    // holds once a store opens the budget.
-    const advertisedOnly = [...advertisedShop].filter(
-      (path) => !built.has(path),
-    );
-    expect(advertisedOnly).toContain("/shop/apparel/trail-jacket/black");
+    // Colourways are in the default build, so every /shop URL the sitemap
+    // advertises is a param this route prerenders.
+    expect(built).toEqual(advertisedShop);
+    expect(built).toContain("/shop/apparel/trail-jacket/black");
   });
 
   it("prerenders exactly the /brand URLs the sitemap advertises, past page 1", async () => {
@@ -393,30 +383,7 @@ describe("product and brand URL emitters agree", () => {
   });
 });
 
-describe("with the colourway budget opened", () => {
-  // `HEADKIT_PRERENDER_PRODUCT_COLOURWAYS` is what a store raises once it has
-  // priced the class against its own build; `lib/prerender-budget.test.ts` owns
-  // the parsing of the key, this owns what the emitters then do.
-  beforeEach(() => {
-    vi.stubEnv("HEADKIT_PRERENDER_PRODUCT_COLOURWAYS", "unlimited");
-  });
-
-  it("prerenders exactly the /shop URLs the sitemap advertises", async () => {
-    const [advertisedShop, params] = await Promise.all([
-      advertised("/shop"),
-      shopParams(),
-    ]);
-    const built = builtPaths(params, "/shop");
-
-    // Stated positively as well as by equality, so a fixture that silently
-    // stopped producing colourways could not make this vacuous.
-    expect(advertisedShop).toContain("/shop/apparel/trail-jacket/black");
-    expect(built).toContain("/shop/apparel/trail-jacket/black");
-    expect(built).toContain("/shop/apparel/jerseys/club-jersey/navy");
-
-    expect(built).toEqual(advertisedShop);
-  });
-
+describe("colourway params follow the same rule as the sitemap", () => {
   it("emits one param per colourway and none for size or a repeated option", async () => {
     const built = builtPaths(await shopParams(), "/shop");
 
@@ -439,16 +406,38 @@ describe("with the colourway budget opened", () => {
     // route — neither its base nor its colourway.
     expect([...built].some((p) => p.includes("no-shop-base"))).toBe(false);
   });
+});
 
-  it("spends a finite budget on colourways only, never on a base param", async () => {
-    vi.stubEnv("HEADKIT_PRERENDER_PRODUCT_COLOURWAYS", "1");
+describe("when the prerender plan leaves product HTML on demand", () => {
+  it("does not walk the catalogue", async () => {
+    bulkStatus.mockResolvedValue({
+      total: 20_000,
+      reason: "ENABLED",
+    });
 
-    const built = builtPaths(await shopParams(), "/shop");
+    expect(await shopParams()).toEqual([{ slug: ["__hk_static_placeholder"] }]);
+    expect(productsList).not.toHaveBeenCalled();
+  });
 
-    // Every base param survives the cap; exactly one colourway is built, and it
-    // is the first one the walk reaches.
-    for (const base of BASE_PATHS) expect(built).toContain(base);
-    expect(built.size).toBe(BASE_PATHS.length + 1);
-    expect(built).toContain("/shop/apparel/trail-jacket/black");
+  it("obeys an explicit on-demand plan and keeps only this route's hot paths", async () => {
+    bulkStatus.mockResolvedValue({
+      total: 4,
+      prerender: {
+        mode: "ON_DEMAND",
+        paths: ["/shop/apparel/trail-jacket", "/products/ignored"],
+      },
+    });
+
+    expect(await shopParams()).toEqual([
+      { slug: ["apparel", "trail-jacket"] },
+    ]);
+    expect(productsList).not.toHaveBeenCalled();
+  });
+
+  it("builds nothing when the status call throws", async () => {
+    bulkStatus.mockRejectedValue(new Error("origin down"));
+
+    expect(await shopParams()).toEqual([{ slug: ["__hk_static_placeholder"] }]);
+    expect(productsList).not.toHaveBeenCalled();
   });
 });

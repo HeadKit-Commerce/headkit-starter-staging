@@ -128,15 +128,11 @@ const serverSchema = clientSchema.extend({
     .enum(["conservative", "aggressive"])
     .optional()
     .catch(undefined),
-  // Prerender budgets (`lib/prerender-budget.ts`). Both take a decimal count,
-  // `unlimited`, or nothing at all for the platform default — see that module
-  // for each family's default, what it costs to move it, and why it reads
-  // `process.env` directly rather than this schema.
+  // Collection facet prerender budget (`lib/prerender-budget.ts`). A decimal
+  // count, `unlimited`, or nothing for the platform default. Product HTML
+  // follows the HeadKit API plan (`lib/product-prerender-plan.ts`), not an env
+  // cap. The accessor reads `process.env` directly rather than this schema.
   HEADKIT_PRERENDER_COLLECTION_FACETS: z
-    .union([z.literal("unlimited"), z.string().regex(/^\d+$/)])
-    .optional()
-    .catch(undefined),
-  HEADKIT_PRERENDER_PRODUCT_COLOURWAYS: z
     .union([z.literal("unlimited"), z.string().regex(/^\d+$/)])
     .optional()
     .catch(undefined),

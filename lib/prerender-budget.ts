@@ -66,30 +66,6 @@ export const UNLIMITED = Number.POSITIVE_INFINITY;
 export const COLLECTION_FACET_PARAM_BUDGET_DEFAULT = UNLIMITED;
 
 /**
- * `/shop/[...slug]` colourway params — one extra param per colour option on a
- * variable product, beside that product's base param.
- *
- * DEFAULT: `0` — today's behaviour on every storefront. The base product param
- * is NOT governed by this and is unchanged.
- *
- * Why a store might raise it: `app/sitemap.ts` advertises these URLs already,
- * so at `0` they are indexed but never built and each one charges its first
- * visitor a cold render. Measured on one storefront, 1,375 advertised colourway
- * URLs answered `x-vercel-cache: MISS` at 3.6–5.9 s where a prerendered sibling
- * answered `PRERENDER` at 1.15–1.37 s.
- *
- * The class is cheap at build but NOT free, which is why it is a budget rather
- * than a boolean: a colourway page resolves the same product slug its base page
- * resolves, and during a build with the bulk prefetch enabled that product is
- * served from the per-build store on local disk (`lib/product-cache.ts`) rather
- * than from the origin. So the cost is render time and zero origin requests —
- * estimated at +2.4 minutes for 1,375 params on the store above, never measured
- * against a ceiling. A store WITHOUT the bulk prefetch pays an origin read per
- * param instead; measure before raising it there.
- */
-export const PRODUCT_COLOURWAY_PARAM_BUDGET_DEFAULT = 0;
-
-/**
  * Parse one budget value against {@link COLLECTION_FACET_PARAM_BUDGET_DEFAULT}
  * -style defaults. Exported for its own test; call the two accessors below.
  *
@@ -115,10 +91,3 @@ export function collectionFacetParamBudget(): number {
   );
 }
 
-/** How many `/shop` colourway params this store's build may emit. */
-export function productColourwayParamBudget(): number {
-  return resolvePrerenderBudget(
-    process.env.HEADKIT_PRERENDER_PRODUCT_COLOURWAYS,
-    PRODUCT_COLOURWAY_PARAM_BUDGET_DEFAULT,
-  );
-}

@@ -9,10 +9,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   COLLECTION_FACET_PARAM_BUDGET_DEFAULT,
-  PRODUCT_COLOURWAY_PARAM_BUDGET_DEFAULT,
   UNLIMITED,
   collectionFacetParamBudget,
-  productColourwayParamBudget,
   resolvePrerenderBudget,
 } from "@/lib/prerender-budget";
 
@@ -32,10 +30,6 @@ describe("the platform defaults", () => {
     expect(collectionFacetParamBudget()).toBe(UNLIMITED);
   });
 
-  it("prerenders no colourway params, as today", () => {
-    expect(PRODUCT_COLOURWAY_PARAM_BUDGET_DEFAULT).toBe(0);
-    expect(productColourwayParamBudget()).toBe(0);
-  });
 });
 
 describe("resolvePrerenderBudget", () => {
@@ -67,10 +61,6 @@ describe("the env keys", () => {
     expect(collectionFacetParamBudget()).toBe(0);
   });
 
-  it("opens the colourway family with `unlimited`", () => {
-    withEnv("HEADKIT_PRERENDER_PRODUCT_COLOURWAYS", "unlimited");
-    expect(productColourwayParamBudget()).toBe(UNLIMITED);
-  });
 
   it("accepts a finite cap on either family", () => {
     withEnv("HEADKIT_PRERENDER_COLLECTION_FACETS", "250");

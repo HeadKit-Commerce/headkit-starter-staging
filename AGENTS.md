@@ -1042,15 +1042,14 @@ nothing is unaffected; moving one is a measured, per-store decision.
   `generateMetadata` pins a NOINDEX, either of them until the next deploy.
   `lib/cache-profile-call-sites.test.ts` holds that list and fails if one is raised;
   `getCachedProduct` is the one deliberate exception, and says why at the call site.
-- **`HEADKIT_PRERENDER_COLLECTION_FACETS` / `HEADKIT_PRERENDER_PRODUCT_COLOURWAYS`**
-  (`lib/prerender-budget.ts`). Build time is a per-store resource against a 45-minute
-  Vercel ceiling, and these two families' size comes from a store's catalogue rather than
-  from the template: facets default to unlimited, colourway PDPs to none. Neither route sets
-  `dynamicParams = false`, so an un-emitted URL still routes and still answers 200 — it pays
-  a cold render once. **Prerendering is not indexability**: `app/sitemap.ts` advertises what
-  EXISTS and keeps its own rules, so the two emitters diverging is a budget decision, not
-  drift. Where they must agree on a RULE they share one function —
-  `productColourSlugs` in `lib/canonical-path.ts`, guarded by
+- **`HEADKIT_PRERENDER_COLLECTION_FACETS`** (`lib/prerender-budget.ts`) is the collection
+  facet budget only. Product HTML — flat PDPs, nested `/shop` PDPs, and colourways —
+  follows the HeadKit API plan (`lib/product-prerender-plan.ts`). Commerce sends
+  `prerender` on `products.bulkStatus()`; until that field is on the response the
+  storefront uses the status `total` against the platform SKU ceiling in that module.
+  There is no `HEADKIT_PRERENDER_PRODUCT_LIMIT` and no `HEADKIT_PRERENDER_PRODUCT_COLOURWAYS`.
+  An unbuilt URL still routes and still answers 200. The sitemap still advertises the
+  catalogue. Colourway URLs share `productColourSlugs` with the sitemap, guarded by
   `app/product-url-emitter-parity.test.ts`.
 - **`HEADKIT_STATIC_PAGE_GENERATION_TIMEOUT`** (`lib/prerender-timeout.ts`). Unset by
   default, and then neither key is written. Raise it only for the specific failure it
