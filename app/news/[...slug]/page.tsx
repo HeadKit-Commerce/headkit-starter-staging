@@ -245,7 +245,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * `apps/starter/AGENTS.md` owns the rule; `scripts/static-shell-split.ts`
  * measures a built file.
  */
-export const instant = false;
+/**
+ * Post-card destination. `loading.tsx` is the navigation shell, so a click
+ * shows this page or its skeleton. That boundary is the JS-off cost recorded
+ * under "Card routes navigate instantly" in `apps/starter/AGENTS.md`. A
+ * missing post streams as 200 with `noindex`.
+ */
+export const instant = true;
 
 export default async function Page(props: Props): Promise<ReactNode> {
   // Pre-commit gate — an unknown post slug must answer 404. The post it reads

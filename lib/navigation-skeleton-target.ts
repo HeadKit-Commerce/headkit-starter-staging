@@ -5,8 +5,7 @@
  * Asked once per link by `InstantLink`, from the handler that starts the
  * navigation. The answer selects a body in
  * `components/headkit-ui/skeletons/navigation-skeleton.tsx`; `null` means the
- * link keeps the behaviour it has without the skeleton — the local pulse overlay
- * and nothing else.
+ * link navigates with no page skeleton. The clicked link itself does not pulse.
  *
  * THIS IS THE ONE PLACE A ROUTE IS ADDED. {@link ROUTE_SKELETONS} is a table of
  * `(predicate → kind)` read in order, and {@link NO_SKELETON_PREFIXES} is the

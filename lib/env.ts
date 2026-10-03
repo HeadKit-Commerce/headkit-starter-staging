@@ -128,10 +128,10 @@ const serverSchema = clientSchema.extend({
     .enum(["conservative", "aggressive"])
     .optional()
     .catch(undefined),
-  // Collection facet prerender budget (`lib/prerender-budget.ts`). A decimal
-  // count, `unlimited`, or nothing for the platform default. Product HTML
-  // follows the HeadKit API plan (`lib/product-prerender-plan.ts`), not an env
-  // cap. The accessor reads `process.env` directly rather than this schema.
+  // Collection facet prerendering is decided from catalogue size
+  // (`lib/collection-facet-plan.ts`), not from this variable. A value left
+  // in a store's environment is ignored. Kept so a boot parse does not
+  // reject a store that still has the old key set.
   HEADKIT_PRERENDER_COLLECTION_FACETS: z
     .union([z.literal("unlimited"), z.string().regex(/^\d+$/)])
     .optional()

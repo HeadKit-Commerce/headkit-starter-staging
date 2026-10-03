@@ -19,7 +19,11 @@ import {
 } from "@/components/headkit-ui/collection/utils";
 import { toAttributeKey } from "@/lib/color-attr-slug";
 import { brandSlugsPerCategory } from "@/lib/brand-facets";
-import { collectionFacetParamBudget } from "@/lib/prerender-budget";
+import {
+  readFacetCataloguePlan,
+  shouldDiscoverCollectionFacets,
+  shouldEmitCollectionFacets,
+} from "@/lib/collection-facet-plan";
 import {
   makeSeoMetadata,
   seoFallbackDescription,
@@ -101,24 +105,19 @@ export async function generateStaticParams(): Promise<{ slug: string[] }[]> {
       paths.push({ slug: node.segments });
     }
 
-    // Facet params, under the store's own build budget
-    // (`HEADKIT_PRERENDER_COLLECTION_FACETS`, `lib/prerender-budget.ts`).
-    // Unlimited by default, which is every storefront's behaviour today.
-    //
-    // `0` is the value that matters most, and it does more than drop the
-    // slots: it skips the per-category `getFilters` fan-out and the brands
-    // read below, which is where the build time actually goes. Since the PLP
-    // static-shell change each prerendered collection param also renders page
-    // 1 of its grid, so a facet param costs an origin-paced catalogue read on
-    // top of its build slot — on one measured 154-category store, 2,839 facet
-    // params walked the build into Vercel's 45-minute ceiling.
-    //
-    // A finite non-zero budget still makes those reads (the facet rule cannot
-    // be applied without them) and keeps colour facets ahead of brand ones,
-    // in the order they are generated below.
-    const facetBudget = collectionFacetParamBudget();
-    if (facetBudget > 0) {
-      paths.push(...(await facetParams(nodes)).slice(0, facetBudget));
+    // Facet params: the whole indexable set, or none. The decision is the
+    // pages left under the 45-minute ceiling after product HTML and the base
+    // categories (`lib/collection-facet-plan.ts`). It is made before
+    // `getFilters`. A set that does not fit is not sliced to a walk-order
+    // prefix. Unbuilt facet URLs still route; `loading.tsx` is their first paint.
+    const facetPlan = await readFacetCataloguePlan(
+      "products" in sdk ? sdk.products : undefined,
+    );
+    if (shouldDiscoverCollectionFacets(facetPlan, nodes.length)) {
+      const facets = await facetParams(nodes);
+      if (shouldEmitCollectionFacets(facetPlan, nodes.length, facets.length)) {
+        paths.push(...facets);
+      }
     }
 
     if (paths.length > 0) return paths;
@@ -410,8 +409,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * this reason, so the existence check is resolved here as well. The conditions
  * that let it set the status — and why `instant` is NOT one of them — live once
  * in "Setting a status code needs THREE conditions" in `apps/starter/AGENTS.md`;
- * `instant = false` below is that section's declaration rule. Both
- * `app/not-found-status.test.ts` and `e2e/not-found-status.spec.ts` guard it.
+ * Card clicks do not use that gate for the status line. `loading.tsx` on
+ * this segment is the navigation shell, so a missing collection streams as
+ * 200 with `noindex`, and a flat-URL 308 on this route streams as well.
+ * `instant = true` below is the declaration that the shell is the UI.
+ * Recorded in `apps/starter/AGENTS.md` under "Card routes navigate instantly".
  *
  * ### The 308 carries the path, not the query
  *
@@ -439,7 +441,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * shopper gets the same navigation from `CollectionProvider`'s mount effect,
  * which reads those query params and pushes the `/f/…` path.
  */
-export const instant = false;
+export const instant = true;
 
 export default async function Page({ params }: Props) {
   const { slug } = await params;

@@ -155,17 +155,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 /**
- * Blocking route so `notFound()` can still set a real 404: under Cache
- * Components the response commits as 200 the moment a `<Suspense>` fallback
- * renders, and a `notFound()` raised inside the boundary only earns a `noindex`
- * meta tag. The existence check therefore runs in the default export, above the
- * boundary, forfeiting this route's App Shell. What that costs, what else can
- * commit the 200 first, and why `instant` is NOT one of those things live once
- * in "Setting a status code needs THREE conditions" in `apps/starter/AGENTS.md`.
- * `instant = false` is that section's declaration rule: this route blocks on a
- * cached read before it responds.
+ * Project-card destination. `loading.tsx` is the navigation shell. A missing
+ * project streams as 200 with `noindex`. See "Card routes navigate instantly"
+ * in `apps/starter/AGENTS.md`.
  */
-export const instant = false;
+export const instant = true;
 
 export default async function Page(props: Props): Promise<ReactNode> {
   // Pre-commit gate — an unknown project slug must answer 404. The `"use cache"`

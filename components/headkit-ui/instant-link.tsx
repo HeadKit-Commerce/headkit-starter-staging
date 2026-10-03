@@ -1,16 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useLinkStatus } from "next/link";
 import { useRef, type ComponentProps, type ReactNode } from "react";
 import { convertToRelativePath, isAppNavigationHref } from "@/lib/convert-uri";
+import type { NavigationSkeletonKind } from "@/lib/navigation-skeleton-target";
 import {
-  navigationSkeletonForHref,
-  type NavigationSkeletonKind,
-} from "@/lib/navigation-skeleton-target";
-import { requestNavigationSkeleton } from "@/lib/navigation-skeleton-store";
-import {
-  navigationSkeletonEnabled,
   navMouseDownEnabled,
   navPrefetchBudgetEnabled,
 } from "@/lib/nav-interaction-flags";
@@ -18,65 +12,17 @@ import { cn } from "@/lib/utils";
 
 type PendingVariant = "card" | "text";
 
-/**
- * Pending cue for Instant Navigation — must render as a child of `<Link>`.
- * Card: translucent pulse over media/cards. Text: subtle pulse behind label.
- *
- * It draws the PULSE only. The full-page skeleton (when a store has opted into
- * it) is requested by the link's own event handler and drawn by an always-mounted
- * host, and both halves of that had to move — see
- * `lib/navigation-skeleton-store.ts` for the measured reason. In short: inside a
- * container that dismisses on click, `pending` is never observed here at all.
- * Traced live in a mega-menu with a log on every run of this hook: across a 4.4 s
- * navigation it ran with `pending === false` and then unmounted — not one
- * `pending === true` render, so the pulse never painted either. Radix closes the
- * menu in the same click, and the unmount supersedes the render the pending state
- * would have committed.
- *
- * That is why the skeleton request is made from the handler, not from here: a
- * function call in an event handler always runs, and a render can be thrown away.
- *
- * The pulse still belongs to `pending`, and it is RIGHT that it is missing in a
- * menu that closed: it is a local cue meaning "this card took your click", and the
- * card is gone. The skeleton is the cue that has to survive, because the wait it
- * describes does.
- */
-function LinkPendingOverlay({
-  variant,
-}: {
-  variant: PendingVariant;
-}): React.JSX.Element | null {
-  const { pending } = useLinkStatus();
-  if (!pending) return null;
-  // pointer-events-none: pending overlays must not steal hit-testing or Safari
-  // will flip the cursor back to the default arrow over the link.
-  if (variant === "text") {
-    return (
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-0 z-[1] animate-pulse rounded-sm bg-primary/10"
-      />
-    );
-  }
-  return (
-    <span
-      aria-hidden
-      className="pointer-events-none absolute inset-0 z-[1] animate-pulse bg-brand-bg/40"
-    />
-  );
-}
-
 type InstantLinkProps = Omit<ComponentProps<typeof Link>, "prefetch"> & {
+  /**
+   * Accepted so existing call sites keep typechecking. The clicked link does
+   * not paint a pending state. The destination route's `loading.tsx` is the
+   * skeleton, and only when that page is not ready.
+   */
   pendingVariant?: PendingVariant;
   /**
-   * Force the full-page skeleton this link's destination gets, overriding what
-   * `navigationSkeletonForHref` derives from the href.
-   *
-   * The escape hatch for a route whose shape a URL cannot carry. Today that is
-   * exactly one case: a post article lives under the store's WordPress Posts-page
-   * slug, which is server data, so the two post cards pass `skeleton="post"` from
-   * where they already resolve it. `null` suppresses the skeleton for a link that
-   * would otherwise get one.
+   * Accepted so existing call sites keep typechecking. The destination
+   * route's `loading.tsx` chooses the skeleton. This prop is not a second
+   * overlay on the page the shopper is leaving.
    */
   skeleton?: NavigationSkeletonKind | null | undefined;
   /**
@@ -129,18 +75,6 @@ function resolvePrefetch(
 ): ComponentProps<typeof Link>["prefetch"] | undefined {
   if (explicit !== undefined) return explicit;
   return navPrefetchBudgetEnabled() ? undefined : true;
-}
-
-/**
- * The path part of an in-app href, for the skeleton host's "already there" exit.
- *
- * Query and hash are dropped because the host compares against
- * `location.pathname`, which carries neither.
- */
-function pathnameOfHref(href: string): string | null {
-  if (!href.startsWith("/")) return null;
-  const end = href.search(/[?#]/);
-  return end === -1 ? href : href.slice(0, end);
 }
 
 function hrefToString(href: ComponentProps<typeof Link>["href"]): string {
@@ -241,11 +175,11 @@ export function mouseDownNavigationRefusal(event: {
 /**
  * Next.js 16.3 Instant Navigation link.
  *
- * Three behaviours here are per-store switches, each defaulting to what the
- * platform does today — the prefetch budget, mouse-down navigation and the
- * full-page navigation skeleton. `lib/nav-interaction-flags.ts` owns the value
- * table and the reason each one is opt-in; `resolvePrefetch` above owns the
- * prefetch half.
+ * Prefetch-on-intent and mouse-down navigation stay. The clicked link does
+ * not paint its own skeleton: the destination route's `loading.tsx` is shown
+ * only when that page is not already ready. `lib/nav-interaction-flags.ts`
+ * owns the prefetch and mouse-down switches; `resolvePrefetch` above owns
+ * the prefetch half.
  *
  * Absolute http(s) storefront URLs from WooCommerce/Shopify CMS fields are
  * normalized to relative paths (same as nav menus) so carousel CTAs and block
@@ -259,8 +193,7 @@ export function mouseDownNavigationRefusal(event: {
  * WITH `NEXT_PUBLIC_NAV_MOUSEDOWN` ON, an in-app navigation is started by
  * dispatching a click on the anchor (`anchor.click()`) rather than by calling
  * `useRouter().push()`, for two reasons. It reuses `next/link`'s own click
- * handler, so `replace`, `scroll`, `onNavigate`, the `useLinkStatus` pending state
- * and any injected `onClick` (Radix's dismiss, the mobile sheet's close) all
+ * handler, so `replace`, `scroll`, `onNavigate`, and any injected `onClick` (Radix's dismiss, the mobile sheet's close) all
  * behave exactly as they do on a real click. And it adds no router-context
  * dependency: this component is server-rendered bare by a dozen test files, and
  * `useRouter()` throws without an app-router context.
@@ -283,8 +216,8 @@ export function mouseDownNavigationRefusal(event: {
  */
 export function InstantLink({
   prefetch,
-  pendingVariant = "card",
-  skeleton,
+  pendingVariant: _pendingVariant = "card",
+  skeleton: _skeleton,
   className,
   children,
   href,
@@ -294,9 +227,6 @@ export function InstantLink({
   // that follows the same gesture is swallowed instead of navigating a second
   // time. A ref, not state: nothing renders from it.
   const suppressNextClickRef = useRef(false);
-  // Guards one skeleton request per gesture. Never cleared on the way out: the
-  // host ends the request, and this component may be gone by then.
-  const skeletonTokenRef = useRef<number | null>(null);
 
   const normalizedHref = normalizeLinkHref(href);
   const hrefStr = hrefToString(normalizedHref);
@@ -341,36 +271,6 @@ export function InstantLink({
   } = rest;
 
   const resolvedPrefetch = resolvePrefetch(prefetch);
-  const destinationSkeleton =
-    skeleton === undefined ? navigationSkeletonForHref(hrefStr) : skeleton;
-
-  /**
-   * Open the skeleton request for this link, from the gesture that starts the
-   * navigation.
-   *
-   * IN THE HANDLER, NOT IN A RENDER OR AN EFFECT, and that is the whole repair. A
-   * handler call is synchronous and unconditional; a render can be superseded
-   * before it commits, which is exactly what a dismiss-on-click container does —
-   * a mega-menu's own close beat every `pending === true` render this link would
-   * have produced, so nothing downstream of `useLinkStatus()` ever ran.
-   *
-   * Idempotent per navigation: with mouse-down navigation on, `handleMouseDown`
-   * dispatches a click that re-enters `handleClick`, and a keyboard activation
-   * arrives at `handleClick` with no mouse-down at all, so the token guard is what
-   * keeps one gesture to one request.
-   */
-  const openSkeletonRequest = (): void => {
-    // The per-store switch, checked first so an "off" store allocates no token and
-    // writes nothing to the store — the host is not mounted to draw it, and a
-    // request nobody draws would sit there until the 15 s ceiling.
-    if (!navigationSkeletonEnabled()) return;
-    if (destinationSkeleton === null) return;
-    if (skeletonTokenRef.current !== null) return;
-    skeletonTokenRef.current = requestNavigationSkeleton(
-      destinationSkeleton,
-      pathnameOfHref(hrefStr),
-    );
-  };
 
   const handleMouseDown = (
     event: React.MouseEvent<HTMLAnchorElement>,
@@ -393,7 +293,6 @@ export function InstantLink({
     ) {
       return;
     }
-    openSkeletonRequest();
     // Dispatched BEFORE the flag is raised, so this click is the one that
     // navigates and only the shopper's own click is swallowed.
     anchor.click();
@@ -410,11 +309,6 @@ export function InstantLink({
       return;
     }
     suppressNextClickRef.current = false;
-    // A click that did NOT come from this component's own mouse-down: an ordinary
-    // click with the mouse-down switch off, a keyboard activation, or a gesture a
-    // caller's handler is driving. It still navigates, so it still needs the
-    // request.
-    openSkeletonRequest();
     callerOnClick?.(event);
   };
 
@@ -433,7 +327,6 @@ export function InstantLink({
         : { prefetch: resolvedPrefetch })}
       className={cn("relative cursor-pointer", className)}
     >
-      <LinkPendingOverlay variant={pendingVariant} />
       {children}
     </Link>
   );
