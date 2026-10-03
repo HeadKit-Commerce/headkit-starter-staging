@@ -29,7 +29,6 @@ describe("the platform defaults", () => {
     expect(COLLECTION_FACET_PARAM_BUDGET_DEFAULT).toBe(UNLIMITED);
     expect(collectionFacetParamBudget()).toBe(UNLIMITED);
   });
-
 });
 
 describe("resolvePrerenderBudget", () => {
@@ -60,7 +59,6 @@ describe("the env keys", () => {
     withEnv("HEADKIT_PRERENDER_COLLECTION_FACETS", "0");
     expect(collectionFacetParamBudget()).toBe(0);
   });
-
 
   it("accepts a finite cap on either family", () => {
     withEnv("HEADKIT_PRERENDER_COLLECTION_FACETS", "250");
