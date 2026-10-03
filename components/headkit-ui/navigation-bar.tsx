@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
+import { NavPrefetchLinks } from "@/components/headkit-ui/nav-prefetch-links";
 import { ChevronDownIcon, MenuIcon, XIcon } from "@/components/icon";
 import {
   NavigationMenu,
@@ -321,6 +322,9 @@ export function NavigationBar({
             </Sheet>
           </NavigationMenuItem>
         </NavigationMenuList>
+        <NavPrefetchLinks
+          items={[...primaryMenuItems, ...(secondaryMenuItems ?? [])]}
+        />
       </NavigationMenu>
     </>
   );
