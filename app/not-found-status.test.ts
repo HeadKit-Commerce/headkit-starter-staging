@@ -38,9 +38,12 @@ import { resolve } from "node:path";
  * assertion enforces the DECLARATION these routes make — they block on one
  * cached read before responding — not the status code itself.
  *
- * EIGHT routes are gated, not nine: the flat PDP is a deliberate exclusion, for
- * the reason recorded beside `GATED_ROUTES` below and in
- * `docs/tickets/products-flat-url-soft-404.md`.
+ * EIGHT routes used to be gated. Card destinations are not: shop, products,
+ * collections, brand, news and projects each have a `loading.tsx`, which is
+ * what makes a click paint that page or its skeleton immediately. A missing
+ * URL on those routes streams as 200 with `noindex`. CMS pages, client pages
+ * and wholesale stay gated and keep a real 404. See "Card routes navigate
+ * instantly" in `apps/starter/AGENTS.md`.
  *
  * The root-layout half of (3) is the reason this file exists rather than being
  * copied: a sibling storefront shipped that same route-wide hoist, correctly,
@@ -120,16 +123,18 @@ interface RouteModule {
  */
 const GATED_ROUTES: readonly [string, () => Promise<RouteModule>][] = [
   ["app/[...slug]/page.tsx", () => import("./[...slug]/page")],
-  // `app/products/[...slug]/page.tsx` is DELIBERATELY ABSENT, not overlooked.
-  // The flat PDP is left un-gated so the Shopify Admin draft-preview flow —
-  // another team's surface — keeps working: above the boundary a draft and a
-  // missing product are the SAME null public-catalogue read, and the preview
-  // key that tells them apart is only readable below it. So
-  // `/products/{missing}` still answers 200 with the not-found UI — MEASURED
-  // on a local Next 16.3 production build, two robots metas and all — which is
-  // recorded and accepted in `docs/tickets/products-flat-url-soft-404.md`.
-  // Adding the route back here makes this suite fail against a route that is
-  // behaving as decided.
+  ["app/client/[...slug]/page.tsx", () => import("./client/[...slug]/page")],
+  // Static route, no params — but it resolves a WordPress page that may be
+  // absent, and it answered 200 for a store that has none.
+  ["app/wholesale/page.tsx", () => import("./wholesale/page")],
+];
+
+/**
+ * Card destinations. `loading.tsx` is the shell, so these are instant and
+ * do not promise a real 404. The flat PDP stays in this list: it was already
+ * un-gated for Shopify draft preview, and its skeleton is the same file.
+ */
+const CARD_ROUTES: readonly [string, () => Promise<RouteModule>][] = [
   [
     "app/collections/[...slug]/page.tsx",
     () => import("./collections/[...slug]/page"),
@@ -141,10 +146,10 @@ const GATED_ROUTES: readonly [string, () => Promise<RouteModule>][] = [
     "app/projects/[...slug]/page.tsx",
     () => import("./projects/[...slug]/page"),
   ],
-  ["app/client/[...slug]/page.tsx", () => import("./client/[...slug]/page")],
-  // Static route, no params — but it resolves a WordPress page that may be
-  // absent, and it answered 200 for a store that has none.
-  ["app/wholesale/page.tsx", () => import("./wholesale/page")],
+  [
+    "app/products/[...slug]/page.tsx",
+    () => import("./products/[...slug]/page"),
+  ],
 ];
 
 /**
@@ -279,6 +284,28 @@ describe("missing pages answer a real 404, not a 200 shell", () => {
         `gate can throw, for this route and every route nested under it.`,
     ).toEqual([]);
   });
+
+  it.each(CARD_ROUTES)(
+    "%s navigates instantly via its own loading.tsx",
+    async (rel, load) => {
+      const route = await load();
+      expect(
+        route.instant,
+        `${rel} is a card destination. instant = true declares that a click ` +
+          `paints this page or its loading.tsx immediately.`,
+      ).toBe(true);
+
+      const segments = rel.split("/").slice(0, -1);
+      const shells = segments
+        .map((_, i) => [...segments.slice(0, i + 1), "loading.tsx"].join("/"))
+        .filter((candidate) => existsSync(resolve(__dirname, "..", candidate)));
+      expect(
+        shells.length,
+        `${rel} needs a loading.tsx on its segment so a click can show that ` +
+          `page's skeleton when the content is not ready.`,
+      ).toBeGreaterThan(0);
+    },
+  );
 
   it.each(ROUTES_WITH_RECOVERING_CATCH)(
     "%s rethrows Next control flow out of its catch",

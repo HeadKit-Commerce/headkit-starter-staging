@@ -352,20 +352,35 @@ soft-404s in their own right:
   lets the inner component's `notFound()` fire below the boundary — the same soft 404, reachable
   by URL. Write `if (slug[0] === PLACEHOLDER) notFound();` above the boundary instead.
 
-**EIGHT route families are gated:** `app/[...slug]`, `app/collections/[...slug]`,
-`app/news/[...slug]`, `app/shop/[...slug]`, `app/brand/[...slug]`, `app/projects/[...slug]`,
-`app/client/[...slug]` and the static `app/wholesale/page.tsx`. `app/not-found-status.test.ts`
-holds the same list in executable form.
+**Three route families stay gated:** `app/[...slug]`, `app/client/[...slug]` and the static
+`app/wholesale/page.tsx`. `app/not-found-status.test.ts` holds that list in executable form.
 
-**`app/products/[...slug]` is deliberately NOT one of them.** The flat PDP still answers 200 for
-a missing product, with the not-found UI and Next's own extra bare `noindex` in the body —
-MEASURED on a local Next 16.3 production build. Gating it breaks the Shopify Admin
-draft-preview flow, which another team owns: above the boundary a draft and a missing product
-are the SAME null `getCachedProduct`, and the preview key that separates them lives in
-`searchParams`, readable only below it. The gap is accepted and recorded in
-`docs/tickets/products-flat-url-soft-404.md`; the exclusion is named in
-`app/not-found-status.test.ts` and `e2e/not-found-status.spec.ts` so it cannot be mistaken for
-an oversight and helpfully "fixed".
+### Card routes navigate instantly
+
+`app/shop`, `app/products/[...slug]`, `app/collections/[...slug]`, `app/brand/[...slug]`,
+`app/news/[...slug]` and `app/projects/[...slug]` are where cards go. Each has a `loading.tsx`.
+That file is Next.js's navigation shell: a click updates the URL immediately. If the destination
+was prerendered or already prefetched, that page's content is what renders. If it was not ready,
+that route's skeleton renders until the content streams in. The clicked link does not paint a
+skeleton of its own.
+
+This is a Suspense boundary, and the costs are the ones this section already measured:
+
+- A missing URL on these routes streams as **200** with `noindex`. It does not answer 404.
+- `permanentRedirect` on these routes cannot set **308**. Flat product and flat collection URLs
+  stream the redirect. Card clicks already use the canonical path, so a shopper does not hit it.
+- A prerendered document puts completed content in a hidden segment and reveals it with the
+  inline `$RC` script. With JavaScript off, the skeleton is what remains in the first paint.
+  Googlebot runs that script.
+
+Those costs are accepted. Deleting `loading.tsx` to restore a real 404 brings back the blocked
+click these routes exist to avoid. CMS pages, client pages and wholesale stay gated.
+
+**`app/products/[...slug]` was already un-gated** for the Shopify Admin draft-preview flow, which
+another team owns: above a boundary a draft and a missing product are the SAME null
+`getCachedProduct`, and the preview key that separates them lives in `searchParams`. Recorded in
+`docs/tickets/products-flat-url-soft-404.md`. Its `loading.tsx` is the product skeleton; it does
+not change that preview gap.
 
 `app/not-found-status.test.ts` covers condition 3 by LOADING each route module and calling
 `generateStaticParams` (with the SDK offline, which is the branch that matters), and conditions
@@ -1042,12 +1057,7 @@ nothing is unaffected; moving one is a measured, per-store decision.
   `generateMetadata` pins a NOINDEX, either of them until the next deploy.
   `lib/cache-profile-call-sites.test.ts` holds that list and fails if one is raised;
   `getCachedProduct` is the one deliberate exception, and says why at the call site.
-- **`HEADKIT_PRERENDER_COLLECTION_FACETS`** (`lib/prerender-budget.ts`) is the collection
-  facet budget only. Product HTML — flat PDPs, nested `/shop` PDPs, and colourways —
-  follows the HeadKit API plan (`lib/product-prerender-plan.ts`). Commerce sends
-  `prerender` on `products.bulkStatus()`; until that field is on the response the
-  storefront uses the status `total` against the platform SKU ceiling in that module.
-  There is no `HEADKIT_PRERENDER_PRODUCT_LIMIT` and no `HEADKIT_PRERENDER_PRODUCT_COLOURWAYS`.
+- **Collection facet HTML** (`lib/collection-facet-plan.ts`) follows catalogue size, the same way product HTML follows the HeadKit API plan. The build emits the whole indexable facet set or none of it. It does not read `HEADKIT_PRERENDER_COLLECTION_FACETS`, and it does not keep a walk-order prefix. A set that does not fit is served on demand: the collection route's `loading.tsx` paints first, then the page is cached. There is no `HEADKIT_PRERENDER_PRODUCT_LIMIT` and no `HEADKIT_PRERENDER_PRODUCT_COLOURWAYS`.
   An unbuilt URL still routes and still answers 200. The sitemap still advertises the
   catalogue. Colourway URLs share `productColourSlugs` with the sitemap, guarded by
   `app/product-url-emitter-parity.test.ts`.

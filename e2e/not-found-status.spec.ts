@@ -40,21 +40,9 @@ import { BASE_URL } from "./helpers";
  * below, because the 200 direction is still worth proving.
  */
 
-/** Slugs no store will ever serve, one per gated route family. */
+/** Slugs no store will ever serve, on routes that still answer a real 404. */
 const MISSING = [
   { family: "wordpress page", path: "/this-page-does-not-exist-xyz" },
-  {
-    family: "collection",
-    path: "/collections/this-collection-does-not-exist-xyz",
-  },
-  { family: "news post", path: "/news/this-post-does-not-exist-xyz" },
-  { family: "shop", path: "/shop/this-shop-entry-does-not-exist-xyz" },
-  {
-    family: "shop (nested)",
-    path: "/shop/this-category-does-not-exist-xyz/this-product-does-not-exist-xyz",
-  },
-  { family: "brand", path: "/brand/this-brand-does-not-exist-xyz" },
-  { family: "project", path: "/projects/this-project-does-not-exist-xyz" },
   { family: "client", path: "/client/this-client-does-not-exist-xyz" },
   // The one gated route with no dynamic segment, so its condition set differs
   // from every entry above: no `generateStaticParams`, no in-page `<Suspense>`.
@@ -66,6 +54,12 @@ const MISSING = [
     absentOnlyWhenUnpublished: true,
   },
 ] as const;
+
+/**
+ * Card destinations stream a missing URL as 200. `loading.tsx` commits the
+ * status line before `notFound()` can throw. Do not add them back to
+ * `MISSING` — that assertion is the blocked click these routes no longer make.
+ */
 
 /** Route prefixes to sample a REAL, live URL for from the sitemap. */
 const LIVE_PREFIXES = ["/products/", "/collections/", "/news/", "/shop/"];

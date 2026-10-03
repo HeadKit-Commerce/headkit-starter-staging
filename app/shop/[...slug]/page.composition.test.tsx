@@ -5,16 +5,15 @@ import { Suspense, type ReactElement } from "react";
 /**
  * Where the nested `/shop/[...slug]` route puts its boundary, per branch.
  *
- * The product branch renders `ProductPageBody` DIRECTLY in the route — no
- * `<Suspense>` above it — so the whole PDP is baked into the prerendered
- * static shell and shows with JavaScript off. Any boundary around it puts the
- * product after the visible shell: postponed when its subtree performs a
- * request-time read (the old `ProductPageContent` awaited `searchParams`),
- * and outlined by React regardless once the completed boundary exceeds
- * `progressiveChunkSize` (12 800 bytes). Measured on the Bike Society
- * rehearsal store, 2026-09-10: 826 visible characters, the product behind
- * `B:2`. The flat route's own file, `app/products/[...slug]/page.tsx`, owns
- * the account; `scripts/static-shell-split.ts` measures a built file.
+ * The product branch renders `ProductPageBody` DIRECTLY in the route. The
+ * navigation shell is `app/shop/loading.tsx`, which Next wraps around this
+ * page. Do not add a second `<Suspense>` in the page: that boundary is what
+ * postponed the product when `ProductPageContent` awaited `searchParams`, and
+ * React outlines a completed boundary over `progressiveChunkSize` (12 800
+ * bytes). Measured on the Bike Society rehearsal store, 2026-09-10: 826
+ * visible characters, the product behind `B:2`. The flat route's own file,
+ * `app/products/[...slug]/page.tsx`, owns the account;
+ * `scripts/static-shell-split.ts` measures a built file.
  *
  * The category branch has NO boundary either, for the same reason:
  * `CollectionRoute` reads no `searchParams`, so its heading and
@@ -152,7 +151,7 @@ describe("shop/[...slug] — the product branch renders OUTSIDE any boundary", (
 
     expect(
       element.type,
-      "the product the gate just verified is composed in the route itself; a boundary above it would put every product byte after the visible shell",
+      "the page returns ProductPageBody directly. app/shop/loading.tsx is the navigation shell; do not add a second Suspense around the body",
     ).toBe(ProductPageBody);
     expect(element.type).not.toBe(Suspense);
     expect(

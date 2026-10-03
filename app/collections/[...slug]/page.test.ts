@@ -114,12 +114,25 @@ vi.mock("@/components/headkit-ui/catalog-grid", () => ({
   CATALOG_PAGE_SIZE: 24,
 }));
 
-// The facet prerender budget (`lib/prerender-budget.ts`) is mocked so these
-// cases can drive both ends of it; the parsing of the env key itself is
-// `lib/prerender-budget.test.ts`'s. Default here = the platform default.
-const facetBudget = vi.hoisted(() => ({ value: Number.POSITIVE_INFINITY }));
-vi.mock("@/lib/prerender-budget", () => ({
-  collectionFacetParamBudget: (): number => facetBudget.value,
+// The facet plan is mocked so these cases can force discovery on or off.
+// The decision itself is `lib/collection-facet-plan.test.ts`. Default here
+// is discover-and-emit, which is the small-catalogue path.
+const facetPlan = vi.hoisted(() => ({ discover: true, emit: true }));
+vi.mock("@/lib/collection-facet-plan", () => ({
+  readFacetCataloguePlan: (): Promise<{
+    mode: "all";
+    paths: [];
+    reason: string;
+    total: null;
+  }> =>
+    Promise.resolve({
+      mode: "all",
+      paths: [],
+      reason: "test",
+      total: null,
+    }),
+  shouldDiscoverCollectionFacets: (): boolean => facetPlan.discover,
+  shouldEmitCollectionFacets: (): boolean => facetPlan.emit,
 }));
 
 import {
@@ -528,20 +541,18 @@ describe("generateStaticParams category×brand emptiness", () => {
   });
 });
 
-describe("generateStaticParams facet budget", () => {
-  // The budget decides how much of a store's build the facet class may spend.
-  // The DEFAULT is unlimited — today's behaviour on every storefront, already
-  // covered by the two suites above — so these cases own the other end of it.
+describe("generateStaticParams facet plan", () => {
   function category(slug: string): Record<string, unknown> {
     return { slug, children: [] };
   }
 
   beforeEach(() => {
-    facetBudget.value = Number.POSITIVE_INFINITY;
+    facetPlan.discover = true;
+    facetPlan.emit = true;
   });
 
-  it("emits bare category params only when the budget is 0", async () => {
-    facetBudget.value = 0;
+  it("emits bare category params only when facets are not discovered", async () => {
+    facetPlan.discover = false;
     getCategories.mockResolvedValue([category("bikes"), category("locks")]);
     // Both dimensions the facet loops explode on are present and stocked, so
     // an unbudgeted run would emit facet params here.
@@ -558,16 +569,12 @@ describe("generateStaticParams facet budget", () => {
     expect(params).toEqual([{ slug: ["bikes"] }, { slug: ["locks"] }]);
     expect(
       params.some((p) => p.slug.includes("f")),
-      "no /f/<slug> facet param may be prerendered at budget 0",
+      "no /f/<slug> facet param may be prerendered when discovery is skipped",
     ).toBe(false);
   });
 
-  it("makes no facet READ at all at budget 0", async () => {
-    // The point of the lever is the origin-paced reads, not the slots: one
-    // `getFilters` per category is what walked a measured store's build into
-    // the 45-minute ceiling. Dropping the params without dropping the reads
-    // would save almost nothing.
-    facetBudget.value = 0;
+  it("makes no facet READ when discovery is skipped", async () => {
+    facetPlan.discover = false;
     getCategories.mockResolvedValue([category("bikes")]);
 
     await generateStaticParams();
@@ -577,7 +584,7 @@ describe("generateStaticParams facet budget", () => {
   });
 
   it("keeps nested categories at their nested path when facets are off", async () => {
-    facetBudget.value = 0;
+    facetPlan.discover = false;
     getCategories.mockResolvedValue([
       { slug: "parent", children: [{ slug: "child", children: [] }] },
     ]);
@@ -587,8 +594,9 @@ describe("generateStaticParams facet budget", () => {
     expect(params).toContainEqual({ slug: ["parent", "child"] });
   });
 
-  it("caps the facet class at a finite budget, never the base categories", async () => {
-    facetBudget.value = 1;
+  it("emits none of a discovered set that does not fit", async () => {
+    facetPlan.discover = true;
+    facetPlan.emit = false;
     getCategories.mockResolvedValue([category("bikes"), category("locks")]);
     getFilters.mockResolvedValue({
       attributes: [
@@ -606,16 +614,16 @@ describe("generateStaticParams facet budget", () => {
 
     const params = await generateStaticParams();
 
-    const base = params.filter((p) => !p.slug.includes("f"));
-    const facets = params.filter((p) => p.slug.includes("f"));
-    expect(base).toEqual([{ slug: ["bikes"] }, { slug: ["locks"] }]);
-    expect(facets).toHaveLength(1);
+    expect(params.filter((p) => !p.slug.includes("f"))).toEqual([
+      { slug: ["bikes"] },
+      { slug: ["locks"] },
+    ]);
+    expect(params.some((p) => p.slug.includes("f"))).toBe(false);
+    expect(getFilters).toHaveBeenCalled();
   });
 
   it("still falls back to the placeholder with facets off and no category", async () => {
-    // Cache Components rejects an empty param list, so the budget must not be
-    // able to produce one.
-    facetBudget.value = 0;
+    facetPlan.discover = false;
     getCategories.mockResolvedValue([]);
 
     expect(await generateStaticParams()).toEqual([
