@@ -235,13 +235,13 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
 
   describe("the layers under the header agree with it", () => {
     /**
-     * Nothing purges commerce's Redis L2 in front of `GetProducts` /
-     * `GetProductFilters`, so its TTL is a staleness floor beneath every
-     * collection grid and facet sidebar. It is pinned to the theme's ceiling
-     * on the Go side (`cache.DefaultTTLSeconds`); this is the same assertion
-     * from the WordPress side, so neither repository half can move alone.
+     * Purge, not TTL, invalidates commerce's Redis L2 in front of
+     * `GetProducts` / `GetProductFilters`. `cache.DefaultTTLSeconds` is the
+     * backstop when that purge fails, so it must strictly outlive the theme's
+     * REST ceiling — the same contract `TestDefaultTTLExpiresBeforeRepairSend`
+     * asserts from the Go side (`DefaultTTLSeconds` > `HK_REST_MAX_AGE_CEILING`).
      */
-    it("commerce's L2 default TTL equals HK_REST_MAX_AGE_CEILING", () => {
+    it("commerce's L2 default TTL outlives HK_REST_MAX_AGE_CEILING", () => {
       const ceiling = /define\('HK_REST_MAX_AGE_CEILING',\s*(\d+)\s*\)/.exec(
         readFileSync(CACHE_TAGS_PHP, "utf8"),
       );
@@ -250,7 +250,7 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
       );
       expect(ceiling?.[1], "HK_REST_MAX_AGE_CEILING not found").toBeDefined();
       expect(ttl?.[1], "cache.DefaultTTLSeconds not found").toBeDefined();
-      expect(Number(ttl![1])).toBe(Number(ceiling![1]));
+      expect(Number(ttl![1])).toBeGreaterThan(Number(ceiling![1]));
     });
   });
 });
