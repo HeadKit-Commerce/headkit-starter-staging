@@ -29,8 +29,8 @@ import {
  *   - `NavigationBar` → `DesktopMenuSection` → top-level `InstantLink`: the
  *     prefetch flag survives the prop thread, for the primary AND secondary lists.
  *   - `ProductCarousel` → `ProductCard` → both of the card's `InstantLink`s:
- *     `prefetchCount` warms exactly the leading N cards and no more, and the
- *     default (no `prefetchCount`) warms none.
+ *     every product card passes `prefetch={true}`, with the budget on or off.
+ *     Next's scheduler orders those links; `prefetchCount` does not cap them.
  *
  * WHERE IT STOPS
  *   - It observes the prop handed to `next/link`, which is mocked here. What Next
@@ -198,8 +198,8 @@ function product(slug: string): Product {
 
 const PRODUCTS = Array.from({ length: 8 }, (_, i) => product(`p${i}`));
 
-describe("ProductCarousel warms only its leading row", () => {
-  it("warms exactly the first `prefetchCount` cards", () => {
+describe("ProductCarousel puts every product in Next's prefetch queue", () => {
+  it("passes prefetch={true} for every card with the budget on", () => {
     vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedLinks.mockClear();
 
@@ -216,31 +216,21 @@ describe("ProductCarousel warms only its leading row", () => {
         .map(([href]) => href),
     );
 
+    expect(warmed.size).toBe(PRODUCTS.length);
     expect(
-      warmed.size,
-      `only the first ${CAROUSEL_FIRST_ROW} cards may be warmed; every extra warm card is ~250 KB of speculative transfer`,
-    ).toBe(CAROUSEL_FIRST_ROW);
-    // The card renders two links per product (image + title), so assert on the
-    // distinct hrefs rather than the call count.
-    for (let i = 0; i < CAROUSEL_FIRST_ROW; i++) {
-      expect([...warmed].some((href) => href.includes(`p${i}`))).toBe(true);
-    }
-    expect([...warmed].some((href) => href.includes("p7"))).toBe(false);
+      observedLinks.mock.calls.every(([, prefetch]) => prefetch === true),
+    ).toBe(true);
   });
 
-  it("warms nothing without prefetchCount — the default every other carousel gets", () => {
+  it("passes prefetch={true} when prefetchCount is omitted", () => {
     vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedLinks.mockClear();
 
     renderToStaticMarkup(<ProductCarousel products={PRODUCTS} />);
 
-    expect(
-      observedLinks.mock.calls.filter(([, prefetch]) => prefetch === true),
-    ).toHaveLength(0);
-    // Not vacuous: the carousel did render links, they are just all unset.
     expect(observedLinks.mock.calls.length).toBeGreaterThan(0);
     expect(
-      observedLinks.mock.calls.every(([, prefetch]) => prefetch === undefined),
+      observedLinks.mock.calls.every(([, prefetch]) => prefetch === true),
     ).toBe(true);
   });
 

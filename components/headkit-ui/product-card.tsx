@@ -54,13 +54,12 @@ interface Props {
   /** Eager-load the card image (first-row cards where it may be the LCP). */
   priority?: boolean;
   /**
-   * Forwarded to both of the card's `InstantLink`s. Leave it unset unless this
-   * card is one of the few a shopper is most likely to click next: under the
-   * prefetch budget (`NEXT_PUBLIC_NAV_PREFETCH_BUDGET`, off by default) only the
-   * first visible row of the page's first product carousel passes `true`, through
-   * `ProductCarousel`'s `prefetchCount`. With the budget off, an unset value still
-   * resolves to `true` inside `InstantLink`, which is the platform default — see
-   * `resolvePrefetch` there.
+   * Forwarded to both of the card's `InstantLink`s. Omitted means `true`: a
+   * product URL is keyed on `params`, so it joins Next's prefetch queue.
+   * The scheduler prefetches visible links, moves the hovered one to the
+   * front, and does not drop that priority when the pointer leaves.
+   * https://nextjs.org/docs/app/guides/prefetching#prefetch-scheduling
+   * Pass `false` only to opt a card out.
    */
   prefetch?: boolean | undefined;
   /**
@@ -239,15 +238,13 @@ export const ProductCard = ({
         />
       </div>
       {/*
-        `prefetch` is threaded rather than assumed. Under the prefetch budget only
-        a caller that opts this card in gets a full prefetch; with the budget off
-        `InstantLink` still defaults to `true`, which is today's behaviour. Full
-        prefetching every card is what produced the 33 s / 63-link storm that cost
-        4.0-5.8 s on a click made during it — see `InstantLink`'s docblock.
+        `prefetch={true}` puts this product URL in Next's queue. Visible cards
+        prefetch in the background; the card under the pointer is the priority
+        task and stays there after the pointer leaves.
       */}
       <InstantLink
         href={href}
-        prefetch={prefetch}
+        prefetch={prefetch ?? true}
         aria-label="Featured Image"
         className="block"
         onMouseEnter={() => setIsHovering(true)}
@@ -276,7 +273,7 @@ export const ProductCard = ({
           <div className="min-w-0">
             <InstantLink
               href={href}
-              prefetch={prefetch}
+              prefetch={prefetch ?? true}
               pendingVariant="text"
               onClick={handleSelectItem}
             >

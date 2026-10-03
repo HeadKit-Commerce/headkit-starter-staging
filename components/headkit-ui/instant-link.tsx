@@ -56,11 +56,12 @@ type InstantLinkProps = Omit<ComponentProps<typeof Link>, "prefetch"> & {
  * decoded each, so the sweep never finished — measured live 2026-09-15, the last
  * prefetch completed at 33,084 ms having covered 31 of 213 links, and a
  * product-card click made during that window cost 4.0-5.8 s MORE than the same
- * click with every prefetch blocked. With the budget on, the head start is spent
- * explicitly instead: the top-level desktop nav (`navigation-bar.tsx`) and the
- * first visible row of the page's first product carousel
- * (`product-carousel.tsx`'s `prefetchCount`). Everything else pays the cold-fetch
- * cost, which is the accepted price of the trade.
+ * click with every prefetch blocked. Next's own scheduler is what orders a
+ * page of `prefetch={true}` links: viewport first, the hovered link in front,
+ * and that hover is not cancelled when the pointer leaves
+ * (https://nextjs.org/docs/app/guides/prefetching#prefetch-scheduling).
+ * Product cards pass `prefetch={true}` so the current page's products are in
+ * that queue. With the budget on, an unset non-product link stays on `'auto'`.
  *
  * The budget also turns on `partialPrefetching` in `next.config.ts`, from the same
  * variable — that is what makes an unset `prefetch` cheap. See
