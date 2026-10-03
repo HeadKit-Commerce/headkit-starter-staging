@@ -59,9 +59,7 @@ export interface ProductPrerenderPlan {
  * type (TS2559). `object` accepts the class either way; a missing method is
  * the `all` path below.
  */
-function bulkStatusOf(
-  products: object,
-): (() => Promise<unknown>) | undefined {
+function bulkStatusOf(products: object): (() => Promise<unknown>) | undefined {
   if (!("bulkStatus" in products)) return undefined;
   const bulkStatus = products.bulkStatus;
   if (typeof bulkStatus !== "function") return undefined;
@@ -144,7 +142,12 @@ export function planFromStatus(status: unknown): ProductPrerenderPlan {
     return { mode: "on-demand", paths: [], reason: "PROBE_FAILED", total };
   }
   if (total === null) {
-    return { mode: "on-demand", paths: [], reason: "TOTAL_UNKNOWN", total: null };
+    return {
+      mode: "on-demand",
+      paths: [],
+      reason: "TOTAL_UNKNOWN",
+      total: null,
+    };
   }
   if (total > PRODUCT_PRERENDER_SKU_CEILING) {
     return {

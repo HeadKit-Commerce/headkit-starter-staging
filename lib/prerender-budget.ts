@@ -90,4 +90,3 @@ export function collectionFacetParamBudget(): number {
     COLLECTION_FACET_PARAM_BUDGET_DEFAULT,
   );
 }
-

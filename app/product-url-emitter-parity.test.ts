@@ -428,9 +428,7 @@ describe("when the prerender plan leaves product HTML on demand", () => {
       },
     });
 
-    expect(await shopParams()).toEqual([
-      { slug: ["apparel", "trail-jacket"] },
-    ]);
+    expect(await shopParams()).toEqual([{ slug: ["apparel", "trail-jacket"] }]);
     expect(productsList).not.toHaveBeenCalled();
   });
 
