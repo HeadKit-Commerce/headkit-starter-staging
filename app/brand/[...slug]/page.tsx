@@ -162,30 +162,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 /**
- * Blocking route so `notFound()` can still set a real 404: under Cache
- * Components the response commits as 200 the moment a `<Suspense>` fallback
- * renders, and a `notFound()` raised inside a boundary only earns a `noindex`
- * meta tag. This route now has no boundary at all, but the existence check
- * still runs in the default export — ABOVE anything that could commit — and
- * that costs this route its App Shell. What that costs, what else can commit
- * the 200 first, and why `instant` is NOT one of those things live once in
- * "Setting a status code needs THREE conditions" in `apps/starter/AGENTS.md`.
- * `instant = false` is that section's declaration rule: this route blocks on a
- * cached read before it responds.
- *
- * The awaited read is `getBrandShell`, which `BrandRoute` awaits anyway and
- * which is `"use cache: remote"`, so the gate is the same cache entry rather
- * than an extra round trip, and every param in `generateStaticParams` still
- * prerenders.
+ * Brand-card destination. `loading.tsx` is the navigation shell. A missing
+ * brand streams as 200 with `noindex`. See "Card routes navigate instantly"
+ * in `apps/starter/AGENTS.md`.
  */
-export const instant = false;
+export const instant = true;
 
 export default async function Page({ params }: Props) {
-  // Pre-commit gate. `BrandRoute` repeats the checks and the `"use cache"`
-  // shell read dedupes, so the repeat is a cache hit. What the gate resolves
-  // is then RENDERED rather than re-read behind a boundary: there is no
-  // boundary on this route. A THROWN read still propagates (see the note
-  // there): only a null brand is a genuine miss.
+  // Existence check. `loading.tsx` already wraps this page, so `notFound()`
+  // here streams as 200 with `noindex` rather than setting a 404. `BrandRoute`
+  // repeats the checks and the `"use cache"` shell read dedupes. A THROWN
+  // read still propagates: only a null brand is a genuine miss.
   //
   // The build-time placeholder is a 404 HERE rather than a skipped gate: it is
   // never served from a prerender, so a runtime request for it is a junk URL

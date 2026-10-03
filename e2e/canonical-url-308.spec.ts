@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import type { APIRequestContext, APIResponse } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
 import { BASE_URL } from "./helpers";
 
 /**
@@ -41,13 +41,25 @@ import { BASE_URL } from "./helpers";
  * one that hides: it lives in a file no redirecting route mentions, and it
  * re-broke both route families after their own `loading.tsx` files were deleted.
  *
+ * CARD ROUTES TAKE THE `loading.tsx` ROW ON PURPOSE. `app/products/[...slug]`
+ * and `app/collections/[...slug]` each have a route-level `loading.tsx` so a
+ * card click paints immediately ("Card routes navigate instantly" in
+ * `AGENTS.md`). `permanentRedirect` on those routes therefore cannot set 308:
+ * a path-only flat URL answers 200, sends no `Location`, and the body names
+ * the nested canonical the sitemap advertises. That streamed redirect is the
+ * accepted cost. Deleting `loading.tsx` to make these two cases 308 again
+ * brings back the blocked click. A query-carrying flat URL is a different
+ * request: `proxy.ts` issues that 308 (campaign query, `?preview_key=` on a
+ * published product) before the route renders, and those cases stay 308.
+ *
  * STORE-AGNOSTIC BY CONSTRUCTION. No slug is hard-coded. The sitemap is the
  * storefront's own published statement of the winning URL for every product and
  * collection, so the fixtures are READ from it and the flat counterpart is
  * derived. That makes the assertion stronger than a literal would be: it proves
- * the 308 target and the sitemap entry are the SAME STRING rather than two
- * strings that happen to look alike — the precise failure being guarded against
- * is a sitemap advertising one shape while the app serves another.
+ * the nested canonical (path-only) and the 308 target (query-carrying) are the
+ * SAME STRING the sitemap advertises, rather than two strings that happen to
+ * look alike — the precise failure being guarded against is a sitemap
+ * advertising one shape while the app serves another.
  *
  * A store whose sitemap advertises no nested URL at all (every product on
  * WooCommerce's default `/product/` base, a flat category tree) has nothing to
@@ -58,21 +70,6 @@ import { BASE_URL } from "./helpers";
 /** Site-relative path of a sitemap `<loc>` or a `Location` header. */
 function pathOf(url: string): string {
   return new URL(url, BASE_URL).pathname;
-}
-
-/**
- * The redirect target of a response, as a site-relative path.
- *
- * `headersArray()` rather than `headers()`: the latter folds repeated header
- * names into one comma-joined value, which turns a perfectly good `Location`
- * into an unparseable string the moment anything in the chain emits it twice.
- */
-function locationPath(res: APIResponse): string {
-  const header = res
-    .headersArray()
-    .find((h) => h.name.toLowerCase() === "location");
-  expect(header, "a 308 must carry a Location").toBeTruthy();
-  return pathOf(header!.value);
 }
 
 async function sitemapPaths(request: APIRequestContext): Promise<string[]> {
@@ -123,7 +120,7 @@ function categoryChains(paths: string[]): string[][] {
 }
 
 test.describe("one canonical URL shape @seo", () => {
-  test("the flat product URL 308s onto the nested one the sitemap advertises", async ({
+  test("the flat product URL streams onto the nested one the sitemap advertises", async ({
     request,
   }) => {
     const paths = await sitemapPaths(request);
@@ -136,12 +133,23 @@ test.describe("one canonical URL shape @seo", () => {
     const res = await request.get(`${BASE_URL}${flat}`, { maxRedirects: 0 });
     expect(
       res.status(),
-      `${flat} must answer 308, not serve a second copy of ${nested}. A 200 here means both shapes serve identical content with no server-side winner — the duplicate-content defect the canonical decision closes — however correct the canonical tag on the page happens to be.`,
-    ).toBe(308);
-    expect(locationPath(res)).toBe(nested);
+      `${flat} streams as 200 because the product route has a loading.tsx. A 308 here would mean that boundary was removed.`,
+    ).toBe(200);
+    expect(
+      res.headersArray().find((h) => h.name.toLowerCase() === "location"),
+      `${flat} must not send a Location; the route streams the redirect`,
+    ).toBeUndefined();
+    const canonical = (await res.text()).match(
+      /<link rel="canonical" href="([^"]+)"/,
+    );
+    expect(
+      canonical,
+      `${flat} must name ${nested} as the canonical, not serve itself as a second copy`,
+    ).not.toBeNull();
+    expect(pathOf(canonical![1]!)).toBe(nested);
   });
 
-  test("the flat collection URL 308s onto the nested one the sitemap advertises", async ({
+  test("the flat collection URL streams onto the nested one the sitemap advertises", async ({
     request,
   }) => {
     const paths = await sitemapPaths(request);
@@ -157,9 +165,20 @@ test.describe("one canonical URL shape @seo", () => {
     const res = await request.get(`${BASE_URL}${flat}`, { maxRedirects: 0 });
     expect(
       res.status(),
-      `${flat} must answer 308 onto ${nested}, not serve it a second time.`,
-    ).toBe(308);
-    expect(locationPath(res)).toBe(nested);
+      `${flat} streams as 200 because the collection route has a loading.tsx. A 308 here would mean that boundary was removed.`,
+    ).toBe(200);
+    expect(
+      res.headersArray().find((h) => h.name.toLowerCase() === "location"),
+      `${flat} must not send a Location; the route streams the redirect`,
+    ).toBeUndefined();
+    const canonical = (await res.text()).match(
+      /<link rel="canonical" href="([^"]+)"/,
+    );
+    expect(
+      canonical,
+      `${flat} must name ${nested} as the canonical, not serve itself a second time`,
+    ).not.toBeNull();
+    expect(pathOf(canonical![1]!)).toBe(nested);
   });
 
   /**

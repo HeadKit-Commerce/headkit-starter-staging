@@ -27,10 +27,12 @@ import { InstantLink } from "@/components/headkit-ui/instant-link";
  *     interaction change is the failure this table exists to prevent, so the
  *     unrecognised cases are asserted as loudly as the recognised ones.
  *  2. THE REQUESTER. A real `InstantLink`, pressed the way a shopper presses it,
- *     opens NO skeleton request with the switch off — no token, nothing in the
- *     store. This is the layer that decides whether anything runs: with no request
- *     there is no rAF watcher and no 400 ms timer, because both live on the host's
- *     reaction to a request.
+ *     opens NO skeleton request whether the skeleton switch is off or on. The
+ *     clicked link does not paint a skeleton; the destination route's
+ *     `loading.tsx` does, and only when that page is not ready. The `skeleton`
+ *     prop is accepted and unused. With no request there is no rAF watcher and
+ *     no 400 ms timer, because both live on the host's reaction to a request
+ *     (filter navigations still open one; a link press does not).
  *  3. THE MOUNT. `app/layout.tsx` renders the host behind the same switch, so an
  *     "off" store paints no overlay element at all, and `next.config.ts` reads the
  *     prefetch variable for its own half of that decision.
@@ -43,10 +45,12 @@ import { InstantLink } from "@/components/headkit-ui/instant-link";
  * the switch really removes the element from a served page, and that navigation
  * still works without it, are browser claims over a production build.
  *
- * The ON states are the other suites': `instant-link.test.tsx` (the prefetch
- * resolution), `instant-link.mouse-down.test.tsx` (both states of the mouse-down
- * switch) and `skeletons/navigation-skeleton.test.tsx` (the skeleton itself), each
- * of which DECLARES the variable it tests rather than inheriting the process's.
+ * The ON states of the prefetch and mouse-down switches are the other suites':
+ * `instant-link.test.tsx` and `instant-link.mouse-down.test.tsx`. The skeleton
+ * switch still gates the overlay host and filter navigations
+ * (`skeletons/navigation-skeleton.test.tsx`); it does not make a link press
+ * paint one. Each suite DECLARES the variable it tests rather than inheriting
+ * the process's.
  */
 
 describe("the value table", () => {
@@ -122,7 +126,7 @@ vi.mock("next/link", async () => {
   };
 });
 
-describe("a link press with the skeleton switch off", () => {
+describe("a link press opens no skeleton request", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -170,12 +174,36 @@ describe("a link press with the skeleton switch off", () => {
   });
 
   // The control. Without it the test above passes for any reason at all — a broken
-  // press, a missing anchor, a mock that swallowed the event.
-  it("opens one when the store opts in, proving the press itself works", () => {
+  // press, a missing anchor, a mock that swallowed the event. Opting in must
+  // still start the navigation (mouse-down dispatches the click) and must still
+  // open nothing: `loading.tsx` is the skeleton, and the prop is unused.
+  it("still presses the link when the store opts in, and opens no skeleton request", () => {
     vi.stubEnv("NEXT_PUBLIC_NAVIGATION_SKELETON", "true");
-    pressTheLink();
-    expect(getNavigationSkeletonRequest()).not.toBeNull();
-    expect(getNavigationSkeletonRequest()?.kind).toBe("product");
+    act(() => {
+      root.render(
+        createElement(
+          InstantLink,
+          { href: PRODUCT_HREF, skeleton: "product" },
+          "Alpine Jacket",
+        ),
+      );
+    });
+    const anchor = container.querySelector("a");
+    expect(anchor).not.toBeNull();
+    let clicks = 0;
+    anchor?.addEventListener("click", () => {
+      clicks += 1;
+    });
+    act(() => {
+      anchor?.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+      );
+    });
+    expect(
+      clicks,
+      "mouse-down navigation dispatches the click that starts the route",
+    ).toBe(1);
+    expect(getNavigationSkeletonRequest()).toBeNull();
   });
 });
 
