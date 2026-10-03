@@ -217,7 +217,6 @@ describe("shop/[...slug] — the category branch renders in the static shell", (
 
     const element = (await ShopRoute({
       params: Promise.resolve({ slug: ["clothing", "hoodies"] }),
-      searchParams: searchParams.promise,
     })) as ReactElement<{
       searchParams?: unknown;
       params: Promise<unknown>;
