@@ -10,7 +10,10 @@ import { describe, expect, it } from "vitest";
  * goes through the bulk prefetch and the per-slug SDK call.
  */
 describe("getCachedProduct remote cache", () => {
-  const src = readFileSync(join(import.meta.dirname, "product-cache.ts"), "utf8");
+  const src = readFileSync(
+    join(import.meta.dirname, "product-cache.ts"),
+    "utf8",
+  );
 
   it("uses the remote cache with the days profile and the product tags", () => {
     const fn = src.slice(src.indexOf("export async function getCachedProduct"));
@@ -24,7 +27,9 @@ describe("getCachedProduct remote cache", () => {
   });
 
   it("keeps the Shopify preview read off the cache", () => {
-    const fn = src.slice(src.indexOf("export async function getProductForPage"));
+    const fn = src.slice(
+      src.indexOf("export async function getProductForPage"),
+    );
     const preview = fn.indexOf("shopifyPreviewKey");
     const cached = fn.indexOf("getCachedProduct");
     expect(preview).toBeGreaterThan(-1);
