@@ -15,7 +15,9 @@ import { ProductCardSkeleton } from "@/components/headkit-ui/skeletons/product-c
  */
 export function ProductPageShell(): React.JSX.Element {
   return (
-    <div className="animate-in fade-in duration-300">
+    // Opaque on purpose. A fade restarts whenever this shell
+    // mounts again, which flashes as the product replaces it.
+    <div>
       <div className="px-5 pt-6 md:px-10">
         <Skeleton className="h-4 w-48 max-w-full sm:w-64" />
       </div>
