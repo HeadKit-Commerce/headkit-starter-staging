@@ -27,6 +27,27 @@ const isVariableProduct = (product: ProductSummaryFieldsFragment): boolean =>
   product?.type?.toUpperCase() === "VARIABLE";
 
 /**
+ * Colour chips stay out of the viewport prefetch queue until the pointer
+ * enters that chip. `prefetch={true}` then resolves that colourway. The set
+ * only grows, so leaving the chip does not cancel the prefetch.
+ *
+ * `prefetch={null}` would only pull the shared shell under Partial
+ * Prefetching. The colourway is keyed on `params`, so the armed chip uses
+ * `true`.
+ * https://nextjs.org/docs/app/guides/prefetching#hover-triggered-prefetch
+ * https://nextjs.org/docs/app/guides/optimizing-prefetching
+ */
+function rememberSwatch(
+  armed: ReadonlySet<string>,
+  optionSlug: string,
+): ReadonlySet<string> {
+  if (optionSlug.length === 0 || armed.has(optionSlug)) return armed;
+  const next = new Set(armed);
+  next.add(optionSlug);
+  return next;
+}
+
+/**
  * Colour dots a card shows before the rest collapse into a "+N" chip.
  *
  * N dots PLUS the chip, not N including it: at four-plus-one a card with five
@@ -115,6 +136,13 @@ export const ProductCard = ({
     return product.image?.src ?? "";
   });
   const [isHovering, setIsHovering] = useState(false);
+  const [armedSwatches, setArmedSwatches] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const armSwatch = (optionSlug: string): void => {
+    setColourSelected(optionSlug || null);
+    setArmedSwatches((current) => rememberSwatch(current, optionSlug));
+  };
 
   // The one canonical path, resolved from the product's own permalink — the
   // same string the canonical tag, the sitemap and the Product JSON-LD emit.
@@ -335,9 +363,13 @@ export const ProductCard = ({
                               aria-label={option?.name ?? ""}
                               // The tooltip the `<button>` carried.
                               title={option?.name ?? ""}
-                              onMouseEnter={() =>
-                                setColourSelected(optionSlug || null)
+                              prefetch={
+                                optionSlug.length > 0 &&
+                                armedSwatches.has(optionSlug)
+                                  ? true
+                                  : false
                               }
+                              onMouseEnter={() => armSwatch(optionSlug)}
                               // Kept from the button this replaced: a click
                               // navigates to the colourway, and the preview
                               // swap keeps the card correct for the frame
