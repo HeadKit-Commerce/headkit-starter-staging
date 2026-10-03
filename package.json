@@ -18,7 +18,7 @@
     "port-verify:gate": "bun run e2e/port-verify/gate.ts"
   },
   "dependencies": {
-    "@headkit/sdk": "workspace:*",
+    "@headkit/sdk": "staging",
     "@headlessui/react": "^2.2.9",
     "@hookform/resolvers": "^5.2.2",
     "@next/third-parties": "^16.3.0",
