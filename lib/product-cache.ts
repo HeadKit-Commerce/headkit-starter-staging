@@ -26,9 +26,13 @@ export type ProductPageLoadOptions = {
  * route 308s onto it. Sharing this entry is what keeps the two consistent while
  * both still serve — the flat route reads it to decide whether to redirect, and
  * the nested route reads it to render.
+ *
+ * `"use cache: remote"` so one tag purge is visible on every instance. The
+ * lifetime is unchanged: finite `days` on the default profile, `max` only
+ * when the store opts into the aggressive profile.
  */
 export async function getCachedProduct(slug: string) {
-  "use cache";
+  "use cache: remote";
   // Finite `days` backstop (was `max`): a missed product webhook self-heals in
   // ~1 day (threat T-09.5-12) instead of sticking until redeploy.
   cacheLifeForProfile("days", "max");
