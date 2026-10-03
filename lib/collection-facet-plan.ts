@@ -117,7 +117,12 @@ export function facetPlanFromStatus(status: unknown): FacetCataloguePlan {
     return { mode: "on-demand", paths: [], reason: "PROBE_FAILED", total };
   }
   if (total === null) {
-    return { mode: "on-demand", paths: [], reason: "TOTAL_UNKNOWN", total: null };
+    return {
+      mode: "on-demand",
+      paths: [],
+      reason: "TOTAL_UNKNOWN",
+      total: null,
+    };
   }
   if (total > FACET_PRODUCT_SKU_CEILING) {
     return {
@@ -135,9 +140,7 @@ export function facetPlanFromStatus(status: unknown): FacetCataloguePlan {
   };
 }
 
-function bulkStatusOf(
-  products: object,
-): (() => Promise<unknown>) | undefined {
+function bulkStatusOf(products: object): (() => Promise<unknown>) | undefined {
   if (!("bulkStatus" in products)) return undefined;
   const bulkStatus = products.bulkStatus;
   if (typeof bulkStatus !== "function") return undefined;
@@ -184,9 +187,7 @@ export function facetPageRoom(
   if (plan.mode === "on-demand") return 0;
   if (plan.total === null) return Number.POSITIVE_INFINITY;
   return (
-    BUILD_PAGE_CEILING -
-    productPagesForPlan(plan) -
-    Math.max(0, categoryCount)
+    BUILD_PAGE_CEILING - productPagesForPlan(plan) - Math.max(0, categoryCount)
   );
 }
 

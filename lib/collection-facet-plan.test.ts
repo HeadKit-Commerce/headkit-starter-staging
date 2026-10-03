@@ -33,9 +33,9 @@ describe("facet catalogue plan", () => {
     expect(facetPlanFromStatus({ total: 2677, reason: "enabled" }).mode).toBe(
       "all",
     );
-    expect(
-      facetPlanFromStatus({ total: FACET_PRODUCT_SKU_CEILING }).mode,
-    ).toBe("all");
+    expect(facetPlanFromStatus({ total: FACET_PRODUCT_SKU_CEILING }).mode).toBe(
+      "all",
+    );
   });
 
   it("does not discover facets for a catalogue over the ceiling", () => {
