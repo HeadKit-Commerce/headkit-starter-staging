@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
@@ -9,7 +10,12 @@ import {
   NavigationSkeletonHost,
   NAVIGATION_SKELETON_MAX_MS,
 } from "@/components/headkit-ui/skeletons/navigation-skeleton-host";
-import { resetNavigationSkeletonStore } from "@/lib/navigation-skeleton-store";
+import {
+  getNavigationSkeletonRequest,
+  requestNavigationSkeleton,
+  resetNavigationSkeletonStore,
+} from "@/lib/navigation-skeleton-store";
+import type { NavigationSkeletonKind } from "@/lib/navigation-skeleton-target";
 import {
   DEFAULT_HEADER_BOTTOM_PX,
   HEADER_BOTTOM_CSS_VAR,
@@ -18,27 +24,21 @@ import {
 } from "@/lib/header-bottom";
 
 /**
- * The claim this file exists to make: with `NEXT_PUBLIC_NAVIGATION_SKELETON` on, a
- * pending navigation raises the skeleton its DESTINATION wants — the right body for
- * the route family, nothing at all for the routes that get none — and only after
- * the delay.
+ * Two claims, and they are no longer one chain.
  *
- * It drives the whole chain (`InstantLink` → `navigationSkeletonForHref` → the
- * request store → `NavigationSkeletonHost` → the portal), because a test of any one
- * link passes while the others are broken: the predicate can be right while the
- * request is never opened, and the timer can be right while the skeleton is raised
- * for every link on the site. The post case drives the real `PostCard` for the same
- * reason — `"post"` is the one kind no URL carries, so a guard that hand-passed
- * `skeleton="post"` to `InstantLink` would stay green while the card stopped
- * sending it.
+ * A CLICKED LINK does not paint a skeleton. `InstantLink` accepts `skeleton` and
+ * `pendingVariant` so existing call sites keep typechecking, and it does not
+ * read them. The destination route's `loading.tsx` is the skeleton, and only
+ * when that page is not already ready (`AGENTS.md`, "Card routes navigate
+ * instantly"). A press — click or mouse-down, skeleton prop set or not — opens
+ * no request and paints no overlay and no pulse.
  *
- * The host is mounted BESIDE the link rather than around it, which is how the root
- * layout mounts it — and what makes the unmount case below testable at all.
- *
- * The presses here are ordinary CLICKS, the platform's default interaction
- * (`NEXT_PUBLIC_NAV_MOUSEDOWN` is off unless a store opts in). One case presses
- * with `mousedown` under that switch, to pin that the earlier gesture opens the
- * same request.
+ * THE OVERLAY HOST is still the full-page cover for a request something else
+ * opens. Filter navigations in `collection-context.tsx` are that caller. Those
+ * cases drive `requestNavigationSkeleton` directly, because going through
+ * `InstantLink` would assert a call the component no longer makes. The host is
+ * mounted BESIDE the page rather than around it, which is how the root layout
+ * mounts it.
  *
  * WHERE IT STOPS.
  *  - `next/link` is mocked, so `pending` here is a value this file sets. That a real
@@ -152,13 +152,8 @@ function advance(ms: number): void {
 }
 
 /**
- * The gesture, not a flag.
- *
- * The skeleton is requested by `InstantLink`'s own event handler, because a render
- * driven by `useLinkStatus()` is superseded before it commits inside a
- * dismiss-on-click container (see `instant-link.tsx`). So every case here has to
- * press the link; setting `linkStatus.pending` alone would prove nothing about the
- * path the storefront actually takes.
+ * A press of the rendered link. `InstantLink` must not turn this into a skeleton
+ * request; the cases that still cover the host call `openRequest` instead.
  */
 function press(type: "click" | "mousedown" = "click", selector = "a"): void {
   const anchor = container.querySelector<HTMLAnchorElement>(selector);
@@ -172,6 +167,13 @@ function press(type: "click" | "mousedown" = "click", selector = "a"): void {
         detail: 1,
       }),
     );
+  });
+}
+
+/** What a filter navigation does: ask the host, without going through a link. */
+function openRequest(kind: NavigationSkeletonKind, href: string): void {
+  act(() => {
+    requestNavigationSkeleton(kind, href);
   });
 }
 
@@ -213,11 +215,114 @@ afterEach(() => {
 
 const PRODUCT_HREF = "/shop/clothing/jackets/alpine-jacket";
 
-describe("navigation skeleton on a pending navigation", () => {
-  it("stays hidden for the whole delay, then appears", () => {
+const CARD_ROUTE_LOADING = [
+  "app/shop/loading.tsx",
+  "app/products/[...slug]/loading.tsx",
+  "app/collections/[...slug]/loading.tsx",
+  "app/brand/[...slug]/loading.tsx",
+  "app/news/[...slug]/loading.tsx",
+  "app/projects/[...slug]/loading.tsx",
+] as const;
+
+describe("a clicked link does not paint a skeleton", () => {
+  it("does not call requestNavigationSkeleton", () => {
+    const source = readFileSync(
+      "components/headkit-ui/instant-link.tsx",
+      "utf8",
+    );
+    expect(source).not.toContain("requestNavigationSkeleton");
+    expect(source).toContain("loading.tsx");
+  });
+
+  it.each(CARD_ROUTE_LOADING)("leaves the skeleton to %s", (file) => {
+    expect(
+      existsSync(file),
+      `${file} is the skeleton for that route. Deleting it to restore an overlay on the link brings back the blocked click.`,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["a product", PRODUCT_HREF, undefined],
+    ["a category", "/collections/clothing", "collection" as const],
+    [
+      "a facet listing",
+      "/collections/jackets/f/colour.black",
+      "collection" as const,
+    ],
+    ["a brand PLP", "/brand/acme", "collection" as const],
+    ["a CMS page", "/wholesale", "page" as const],
+    ["the catalogue index", "/shop", "collection" as const],
+    ["the quote cart", "/quote", null],
+    ["checkout", "/checkout", null],
+    ["an account page", "/account", null],
+    ["the home page", "/", null],
+    ["a tel: link", "tel:1300883919", null],
+  ])(
+    "opens no request for %s, skeleton prop included",
+    (_label, href, skeletonProp) => {
+      linkStatus.pending = true;
+      render(
+        <InstantLink href={href} skeleton={skeletonProp}>
+          Elsewhere
+        </InstantLink>,
+      );
+      press();
+      advance(NAVIGATION_SKELETON_DELAY_MS * 3);
+      expect(getNavigationSkeletonRequest()).toBeNull();
+      expect(skeleton()).toBeNull();
+    },
+  );
+
+  it("opens no request from a mousedown when that switch is on", () => {
+    vi.stubEnv("NEXT_PUBLIC_NAV_MOUSEDOWN", "true");
     linkStatus.pending = true;
-    render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
+    render(
+      <InstantLink href={PRODUCT_HREF} skeleton="product">
+        Product
+      </InstantLink>,
+    );
+    press("mousedown");
+    advance(NAVIGATION_SKELETON_DELAY_MS);
+    expect(getNavigationSkeletonRequest()).toBeNull();
+    expect(skeleton()).toBeNull();
+  });
+
+  it('opens no request from PostCard, which still passes skeleton="post"', () => {
+    linkStatus.pending = true;
+    render(
+      <PostCard
+        post={{
+          id: "1",
+          slug: "autumn-sale",
+          uri: "/journal/autumn-sale",
+          title: "Autumn sale",
+          excerpt: "",
+          date: "2026-04-01T00:00:00",
+        }}
+        postsBasePath="journal"
+      />,
+    );
     press();
+    advance(NAVIGATION_SKELETON_DELAY_MS);
+    expect(
+      getNavigationSkeletonRequest(),
+      'The card may still pass skeleton="post". InstantLink does not read it; app/news/[...slug]/loading.tsx is the skeleton.',
+    ).toBeNull();
+    expect(skeleton()).toBeNull();
+  });
+
+  it("paints no pulse on the link", () => {
+    linkStatus.pending = true;
+    render(<InstantLink href="/collections/jackets">Jackets</InstantLink>);
+    press();
+    expect(container.querySelector("span.animate-pulse")).toBeNull();
+  });
+});
+
+describe("the overlay host, given a request", () => {
+  it("stays hidden for the whole delay, then appears", () => {
+    render(null);
+    openRequest("product", PRODUCT_HREF);
 
     advance(NAVIGATION_SKELETON_DELAY_MS - 1);
     expect(
@@ -229,26 +334,11 @@ describe("navigation skeleton on a pending navigation", () => {
     expect(skeleton()).not.toBeNull();
   });
 
-  it("opens the same request from a mousedown when that switch is on", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_MOUSEDOWN", "true");
-    linkStatus.pending = true;
-    render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
-    press("mousedown");
-
-    advance(NAVIGATION_SKELETON_DELAY_MS);
-    expect(
-      skeletonKind(),
-      "The two switches are independent: the skeleton must be raised by whichever gesture starts the navigation.",
-    ).toBe("product");
-  });
-
   it("never appears at all when the navigation lands before the delay", () => {
-    linkStatus.pending = true;
-    render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
-    press();
+    render(null);
+    openRequest("product", PRODUCT_HREF);
 
     advance(200);
-    linkStatus.pending = false;
     land(PRODUCT_HREF);
 
     // Past the threshold in absolute time: the timer from the first navigation must
@@ -257,17 +347,13 @@ describe("navigation skeleton on a pending navigation", () => {
     expect(skeleton()).toBeNull();
   });
 
-  it("survives the link being unmounted by a dismissible container", () => {
-    // THE DEFECT THIS SHAPE EXISTS TO CLOSE. Radix's NavigationMenu closes on click
-    // and unmounts its dropdown, so a mega-menu category link leaves the DOM while
-    // its navigation is still running — measured at 157-161 ms against a 400 ms
-    // threshold. While the skeleton rendered inside the link, that meant a 1.7 s
-    // navigation showed nothing whatsoever.
-    linkStatus.pending = true;
+  it("survives the requester being unmounted", () => {
+    // Filter UI can leave the tree while its navigation is still running. The
+    // request lives in the module store, so the host — mounted beside the page —
+    // still raises the cover.
     render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
-    press();
+    openRequest("product", PRODUCT_HREF);
 
-    // The container dismisses BEFORE the threshold, exactly as it does live.
     advance(160);
     render(null);
     expect(
@@ -276,23 +362,14 @@ describe("navigation skeleton on a pending navigation", () => {
     ).toBeNull();
 
     advance(NAVIGATION_SKELETON_DELAY_MS);
-    expect(
-      skeleton(),
-      "The link is long gone and the navigation is still running; the skeleton is the only thing telling the shopper so.",
-    ).not.toBeNull();
+    expect(skeleton()).not.toBeNull();
     expect(skeletonKind()).toBe("product");
   });
 
   it("gives up on a request nothing ever reported back on", () => {
-    // The other half of surviving the unmount: with no component left to say the
-    // navigation ended, and a destination whose path never differs from where it
-    // started, the host's ceiling is the only exit. A skeleton stuck over the page
-    // forever would be worse than the bug above.
-    linkStatus.pending = true;
-    render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
-    press();
-    advance(NAVIGATION_SKELETON_DELAY_MS);
     render(null);
+    openRequest("product", PRODUCT_HREF);
+    advance(NAVIGATION_SKELETON_DELAY_MS);
     expect(skeleton()).not.toBeNull();
 
     advance(NAVIGATION_SKELETON_MAX_MS);
@@ -300,13 +377,11 @@ describe("navigation skeleton on a pending navigation", () => {
   });
 
   it("is torn down as soon as the destination route commits", () => {
-    linkStatus.pending = true;
-    render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
-    press();
+    render(null);
+    openRequest("product", PRODUCT_HREF);
     advance(NAVIGATION_SKELETON_DELAY_MS);
     expect(skeleton()).not.toBeNull();
 
-    linkStatus.pending = false;
     land(PRODUCT_HREF);
     expect(
       skeleton(),
@@ -315,17 +390,8 @@ describe("navigation skeleton on a pending navigation", () => {
   });
 
   it("never appears when the navigation lands before the delay, however slow the pictures are", () => {
-    // A production build's catch on the fork, kept as a regression guard. A
-    // prerendered destination landed in 53 ms and the skeleton still appeared at
-    // 423 ms, because the request was being held open waiting for that page's
-    // images to draw. Nothing was covering the page, so there was no blank frame to
-    // avoid — the hold was manufacturing the flash it exists to prevent. With no
-    // paint wait there is no hold left to do it, and an undrawn in-viewport image is
-    // here so that reintroducing one fails. A dev server cannot show this: every
-    // route there is cold, so nothing lands inside the delay.
-    linkStatus.pending = true;
-    render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
-    press();
+    render(null);
+    openRequest("product", PRODUCT_HREF);
 
     advance(50);
     undrawnImageInViewport();
@@ -339,17 +405,8 @@ describe("navigation skeleton on a pending navigation", () => {
   });
 
   it("comes down at the route change even with the pictures still undrawn", () => {
-    // The route commits with its markup in place and its images undrawn (measured:
-    // anchors at 5,454 ms, first image at 7,404 ms), and the skeleton is not held
-    // over that gap — the shopper gets text and layout at once, with the pictures
-    // arriving after.
-    //
-    // This is NOT uncovering an empty page: the image left undrawn here sits inside
-    // a `<main>` that has already committed. jsdom cannot see a rendered frame, so
-    // the no-blank half of that claim is a browser measurement, not this test's.
-    linkStatus.pending = true;
-    render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
-    press();
+    render(null);
+    openRequest("product", PRODUCT_HREF);
     advance(NAVIGATION_SKELETON_DELAY_MS);
 
     const img = undrawnImageInViewport();
@@ -367,87 +424,20 @@ describe("navigation skeleton on a pending navigation", () => {
   });
 
   it.each([
-    ["a category", "/collections/clothing", "collection"],
-    ["a facet listing", "/collections/jackets/f/colour.black", "collection"],
-    ["a brand PLP", "/brand/acme", "collection"],
-    ["a CMS page", "/wholesale", "page"],
-    ["the catalogue index", "/shop", "collection"],
-  ])("raises the %s body for its own route family", (_l, href, kind) => {
-    linkStatus.pending = true;
-    render(<InstantLink href={href}>Elsewhere</InstantLink>);
-    press();
-
+    ["collection", "collection"],
+    ["post", "post"],
+    ["page", "page"],
+    ["product", "product"],
+  ] as const)("renders the %s body it was asked for", (_label, kind) => {
+    render(null);
+    openRequest(kind, PRODUCT_HREF);
     advance(NAVIGATION_SKELETON_DELAY_MS);
     expect(skeletonKind()).toBe(kind);
   });
 
-  it("raises the post body from PostCard, which threads the kind itself", () => {
-    linkStatus.pending = true;
-    render(
-      <PostCard
-        post={{
-          id: "1",
-          slug: "autumn-sale",
-          uri: "/journal/autumn-sale",
-          title: "Autumn sale",
-          excerpt: "",
-          date: "2026-04-01T00:00:00",
-        }}
-        postsBasePath="journal"
-      />,
-    );
-    press();
-
-    advance(NAVIGATION_SKELETON_DELAY_MS);
-    expect(
-      skeletonKind(),
-      'The blog base is per-store server data, so this kind can only arrive as a prop. A hand-passed skeleton="post" here would prove nothing about the card.',
-    ).toBe("post");
-  });
-
-  it.each([
-    ["the quote cart", "/quote"],
-    ["checkout", "/checkout"],
-    ["an account page", "/account"],
-    ["the home page", "/"],
-    ["a tel: link", "tel:1300883919"],
-  ])("does not raise it for %s, which keeps today's behaviour", (_l, href) => {
-    linkStatus.pending = true;
-    render(<InstantLink href={href}>Elsewhere</InstantLink>);
-    press();
-
-    advance(NAVIGATION_SKELETON_DELAY_MS * 3);
-    expect(skeleton()).toBeNull();
-  });
-
-  it("lets an explicit skeleton={null} suppress one the href would get", () => {
-    linkStatus.pending = true;
-    render(
-      <InstantLink href="/collections/jackets" skeleton={null}>
-        Jackets
-      </InstantLink>,
-    );
-    press();
-
-    advance(NAVIGATION_SKELETON_DELAY_MS * 3);
-    expect(skeleton()).toBeNull();
-  });
-
-  it("keeps the local pulse overlay on every pending link, skeleton or not", () => {
-    linkStatus.pending = true;
-    render(<InstantLink href="/collections/jackets">Jackets</InstantLink>);
-    press();
-
-    expect(
-      container.querySelector("span.animate-pulse"),
-      "The immediate per-link cue is unchanged by this feature; the skeleton is an addition on top of it, not a replacement.",
-    ).not.toBeNull();
-  });
-
   it("hides the skeleton from assistive technology and announces instead", () => {
-    linkStatus.pending = true;
-    render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
-    press();
+    render(null);
+    openRequest("product", PRODUCT_HREF);
     advance(NAVIGATION_SKELETON_DELAY_MS);
 
     expect(skeleton()?.getAttribute("aria-hidden")).toBe("true");
@@ -485,9 +475,8 @@ describe("navigation skeleton on a pending navigation", () => {
 describe("navigation skeleton geometry", () => {
   /** Raise a skeleton and hand back the overlay element. */
   function raise(): HTMLElement {
-    linkStatus.pending = true;
-    render(<InstantLink href={PRODUCT_HREF}>Product</InstantLink>);
-    press();
+    render(null);
+    openRequest("product", PRODUCT_HREF);
     advance(NAVIGATION_SKELETON_DELAY_MS);
     const el = skeleton();
     if (!el) throw new Error("expected a skeleton to be up");
