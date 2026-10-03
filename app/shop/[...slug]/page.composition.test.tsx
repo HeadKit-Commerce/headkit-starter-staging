@@ -5,15 +5,12 @@ import { Suspense, type ReactElement } from "react";
 /**
  * Where the nested `/shop/[...slug]` route puts its boundary, per branch.
  *
- * The product branch renders `ProductPageBody` DIRECTLY in the route. The
- * navigation shell is `app/shop/loading.tsx`, which Next wraps around this
- * page. Do not add a second `<Suspense>` in the page: that boundary is what
- * postponed the product when `ProductPageContent` awaited `searchParams`, and
- * React outlines a completed boundary over `progressiveChunkSize` (12 800
- * bytes). Measured on the Bike Society rehearsal store, 2026-09-10: 826
- * visible characters, the product behind `B:2`. The flat route's own file,
- * `app/products/[...slug]/page.tsx`, owns the account;
- * `scripts/static-shell-split.ts` measures a built file.
+ * The page passes `params` into `ShopRoute` inside Suspense and does not
+ * await them itself. That is the Next.js 16 shape: URL data stays out of the
+ * shared App Shell, and `prefetch={true}` can resolve the cached product
+ * before the click. `loading.tsx` stays as the instant fallback. The child
+ * still must not await `searchParams`: that read postpones the boundary and
+ * the prerender is only the skeleton.
  *
  * The category branch has NO boundary either, for the same reason:
  * `CollectionRoute` reads no `searchParams`, so its heading and
@@ -98,8 +95,9 @@ vi.mock("@/components/headkit-ui/skeletons/collection-page-skeleton", () => ({
   CollectionProductsSkeleton: (): null => null,
 }));
 
-import Page from "./page";
+import Page, { ShopRoute } from "./page";
 import { ProductPageBody } from "@/app/products/[...slug]/page";
+import { ProductPageShell } from "@/app/products/[...slug]/product-page-shell";
 import { CollectionRoute } from "@/app/collections/[...slug]/page";
 
 const HOODIE = {
@@ -136,38 +134,41 @@ beforeEach(() => {
   );
 });
 
-describe("shop/[...slug] — the product branch renders OUTSIDE any boundary", () => {
-  it("returns ProductPageBody with the verified product, not a Suspense wrapper", async () => {
+describe("shop/[...slug] — params stay inside Suspense", () => {
+  it("returns the product shell immediately and does not read the URL itself", () => {
     const searchParams = trackedSearchParams();
 
-    const element = (await Page({
+    const element = Page({
       params: Promise.resolve({ slug: ["clothing", "hoodies", "blue-hoodie"] }),
       searchParams: searchParams.promise,
+    }) as ReactElement<{
+      fallback: ReactElement;
+      children: ReactElement;
+    }>;
+
+    expect(element.type).toBe(Suspense);
+    expect(element.props.fallback.type).toBe(ProductPageShell);
+    expect(element.props.children.type).toBe(ShopRoute);
+    expect(searchParams.awaited()).toBe(false);
+  });
+
+  it("returns ProductPageBody with the verified product from the child", async () => {
+    const element = (await ShopRoute({
+      params: Promise.resolve({ slug: ["clothing", "hoodies", "blue-hoodie"] }),
     })) as ReactElement<{
       product: unknown;
       productSlug: string;
       colorSlug: unknown;
     }>;
 
-    expect(
-      element.type,
-      "the page returns ProductPageBody directly. app/shop/loading.tsx is the navigation shell; do not add a second Suspense around the body",
-    ).toBe(ProductPageBody);
-    expect(element.type).not.toBe(Suspense);
-    expect(
-      element.props.product,
-      "the very object the probe resolved — one cached read, no second lookup",
-    ).toBe(HOODIE);
+    expect(element.type).toBe(ProductPageBody);
+    expect(element.props.product).toBe(HOODIE);
     expect(element.props.productSlug).toBe("blue-hoodie");
     expect(element.props.colorSlug).toBeUndefined();
-    expect(
-      searchParams.awaited(),
-      "a nested PDP never reads searchParams — a draft cannot reach this route",
-    ).toBe(false);
   });
 
   it("hands the colourway segment to the body", async () => {
-    const element = (await Page({
+    const element = (await ShopRoute({
       params: Promise.resolve({
         slug: ["clothing", "hoodies", "blue-hoodie", "red"],
       }),
@@ -214,7 +215,7 @@ describe("shop/[...slug] — the category branch renders in the static shell", (
   it("returns CollectionRoute directly, with no boundary above it and no searchParams", async () => {
     const searchParams = trackedSearchParams();
 
-    const element = (await Page({
+    const element = (await ShopRoute({
       params: Promise.resolve({ slug: ["clothing", "hoodies"] }),
       searchParams: searchParams.promise,
     })) as ReactElement<{
@@ -273,13 +274,13 @@ describe("shop/[...slug] — the category branch renders in the static shell", (
 describe("shop/[...slug] — the gate still decides before either branch", () => {
   it("404s a path whose candidates resolve to no product", async () => {
     await expect(
-      Page({ params: Promise.resolve({ slug: ["clothing", "no-such"] }) }),
+      ShopRoute({ params: Promise.resolve({ slug: ["clothing", "no-such"] }) }),
     ).rejects.toThrow(/NEXT_HTTP_ERROR_FALLBACK/);
   });
 
   it("404s the build-time placeholder without a lookup", async () => {
     await expect(
-      Page({ params: Promise.resolve({ slug: ["__hk_static_placeholder"] }) }),
+      ShopRoute({ params: Promise.resolve({ slug: ["__hk_static_placeholder"] }) }),
     ).rejects.toThrow(/NEXT_HTTP_ERROR_FALLBACK/);
     expect(getCachedProduct).not.toHaveBeenCalled();
   });

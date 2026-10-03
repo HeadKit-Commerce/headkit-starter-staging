@@ -424,13 +424,14 @@ around a fully cached brand grid and nothing else: measured on the deployed rehe
 a local production build of the same page reported 139 visible shell characters against 471
 in the tail. With the boundary removed the same page reports no hidden segment at all. That
 route is also the worked example of the second emitter rule above, so a change there is two
-rules at once. Both PDP routes compose the
-product the gate resolved through `ProductPageBody` outside any boundary; the flat
-`/products/[...slug]` keeps ONE boundary, around `ProductPageContent`, and renders it only
-when the public read returned null — the one branch that must await `searchParams` (the
-Shopify preview key). `ProductStock` reads the same cached product entry (freshness is the
-theme's `headkit:product:<slug>` purge), so it is inline too. The `/shop` category branch
-keeps its boundary because `CollectionRoute` reads `searchParams` for its grid.
+rules at once. `/shop/[...slug]` is the Next.js 16 exception: `params` are URL data, so the
+page returns Suspense immediately and `ShopRoute` awaits them. The product read is `"use cache"`,
+and product cards pass `prefetch={true}`, so a prerendered URL resolves before the click
+instead of leaving the shopper on `loading.tsx`. The flat `/products/[...slug]` keeps ONE
+boundary, around `ProductPageContent`, and renders it only when the public read returned
+null — the one branch that must await `searchParams` (the Shopify preview key). `ProductStock`
+reads the same cached product entry (freshness is the theme's `headkit:product:<slug>` purge).
+Do not add a second Suspense around `CollectionRoute`: it reads no `searchParams`.
 
 Measure, do not infer: `bun run scripts/static-shell-split.ts <.next/server/app/….html | url>`
 prints the split, the visible characters on each side, and every hidden segment. The route

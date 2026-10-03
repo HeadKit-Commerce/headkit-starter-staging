@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { notFound, unstable_rethrow } from "next/navigation";
 import { cacheTag } from "next/cache";
 import { cacheLifeForProfile } from "@/lib/cache-profile";
@@ -16,6 +16,7 @@ import {
   generateMetadata as productMetadata,
   ProductPageBody,
 } from "@/app/products/[...slug]/page";
+import { ProductPageShell } from "@/app/products/[...slug]/product-page-shell";
 import { CollectionRoute } from "@/app/collections/[...slug]/page";
 import { collectionPathFromCategory } from "@/components/headkit-ui/collection/utils";
 import {
@@ -321,16 +322,37 @@ export async function generateMetadata({
 }
 
 /**
- * Card destination. `app/shop/loading.tsx` is the navigation shell: a click
- * updates the URL immediately, the prerendered or prefetched page renders
- * when it is ready, and this route's skeleton renders when it is not.
- * `loading.tsx` is a Suspense boundary, so a missing URL on this route
- * streams as 200 with `noindex` rather than a real 404. That cost is
- * accepted in `apps/starter/AGENTS.md` under "Card routes navigate instantly".
+ * `params` are URL data. Next.js will not put them in the shared App Shell
+ * unless this read sits inside Suspense and the product read is `"use cache"`.
+ * Awaiting them in the page itself is what left every unvisited product on
+ * the `loading.tsx` skeleton: the prefetch was the shell, and the body was a
+ * cold server render.
+ *
+ * https://nextjs.org/docs/app/guides/adopting-partial-prefetching#move-url-data-behind-suspense
+ * https://nextjs.org/docs/app/guides/optimizing-prefetching
+ *
+ * `loading.tsx` stays. It is the instant fallback while this child is not
+ * ready. `generateStaticParams` plus `prefetch={true}` on the product card is
+ * what makes the child a static-cache hit instead of that fallback.
+ *
+ * `notFound()` in this child is already inside `loading.tsx`, so a missing
+ * product is a soft 404. That is the trade for keeping the loading fallback.
  */
 export const instant = true;
 
-export default async function Page(props: Props): Promise<ReactNode> {
+export default function Page(props: Props): ReactNode {
+  return (
+    <Suspense fallback={<ProductPageShell />}>
+      <ShopRoute params={props.params} />
+    </Suspense>
+  );
+}
+
+export async function ShopRoute({
+  params,
+}: {
+  params: Props["params"];
+}): Promise<ReactNode> {
   // Pre-commit gate. This route DELEGATES rendering to the PDP and collection
   // views, so it must make their existence decision here rather than let them
   // 404 mid-stream — and making it means the whole decision, not just the
@@ -345,7 +367,7 @@ export default async function Page(props: Props): Promise<ReactNode> {
   // The build-time placeholder param 404s HERE. It is never served from a
   // prerender, so skipping the gate for it would send a runtime request down
   // into a `notFound()` below the boundary — the soft 404 this gate closes.
-  const { slug } = await props.params;
+  const { slug } = await params;
   if (slug[0] === STATIC_GEN_PLACEHOLDER_SLUG) notFound();
   // Not caught, deliberately — same rule as `getShopCategoryTree`: a thrown
   // read is transport/infra and must propagate, never become a sticky 404.
@@ -356,18 +378,11 @@ export default async function Page(props: Props): Promise<ReactNode> {
     const accepted = await resolveShopProduct(slug, resolved.candidates);
     if (!accepted) notFound();
 
-    // The product the gate just verified is rendered HERE, outside any
-    // Suspense boundary, so the whole PDP is baked into the prerendered static
-    // shell and shows with JavaScript off. Wrapping it — as this route did
-    // until 2026-09-10 — put every product byte in the streamed tail whatever
-    // the cache state: `ProductPageContent` awaited `searchParams` (a
-    // request-time read that postpones the boundary), and React outlines any
-    // completed boundary over 12 800 bytes regardless. The composition is the
-    // flat PDP's own `ProductPageBody`: identical markup and identical links —
-    // every href is built from `productPath(product)`, so the colourway links
-    // it renders are the nested ones this catch-all classifies, not the
-    // `/products/…` shape that 308s here. "Cached content renders OUTSIDE the
-    // boundary" in `apps/starter/AGENTS.md` owns the rule.
+    // Cached product body. This child does not await `searchParams`, so the
+    // prerender can finish `getCachedProduct` into the static segment while
+    // the page-level Suspense keeps `params` out of the shared App Shell.
+    // Colourway links come from `productPath`, the nested shape this route
+    // serves.
     //
     // A chain that is reachable but is NOT the product's own permalink chain
     // (a product filed under two categories) is served here rather than

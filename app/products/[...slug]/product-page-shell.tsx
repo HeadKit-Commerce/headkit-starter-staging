@@ -2,20 +2,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ProductCardSkeleton } from "@/components/headkit-ui/skeletons/product-card-skeleton";
 
 /**
- * The `<Suspense>` fallback for the flat PDP's REQUEST-TIME branch only.
+ * Instant-navigation fallback for a product URL.
  *
- * A product the public catalogue can see is composed by `ProductPageBody`
- * outside any boundary on both PDP routes, so this skeleton is never shown for
- * it. `/products/[...slug]` renders it only around `ProductPageContent`, the
- * branch that runs when the public read returned null — a Shopify draft under
- * Admin preview, a missing product, or a failed read — because that branch
- * awaits `searchParams` and must sit below a boundary. The nested
- * `/shop/[...slug]` route no longer uses it at all; see the altitude note on
- * `ProductPage` in `./page.tsx`.
+ * `/shop/[...slug]` renders this from the page Suspense boundary and from
+ * `loading.tsx` while the cached product is not ready. The flat route also
+ * renders it around the draft or missing branch, the one that awaits
+ * `searchParams`. Opaque on purpose: a fade restarts whenever this shell
+ * mounts again and flashes as the product replaces it.
  */
 export function ProductPageShell(): React.JSX.Element {
   return (
-    <div className="animate-in fade-in duration-300">
+    <div>
       <div className="px-5 pt-6 md:px-10">
         <Skeleton className="h-4 w-48 max-w-full sm:w-64" />
       </div>
