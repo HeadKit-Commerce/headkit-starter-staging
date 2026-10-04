@@ -434,8 +434,16 @@ rules at once. `/shop/[...slug]` awaits `params` in the page and renders `Produc
 `app/shop/loading.tsx`: either one is the skeleton shell. The flat
 `/products/[...slug]` keeps ONE boundary, around `ProductPageContent`, and renders it only
 when the public read returned null — the one branch that must await `searchParams` (the
-Shopify preview key). `ProductStock` reads the same cached product entry (freshness is the
-theme's `headkit:product:<slug>` purge). `CollectionRoute` reads no `searchParams`.
+Shopify preview key). Inventory is the other hole, and it is one line.
+`ProductStock` reads `getLiveProductStock` (`"use cache: remote"`,
+`cacheLife("seconds")`). That profile's `expire` is one minute, under Next.js's
+five-minute prerender cutoff, so the fallback stays in the shell and the line
+streams at request time. The gallery, title and price stay on `getCachedProduct`
+and refresh when the product webhook purges `headkit:product:<slug>`. A
+`loading.tsx` on this route would wrap the whole segment; the instant-navigation
+guide says to push that boundary down to the dynamic part, and Next.js does not
+require `loading.tsx` when that part already has its own `<Suspense>`.
+`CollectionRoute` reads no `searchParams`.
 
 Measure, do not infer: `bun run scripts/static-shell-split.ts <.next/server/app/….html | url>`
 prints the split, the visible characters on each side, and every hidden segment. The route

@@ -23,6 +23,7 @@ import { SwatchImageProvider } from "@/components/headkit-ui/swatch-image-provid
 import { experimentalSwatchImagesEnabled } from "@/lib/experimental-swatch-images";
 import { loadSwatchImageMap } from "@/lib/swatch-visual";
 import { ProductStock } from "@/components/headkit-ui/product-stock";
+import { AvailabilityLineFallback } from "@/components/headkit-ui/live-availability";
 import { ProductCarousel } from "@/components/headkit-ui/product-carousel";
 import { ProjectCarousel } from "@/components/headkit-ui/project/project-carousel";
 import { SectionHeader } from "@/components/headkit-ui/section-header";
@@ -758,11 +759,16 @@ export async function ProductPageBody({
 
   // No boundary: `ProductStock` reads the same cached product entry this page
   // rendered from, so it is prerendered inline with the price beside it.
+  // Inventory is the dynamic hole. cacheLife("seconds") is excluded from the
+  // prerender, so this fallback is in the static shell and the line streams
+  // at request time. The boundary is the stock line, not the product.
   const stockSlot = (
-    <ProductStock
-      productSlug={productSlug}
-      {...(colorSlug !== undefined ? { colorSlug } : {})}
-    />
+    <Suspense fallback={<AvailabilityLineFallback />}>
+      <ProductStock
+        productSlug={productSlug}
+        {...(colorSlug !== undefined ? { colorSlug } : {})}
+      />
+    </Suspense>
   );
 
   const themeCopy = getStoreTheme().copy;

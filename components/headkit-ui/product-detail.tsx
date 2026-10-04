@@ -25,6 +25,7 @@ import { ProductPrice } from "@/components/headkit-ui/product-price";
 import { pickFirstPrice } from "@/lib/price-display";
 import { VariantSwatch } from "@/components/headkit-ui/variant-swatch";
 import { AvailabilityStatus } from "@/components/headkit-ui/availability-status";
+import { ProductSelectionProvider } from "@/components/headkit-ui/live-availability";
 import { Button } from "@/components/ui/button";
 import { MinusIcon, PlusIcon, HeartIcon } from "@/components/icon";
 import { addToCartAction, addToCartMultiAction } from "@/lib/cart-actions";
@@ -543,10 +544,25 @@ export function ProductDetail({
   const isOnSale =
     selectedVariation !== null ? selectedVariation.onSale : product.onSale;
 
+  const [publishedStock, setPublishedStock] = useState<{
+    variationId: string | null;
+    stockStatus: string;
+    stockQuantity: number | null;
+  } | null>(null);
+  const selectedVariationId =
+    selectedVariation?.id != null ? String(selectedVariation.id) : null;
+  const liveStock =
+    publishedStock?.variationId === selectedVariationId ? publishedStock : null;
   const stockStatus =
-    selectedVariation?.stockStatus ?? product.stockStatus ?? "instock";
+    liveStock?.stockStatus ??
+    selectedVariation?.stockStatus ??
+    product.stockStatus ??
+    "instock";
   const stockQuantity =
-    selectedVariation?.stockQuantity ?? product.stockQuantity ?? null;
+    liveStock?.stockQuantity ??
+    selectedVariation?.stockQuantity ??
+    product.stockQuantity ??
+    null;
   const isOutOfStock = isVariationOutOfStock({
     stockStatus,
     stockQuantity,
@@ -1000,12 +1016,7 @@ export function ProductDetail({
   // same variation `ProductStock` picks — so the prerendered line is unchanged.
   // Do not "restore" the slot for variable products by widening this condition;
   // add the size axis to the slot instead, or delete the slot.
-  const useServerStock =
-    Boolean(stockSlot) &&
-    !isVariable &&
-    (!productBasePath ||
-      selectedColor === initialColor ||
-      (!selectedColor && !initialColor));
+  const showStreamedStock = Boolean(stockSlot);
 
   const sizeChartHtml = shopifyRichTextToHtml(product.sizeChart ?? "");
   // Metafield modal next to Size / standalone — only when Shopify sizeChart
@@ -1249,16 +1260,19 @@ export function ProductDetail({
           {/* Availability status — hidden for HeadKit Quote checkout */}
           {!isQuoteMode && (
             <div className="mb-4">
-              {useServerStock ? (
-                stockSlot
-              ) : (
-                <AvailabilityStatus
-                  stockStatus={stockStatus}
-                  stockQuantity={
-                    (selectedVariation ?? product).stockQuantity ?? null
-                  }
-                />
-              )}
+              <ProductSelectionProvider
+                variationId={selectedVariationId}
+                publish={setPublishedStock}
+              >
+                {showStreamedStock ? (
+                  stockSlot
+                ) : (
+                  <AvailabilityStatus
+                    stockStatus={stockStatus}
+                    stockQuantity={stockQuantity}
+                  />
+                )}
+              </ProductSelectionProvider>
             </div>
           )}
 

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { cacheTag } from "next/cache";
+import { cacheLife, cacheTag } from "next/cache";
 import { cacheLifeForProfile } from "@/lib/cache-profile";
 import { TAG } from "@/lib/cache-tags";
 import { env } from "@/lib/env";
@@ -43,6 +43,28 @@ export async function getCachedProduct(slug: string) {
   // and this is exactly the per-slug read it always was.
   const prefetched = await bulkPrefetch.get(slug);
   if (prefetched) return prefetched;
+  return headkit.products.get(slug);
+}
+
+
+/**
+ * Request-time stock read for the PDP availability line.
+ *
+ * `cacheLife("seconds")` has an `expire` of one minute. Next.js excludes a
+ * cached read from the prerender when `expire` is under five minutes, so this
+ * is a dynamic hole: the static shell keeps the fallback, and the line streams
+ * in when the read resolves. It is not `getCachedProduct` — that entry stays
+ * on its own lifetime and would bake the stock into the shell.
+ *
+ * `"use cache: remote"` because the read resumes inside `<Suspense>` on the
+ * request. Plain `"use cache"` does not persist across serverless instances,
+ * so the line would re-query the origin on every view. The product tag still
+ * purges this entry; a stock webhook does not have to wait out the minute.
+ */
+export async function getLiveProductStock(slug: string) {
+  "use cache: remote";
+  cacheLife("seconds");
+  cacheTag(TAG.product(slug), TAG.products);
   return headkit.products.get(slug);
 }
 

@@ -25,6 +25,8 @@ export type AvailabilityStatusKind =
 interface Props {
   stockStatus: string;
   stockQuantity?: number | null;
+  /** Optional brand term. Stores without brand-specific copy ignore it. */
+  brandSlug?: string | null;
 }
 
 export interface ResolvedAvailability {
