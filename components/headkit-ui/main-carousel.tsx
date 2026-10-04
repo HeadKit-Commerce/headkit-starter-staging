@@ -14,7 +14,7 @@ import {
   heroLayoutClasses,
   heroMediaClasses,
   type HeroLayout,
-} from "@/lib/store-theme";
+} from "@/lib/hero-layout";
 
 interface Props {
   carouselItems: HeroCarouselItem[];

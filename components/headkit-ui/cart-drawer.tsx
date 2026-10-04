@@ -35,7 +35,7 @@ import {
   isHostedCheckoutHref,
 } from "@/lib/hosted-checkout";
 import { markHostedCheckoutPending } from "@/lib/hosted-cart-sync";
-import { getStoreTheme } from "@/lib/store-theme";
+import { useClientTheme } from "@/components/headkit-ui/client-theme-provider";
 import { formatPrice, getStoreCurrency } from "@/lib/utils";
 import { cartItemsDisplayTotal } from "@/lib/cart-prices";
 import { PlusIcon } from "@/components/icon";
@@ -47,7 +47,7 @@ export function CartDrawer() {
   const { cartData, optimisticCart, setCartData, cartOpen, toggleCart } =
     useCartContext();
   const isQuoteMode = useIsQuoteMode();
-  const theme = getStoreTheme();
+  const theme = useClientTheme();
   const packagingTheme = theme.cart?.packaging;
   const giftTheme = theme.cart?.giftMessage;
   const emptyMessage = isQuoteMode

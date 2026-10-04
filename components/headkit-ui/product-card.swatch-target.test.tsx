@@ -1,6 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { StoreTheme } from "@/lib/store-theme";
+import { clientThemeSlice } from "@/lib/client-theme";
+import { ClientThemeProvider } from "./client-theme-provider";
+import { ProductCard } from "./product-card";
+import { CatalogDisplayProvider } from "./catalog-display-provider";
 import type {
   CatalogDisplayPrefs,
   CatalogProduct,
@@ -44,14 +48,6 @@ const STARTER_THEME: StoreTheme = {
 };
 
 let theme: StoreTheme = STARTER_THEME;
-
-vi.mock("@/lib/store-theme", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/store-theme")>();
-  return { ...actual, getStoreTheme: (): StoreTheme => theme };
-});
-
-const { ProductCard } = await import("./product-card");
-const { CatalogDisplayProvider } = await import("./catalog-display-provider");
 
 const SWATCHES_ON: CatalogDisplayPrefs = {
   showVariants: true,
@@ -137,9 +133,11 @@ function product(count: number): CatalogProduct {
 
 function render(count: number, prefs = SWATCHES_ON): string {
   return renderToStaticMarkup(
-    <CatalogDisplayProvider prefs={prefs}>
-      <ProductCard product={product(count)} />
-    </CatalogDisplayProvider>,
+    <ClientThemeProvider value={clientThemeSlice(theme)}>
+      <CatalogDisplayProvider prefs={prefs}>
+        <ProductCard product={product(count)} />
+      </CatalogDisplayProvider>
+    </ClientThemeProvider>,
   );
 }
 

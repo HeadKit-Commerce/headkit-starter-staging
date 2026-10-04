@@ -1,6 +1,5 @@
 "use client";
 
-import sanitize from "sanitize-html";
 import {
   Accordion,
   AccordionContent,
@@ -68,9 +67,10 @@ function FaqColumn({ items }: { items: FaqItem[] }): React.JSX.Element {
             <span className="pr-2">{faq.question}</span>
           </AccordionTrigger>
           <AccordionContent className="pb-4 pt-0">
+            {/* Answers are sanitized in getFaqPage before this client boundary. */}
             <div
               className="max-w-md text-base leading-normal text-gray-800 prose prose-p:my-0"
-              dangerouslySetInnerHTML={{ __html: sanitize(faq.answer) }}
+              dangerouslySetInnerHTML={{ __html: faq.answer }}
             />
           </AccordionContent>
         </AccordionItem>

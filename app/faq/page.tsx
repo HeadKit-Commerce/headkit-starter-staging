@@ -9,6 +9,7 @@ import { makeSeoMetadata, storefrontUrl } from "@/lib/make-metadata";
 import { getBranding } from "@/lib/branding";
 import { EditorialContent } from "@/components/headkit-ui/editorial-content";
 import { FaqList } from "@/components/headkit-ui/faq-list";
+import { sanitizeFaqAnswers } from "@/lib/sanitize-faq";
 
 async function getFaqPage() {
   "use cache";
@@ -19,10 +20,13 @@ async function getFaqPage() {
   // failure rendered a permanently blank page. A rejected fetch now bubbles to
   // app/error.tsx ("Something went wrong" + Try again) and the failed result is
   // NOT written to the cache, so the next request retries.
-  return Promise.all([
+  const [page, faqs] = await Promise.all([
     sdk.content.get("faq", "PAGE").catch(() => null),
     sdk.faq.list(),
   ]);
+  // Inside "use cache": sanitize-html's style parser is not deterministic,
+  // and the client accordion must not import it.
+  return [page, sanitizeFaqAnswers(faqs)] as const;
 }
 
 /**

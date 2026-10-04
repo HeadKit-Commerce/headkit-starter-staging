@@ -1,7 +1,7 @@
-import sanitize from "sanitize-html";
 import { FeaturedImage } from "@/components/headkit-ui/featured-image";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
 import type { ProductCategoryDetail } from "@headkit/sdk";
+import { plainTextFromHtml } from "@/lib/plain-text";
 import { decodeHtmlEntities } from "@/lib/utils";
 
 interface Props {
@@ -20,10 +20,6 @@ interface Props {
   priority?: boolean;
 }
 
-function plainDescription(html: string): string {
-  const stripped = sanitize(html, { allowedTags: [], allowedAttributes: {} });
-  return decodeHtmlEntities(stripped).replace(/\s+/g, " ").trim();
-}
 
 /**
  * Subcategory image card shared by the SSR LCP slot and the client carousel.
@@ -40,7 +36,7 @@ export function SubcategoryCard({
   const href = `${parentPath}/${subcategory.slug}`;
   const name = decodeHtmlEntities(subcategory.name);
   const description = subcategory.description
-    ? plainDescription(subcategory.description)
+    ? plainTextFromHtml(subcategory.description)
     : "";
   const thumbnail = subcategory.thumbnail?.trim() || null;
 

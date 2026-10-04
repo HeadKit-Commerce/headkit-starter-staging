@@ -1,14 +1,15 @@
 import * as z from "zod";
 import themeJson from "@/overrides/theme.json";
+import type { HeroLayout } from "@/lib/hero-layout";
+
+export type { HeroLayout } from "@/lib/hero-layout";
+export { heroLayoutClasses, heroMediaClasses } from "@/lib/hero-layout";
 
 /** Supported nav logo placements — see overrides/theme.schema.json. */
 export type NavLayout = "left-logo" | "centered-logo" | "split";
 
 /** Desktop header action presentation. */
 export type NavStyle = "icons" | "text-labels";
-
-/** Hero carousel shell variants. */
-export type HeroLayout = "inset" | "full-bleed" | "fixed-height";
 
 /** Homepage navigation chrome. */
 export type HomepageNav = "solid" | "overlay-hero";
@@ -432,27 +433,3 @@ export function getThemeHtmlAttributes(
   };
 }
 
-/** Tailwind-friendly class names for hero shell variants. */
-export function heroLayoutClasses(heroLayout: HeroLayout): string {
-  switch (heroLayout) {
-    case "full-bleed":
-      return "mx-0 rounded-none";
-    case "fixed-height":
-      return "mx-0 rounded-none";
-    case "inset":
-    default:
-      return "mx-5";
-  }
-}
-
-/** Inner media box classes for hero height modes. */
-export function heroMediaClasses(heroLayout: HeroLayout): string {
-  const base = "relative aspect-square w-full overflow-hidden md:aspect-video";
-  if (heroLayout === "fixed-height") {
-    return `${base} md:aspect-auto md:h-[850px] md:max-h-none`;
-  }
-  if (heroLayout === "full-bleed") {
-    return `${base} md:max-h-[85svh]`;
-  }
-  return `${base} md:max-h-[70svh]`;
-}
