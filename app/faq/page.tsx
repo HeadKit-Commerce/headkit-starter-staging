@@ -10,6 +10,7 @@ import { getBranding } from "@/lib/branding";
 import { EditorialContent } from "@/components/headkit-ui/editorial-content";
 import { FaqList } from "@/components/headkit-ui/faq-list";
 import { sanitizeFaqAnswers } from "@/lib/sanitize-faq";
+import { decodeHtmlEntities } from "@/lib/utils";
 
 async function getFaqPage() {
   "use cache";
@@ -84,7 +85,7 @@ export default function FAQPage() {
 
 async function FaqRoute() {
   const [page, faqs] = await getFaqPage();
-  const title = page?.title?.trim() || "FAQ";
+  const title = decodeHtmlEntities(page?.title?.trim() || "FAQ");
 
   return (
     <>
