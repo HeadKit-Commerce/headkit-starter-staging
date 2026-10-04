@@ -10,18 +10,20 @@ import { isFlagOptedIn } from "@/lib/nav-interaction-flags";
  * on the deployed store, gtm.js started at 250-265 ms while the `load` event
  * was at 1,405-1,717 ms, so the whole third-party stack arrived 1,151-1,467 ms
  * BEFORE the page finished loading, squarely inside a ~5.9 s LCP window. The
- * default is now the `load` event, then idle — Next's own
- * `<Script strategy="lazyOnload">` semantics, hand-rolled in that component
- * because it owns a Consent Mode ordering `<Script>` cannot express.
+ * default is now the `load` event, then a fixed 3.5 s timeout. Idle-after-load
+ * fires immediately and was measured starting gtm.js in the same gap as the
+ * LCP paint. Hand-rolled in that component because it owns a Consent Mode
+ * ordering `<Script>` cannot express.
  *
  * THIS IS A PLATFORM-WIDE TIMING CHANGE, so it carries a way back.
  * `NEXT_PUBLIC_THIRD_PARTY_EAGER` restores the previous schedule for one
  * store, with no code change and no fork:
  *
- *   unset / absent      -> DEFERRED (the default): wait for `load`, then
- *                          `requestIdleCallback({ timeout: 2000 })`, with a
- *                          10 s ceiling from mount and the first-gesture
- *                          trigger kept ahead of the load wait.
+ *   unset / absent      -> DEFERRED (the default): wait for `load`, then a
+ *                          fixed 3.5 s timeout (not an idle callback — idle
+ *                          after `load` runs in the same gap as the LCP
+ *                          paint), with a 10 s ceiling from mount and the
+ *                          first-gesture trigger kept ahead of the load wait.
  *   ""                  -> DEFERRED (a platform env editor stores a cleared
  *                          variable as an empty string, and "I cleared it"
  *                          must read as "use the default")

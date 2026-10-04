@@ -210,6 +210,13 @@ function revealAddonGroup(addonId: string): void {
     ?.focus({ preventScroll: true });
 }
 
+/** Original upload when the catalogue image carries one. The published SDK does not select it yet. */
+function readImageFullSrc(img: object): string | undefined {
+  if (!("fullSrc" in img)) return undefined;
+  const value = (img as { fullSrc?: unknown }).fullSrc;
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
 export function ProductDetail({
   product,
   initialSearchParams,
@@ -495,18 +502,26 @@ export function ProductDetail({
     const productAlt = stripTitleMarkers(decodeHtmlEntities(product.name));
     const variationGallery = (selectedVariation?.images ?? [])
       .filter((img) => Boolean(img?.src))
-      .map((img) => ({
-        src: img.src,
-        alt: stripTitleMarkers(decodeHtmlEntities(img.alt || product.name)),
-      }));
+      .map((img) => {
+        const fullSrc = readImageFullSrc(img);
+        return {
+          src: img.src,
+          alt: stripTitleMarkers(decodeHtmlEntities(img.alt || product.name)),
+          ...(fullSrc ? { fullSrc } : {}),
+        };
+      });
     if (variationGallery.length > 0) {
       return variationGallery;
     }
 
-    const base = product.images.map((img) => ({
-      src: img.src,
-      alt: stripTitleMarkers(decodeHtmlEntities(img.alt || product.name)),
-    }));
+    const base = product.images.map((img) => {
+      const fullSrc = readImageFullSrc(img);
+      return {
+        src: img.src,
+        alt: stripTitleMarkers(decodeHtmlEntities(img.alt || product.name)),
+        ...(fullSrc ? { fullSrc } : {}),
+      };
+    });
     return base.length > 0
       ? base
       : [{ src: "/placeholder.png", alt: productAlt }];

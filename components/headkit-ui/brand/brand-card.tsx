@@ -19,6 +19,8 @@ export function BrandCard({ brand }: BrandCardProps) {
                 alt={decodeHtmlEntities(brand.image.alt ?? brand.name)}
                 src={brand.image.src}
                 fill
+                sizes="160px"
+                quality={65}
                 className="object-contain object-center"
               />
             </div>
@@ -28,6 +30,8 @@ export function BrandCard({ brand }: BrandCardProps) {
                 alt={name}
                 src={brand.thumbnail}
                 fill
+                sizes="160px"
+                quality={65}
                 className="object-contain object-center"
               />
             </div>

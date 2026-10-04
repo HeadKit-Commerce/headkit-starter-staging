@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import Image from "next/image";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -374,31 +375,23 @@ function AddonImageSwatches({
             {option.image ? (
               <span
                 className={cn(
-                  "block h-[72px] w-[72px] overflow-hidden rounded-md outline-2 outline-solid outline-offset-1 transition-all hover:outline-primary md:h-[88px] md:w-[88px]",
+                  "relative block h-[72px] w-[72px] overflow-hidden rounded-md outline-2 outline-solid outline-offset-1 transition-all hover:outline-primary md:h-[88px] md:w-[88px]",
                   isSelected ? "outline-primary" : "outline-transparent",
                 )}
               >
                 {/*
-                  A plain <img>, not next/image, and this is a correctness
-                  choice rather than a shortcut. An add-on swatch URL is
-                  whatever the merchant put in the extension's option row — any
-                  host, including one no deploy's `images.remotePatterns` can
-                  know about. Read in `next/dist/shared/lib/image-loader.js:96`:
-                  when no remote pattern matches, next/image THROWS (E231)
-                  rather than degrading, so one unconfigured swatch host takes
-                  the entire PDP down. The tile is 72–88px, so the optimizer
-                  saves nothing worth that risk. The local fixture proves the
-                  case: its seeded URL is `https://localhost/...`, and only
-                  `http` localhost is allowlisted.
+                  Product Add-Ons option image. The theme publishes the medium
+                  attachment (~300px) on the store image host, which is already
+                  in remotePatterns. The tile is 72–88px, so 88px at quality 50
+                  is the file the browser should receive.
                 */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                   src={option.image}
                   alt=""
-                  width={88}
-                  height={88}
-                  loading="lazy"
-                  className="h-full w-full object-cover"
+                  fill
+                  sizes="88px"
+                  quality={50}
+                  className="object-cover"
                 />
               </span>
             ) : (
