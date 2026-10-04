@@ -29,12 +29,6 @@ type Props = {
   consentEnabled?: boolean | undefined;
 };
 
-declare global {
-  interface Window {
-    dataLayer?: unknown[];
-  }
-}
-
 /**
  * Idle deadline measured from MOUNT under the eager escape hatch
  * (`NEXT_PUBLIC_THIRD_PARTY_EAGER`). This is the cap every storefront used
