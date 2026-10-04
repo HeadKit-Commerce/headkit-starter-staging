@@ -1,6 +1,7 @@
-import { getCachedProduct } from "@/lib/product-cache";
-import { AvailabilityStatus } from "@/components/headkit-ui/availability-status";
-import { findSwatchAttribute } from "@/lib/swatch-attribute";
+import { getLiveProductStock } from "@/lib/product-cache";
+import { LiveAvailability } from "@/components/headkit-ui/live-availability";
+import type { StockSnapshot } from "@/components/headkit-ui/live-availability";
+import { resolveDisplayBrand } from "@/lib/product-brand";
 
 interface Props {
   productSlug: string;
@@ -8,50 +9,47 @@ interface Props {
 }
 
 /**
- * The PDP stock line, read from the SAME `"use cache"` product entry the page
- * renders from (`getCachedProduct`), so it is prerendered inline beside the
- * price and shows with JavaScript off.
+ * The PDP availability line.
  *
- * It used to opt itself into request-time rendering — `connection()` plus an
- * uncached `products.get` — to bypass the static cache, which made it a
- * streamed island on every view (and, before the route split, part of the
- * reason the whole PDP boundary streamed). Freshness now comes from the
- * theme's tag purges instead: a stock or price save fires
- * `headkit:product:<slug>` (`docs/cache-revalidation-contract.md`), which
- * expires this entry and the page together, so the two can never disagree.
+ * The product page renders this inside `<Suspense>`. The read is
+ * `getLiveProductStock` (`"use cache: remote"`, `cacheLife("seconds")`).
+ * Next.js leaves that lifetime out of the prerender, so the fallback is in
+ * the static shell and this line streams in at request time. The gallery,
+ * title, price and description stay on `getCachedProduct` and are not inside
+ * this boundary.
+ *
+ * The snapshot includes every variation. `LiveAvailability` matches the
+ * variation `ProductDetail` has selected, so a size click and the Add to Bag
+ * button stay on the same stock. The URL colour is that component's seeded
+ * selection, so this read does not pick a variation itself.
  *
  * Uses `products.get` until a lean `getStock` SDK method ships (ENG-853).
  *
  * Must never throw during post-action RSC refresh (e.g. after add-to-cart):
  * a provider outage would otherwise trip the route `error.tsx` boundary.
  */
-export async function ProductStock({ productSlug, colorSlug }: Props) {
+export async function ProductStock({ productSlug }: Props) {
+  let snapshot: StockSnapshot | null = null;
   try {
-    const product = await getCachedProduct(productSlug);
+    const product = await getLiveProductStock(productSlug);
     if (!product) return null;
-    const swatchAttr = findSwatchAttribute(product.attributes);
-    const variation = colorSlug
-      ? product.variations.find((v) =>
-          v.attributes.some(
-            (a) =>
-              a.value === colorSlug &&
-              (!swatchAttr || a.key === swatchAttr.slug),
-          ),
-        )
-      : null;
-
-    const stockStatus =
-      variation?.stockStatus ?? product.stockStatus ?? "instock";
-    const stockQuantity =
-      variation?.stockQuantity ?? product.stockQuantity ?? null;
-
-    return (
-      <AvailabilityStatus
-        stockStatus={stockStatus}
-        stockQuantity={stockQuantity}
-      />
-    );
+    snapshot = {
+      stockStatus: product.stockStatus ?? "instock",
+      stockQuantity: product.stockQuantity ?? null,
+      brandSlug: resolveDisplayBrand(product.brands ?? [])?.slug ?? null,
+      variations: product.variations.map((variation) => ({
+        id: variation.id,
+        stockStatus: variation.stockStatus ?? null,
+        stockQuantity: variation.stockQuantity ?? null,
+        attributes: variation.attributes.map((attribute) => ({
+          key: attribute.key,
+          value: attribute.value,
+        })),
+      })),
+    };
   } catch {
     return null;
   }
+
+  return <LiveAvailability snapshot={snapshot} />;
 }

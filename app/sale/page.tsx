@@ -1,14 +1,12 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { getCatalogFilters } from "@/lib/catalog-filters";
 import { CollectionHeader } from "@/components/headkit-ui/collection/collection-header";
 import { CollectionPage } from "@/components/headkit-ui/collection/collection-page";
 import {
   buildProductListFilter,
-  parseSearchParams,
+  DEFAULT_FILTER_VALUES,
   type SortKeyType,
 } from "@/components/headkit-ui/collection/utils";
-import { CollectionProductsSkeleton } from "@/components/headkit-ui/skeletons/collection-page-skeleton";
 import { CATALOG_PAGE_SIZE } from "@/components/headkit-ui/catalog-grid";
 import { getCachedCatalogPage } from "@/lib/catalog-cache";
 import { getBranding } from "@/lib/branding";
@@ -42,29 +40,46 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-interface Props {
-  searchParams: Promise<Record<string, string>>;
-}
-
 const PER_PAGE = CATALOG_PAGE_SIZE;
 
 /**
- * Dynamic island: reads searchParams (must live inside <Suspense> under
- * cacheComponents). Preserves the onSale filter for this route.
+ * Page 1 of the cached catalogue, in the shell. This route does not await
+ * `searchParams`. Query-string filters are applied in the browser by
+ * `CollectionProvider`.
+ *
+ * @see https://nextjs.org/docs/app/getting-started/caching
  */
-async function LandingResults({ searchParams }: Props) {
-  const sp = await searchParams;
-  const parsed = parseSearchParams(sp);
-  const page = parsed.page;
+export const instant = true;
 
+export default function Page() {
+  return (
+    <>
+      <CollectionHeader
+        name="Sale"
+        description="Shop our sale items with great discounts!"
+        breadcrumbs={[
+          { name: "Home", uri: "/", current: false },
+          { name: "Sale", uri: "/sale", current: true },
+        ]}
+        childBasePath="/collections"
+      />
+      <LandingProductsShell />
+    </>
+  );
+}
+
+async function LandingProductsShell() {
   const { branding } = await getBranding();
-  const filter = buildProductListFilter(parsed, {
-    onSale: true,
-    defaultSort: branding.defaultCollectionSort as SortKeyType,
-  });
+  const filter = buildProductListFilter(
+    { ...DEFAULT_FILTER_VALUES, page: 1 },
+    {
+      onSale: true,
+      defaultSort: branding.defaultCollectionSort as SortKeyType,
+    },
+  );
 
   const [productsResult, productFilter] = await Promise.all([
-    getCachedCatalogPage(filter, page, PER_PAGE, {
+    getCachedCatalogPage(filter, 1, PER_PAGE, {
       kind: "route",
       route: "sale",
     }),
@@ -76,36 +91,9 @@ async function LandingResults({ searchParams }: Props) {
       initialProducts={productsResult.products}
       initialTotal={productsResult.total}
       productFilter={productFilter}
-      initialPage={page}
+      initialPage={1}
       itemsPerPage={PER_PAGE}
       onSale
     />
-  );
-}
-
-/**
- * Instant Navigation (Next.js 16.3) — sync App Shell + Suspense streaming.
- * @see https://nextjs.org/docs/app/guides/instant-navigation
- */
-export const instant = true;
-
-export default function Page({ searchParams }: Props) {
-  return (
-    <>
-      {/* Static shell — outside <Suspense>, cacheable */}
-      <CollectionHeader
-        name="Sale"
-        description="Shop our sale items with great discounts!"
-        breadcrumbs={[
-          { name: "Home", uri: "/", current: false },
-          { name: "Sale", uri: "/sale", current: true },
-        ]}
-        childBasePath="/collections"
-      />
-      {/* Dynamic grid — Instant Navigation shell streams results under Suspense. */}
-      <Suspense fallback={<CollectionProductsSkeleton />}>
-        <LandingResults searchParams={searchParams} />
-      </Suspense>
-    </>
   );
 }

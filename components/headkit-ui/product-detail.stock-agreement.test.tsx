@@ -2,6 +2,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { LiveAvailability } from "@/components/headkit-ui/live-availability";
+import type { StockSnapshot } from "@/components/headkit-ui/live-availability";
 
 /**
  * The availability line and the Add to Bag button must never disagree about the
@@ -17,16 +19,17 @@ import { createRoot, type Root } from "react-dom/client";
  * "Out of stock" button, ~40px apart. Measured at 36.3% of colourway PDPs on
  * one store (`260925-bs-variable-stock-out-of-stock`).
  *
- * `useServerStock` is now false for any variable product, so both read the
- * selected variation. The invariant asserted here is the AGREEMENT, not the
- * copy: the availability status and the button verdict are compared to each
- * other for one selection, before and after a size click.
+ * The availability line is `LiveAvailability`, fed the same variation stock the
+ * button falls back to, and it publishes the selected variation so the button
+ * follows it. The invariant asserted here is the AGREEMENT, not the copy: the
+ * availability status and the button verdict are compared to each other for
+ * one selection, before and after a size click.
  *
  * Both halves are load-bearing. A test that only asserted the out-of-stock
  * state would stay green under a "fix" that always says Out of Stock, and a
  * test that omitted `stockSlot` would be green under the bug itself — the slot
- * is what the bug rendered. So a recognisable `stockSlot` node is passed and
- * its absence is asserted directly.
+ * is what used to render a size-blind line. The slot passed here is
+ * `LiveAvailability` with the fixture's own variations.
  *
  * What this does NOT cover:
  * - one product fixture (colour + size, six sizes, one colourway);
@@ -129,8 +132,6 @@ vi.mock("@/lib/ga4-ecommerce", () => ({
 }));
 
 import { ProductDetail } from "@/components/headkit-ui/product-detail";
-
-const STOCK_SLOT_MARKER = "SERVER-STOCK-SLOT";
 
 interface Variation {
   id: number;
@@ -279,6 +280,29 @@ function simpleProduct(): unknown {
  * on a colourway URL whose colour the shopper has not changed, which is exactly
  * the state the bug lived in.
  */
+function snapshotOf(product: unknown): StockSnapshot {
+  const source = product as {
+    stockStatus: string;
+    stockQuantity: number | null;
+    variations: Array<{
+      id: number;
+      stockStatus: string;
+      stockQuantity: number | null;
+      attributes: Array<{ key: string; value: string }>;
+    }>;
+  };
+  return {
+    stockStatus: source.stockStatus,
+    stockQuantity: source.stockQuantity,
+    variations: source.variations.map((variation) => ({
+      id: variation.id,
+      stockStatus: variation.stockStatus,
+      stockQuantity: variation.stockQuantity,
+      attributes: variation.attributes,
+    })),
+  };
+}
+
 function mount(
   product: unknown,
   opts: { basePath?: string; initialColor?: string } = {},
@@ -292,7 +316,7 @@ function mount(
         product={product as never}
         {...(opts.basePath ? { productBasePath: opts.basePath } : {})}
         {...(opts.initialColor ? { initialColor: opts.initialColor } : {})}
-        stockSlot={<span>{STOCK_SLOT_MARKER}</span>}
+        stockSlot={<LiveAvailability snapshot={snapshotOf(product)} />}
       />,
     );
   });
@@ -366,13 +390,6 @@ describe("PDP stock agreement", () => {
       expect(buttonSaysOutOfStock(host)).toBe(false);
       expect(atcDisabled(host)).toBe(false);
 
-      // The server slot must NOT be on screen for a variable product: it is the
-      // size-blind resolver, and rendering it is the bug.
-      expect(
-        host.textContent,
-        "the size-blind server stock slot must not render for a variable product",
-      ).not.toContain(STOCK_SLOT_MARKER);
-
       act(() => {
         sizeChip(host, "52").click();
       });
@@ -382,7 +399,6 @@ describe("PDP stock agreement", () => {
       expect(availabilityLabel(host)).toContain("Out of Stock");
       expect(buttonSaysOutOfStock(host)).toBe(true);
       expect(atcDisabled(host)).toBe(true);
-      expect(host.textContent).not.toContain(STOCK_SLOT_MARKER);
 
       // …and back. A fix that pinned the line to "Out of Stock" would fail here.
       act(() => {
@@ -419,17 +435,10 @@ describe("PDP stock agreement", () => {
     }
   });
 
-  it("still renders the server stock slot for a simple product", () => {
+  it("agrees on a simple product, whose line is the streamed slot", () => {
     const { root, host } = mount(simpleProduct());
     try {
-      expect(
-        host.textContent,
-        "a simple product has no second axis and cannot disagree, so it keeps the prerendered slot",
-      ).toContain(STOCK_SLOT_MARKER);
-      expect(
-        availabilityStatus(host),
-        "the slot IS the line here, so no client-rendered line should replace it",
-      ).toBeNull();
+      expect(availabilityStatus(host)).toBe("ON_BACKORDER");
       expect(buttonSaysOutOfStock(host)).toBe(false);
     } finally {
       act(() => root.unmount());

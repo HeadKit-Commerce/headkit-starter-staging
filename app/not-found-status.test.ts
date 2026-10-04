@@ -38,12 +38,9 @@ import { resolve } from "node:path";
  * assertion enforces the DECLARATION these routes make — they block on one
  * cached read before responding — not the status code itself.
  *
- * EIGHT routes used to be gated. Card destinations are not: shop, products,
- * collections, brand, news and projects each have a `loading.tsx`, which is
- * what makes a click paint that page or its skeleton immediately. A missing
- * URL on those routes streams as 200 with `noindex`. CMS pages, client pages
- * and wholesale stay gated and keep a real 404. See "Card routes navigate
- * instantly" in `apps/starter/AGENTS.md`.
+ * CMS pages, client pages and wholesale stay gated and keep a real 404.
+ * Brand, news and project articles are cached documents: they have no
+ * `loading.tsx`, `instant` stays true, and a missing URL answers 404.
  *
  * The root-layout half of (3) is the reason this file exists rather than being
  * copied: a sibling storefront shipped that same route-wide hoist, correctly,
@@ -130,25 +127,28 @@ const GATED_ROUTES: readonly [string, () => Promise<RouteModule>][] = [
 ];
 
 /**
- * Card destinations. `loading.tsx` is the shell, so these are instant and
- * do not promise a real 404. The flat PDP stays in this list: it was already
- * un-gated for Shopify draft preview, and its skeleton is the same file.
+ * Catalogue routes whose cached heading, gallery and page-1 grid are the
+ * static shell. `loading.tsx` is forbidden: it is a boundary around the whole
+ * segment, and React outlines that completed boundary into a hidden segment,
+ * so the browser paints the skeleton until `$RC`. The flat PDP stays out of
+ * the gated list because a missing product is still a soft 404 — the Shopify
+ * preview key is read below the one remaining boundary.
  */
-const CARD_ROUTES: readonly [string, () => Promise<RouteModule>][] = [
+const STATIC_SHELL_ROUTES: readonly [string, () => Promise<RouteModule>][] = [
   [
     "app/collections/[...slug]/page.tsx",
     () => import("./collections/[...slug]/page"),
   ],
-  ["app/news/[...slug]/page.tsx", () => import("./news/[...slug]/page")],
   ["app/shop/[...slug]/page.tsx", () => import("./shop/[...slug]/page")],
-  ["app/brand/[...slug]/page.tsx", () => import("./brand/[...slug]/page")],
-  [
-    "app/projects/[...slug]/page.tsx",
-    () => import("./projects/[...slug]/page"),
-  ],
   [
     "app/products/[...slug]/page.tsx",
     () => import("./products/[...slug]/page"),
+  ],
+  ["app/brand/[...slug]/page.tsx", () => import("./brand/[...slug]/page")],
+  ["app/news/[...slug]/page.tsx", () => import("./news/[...slug]/page")],
+  [
+    "app/projects/[...slug]/page.tsx",
+    () => import("./projects/[...slug]/page"),
   ],
 ];
 
@@ -285,14 +285,14 @@ describe("missing pages answer a real 404, not a 200 shell", () => {
     ).toEqual([]);
   });
 
-  it.each(CARD_ROUTES)(
-    "%s navigates instantly via its own loading.tsx",
+  it.each(STATIC_SHELL_ROUTES)(
+    "%s paints cached content with no loading shell",
     async (rel, load) => {
       const route = await load();
       expect(
         route.instant,
-        `${rel} is a card destination. instant = true declares that a click ` +
-          `paints this page or its loading.tsx immediately.`,
+        `${rel} is a prerendered catalogue page. instant = true declares ` +
+          `that a click paints the cached document, not a blocking gate.`,
       ).toBe(true);
 
       const segments = rel.split("/").slice(0, -1);
@@ -300,10 +300,11 @@ describe("missing pages answer a real 404, not a 200 shell", () => {
         .map((_, i) => [...segments.slice(0, i + 1), "loading.tsx"].join("/"))
         .filter((candidate) => existsSync(resolve(__dirname, "..", candidate)));
       expect(
-        shells.length,
-        `${rel} needs a loading.tsx on its segment so a click can show that ` +
-          `page's skeleton when the content is not ready.`,
-      ).toBeGreaterThan(0);
+        shells,
+        `${rel} is wrapped by ${shells.join(", ")}. That loading.tsx outlines ` +
+          `the heading, gallery and product grid into a hidden segment, so the ` +
+          `static shell is the skeleton.`,
+      ).toEqual([]);
     },
   );
 

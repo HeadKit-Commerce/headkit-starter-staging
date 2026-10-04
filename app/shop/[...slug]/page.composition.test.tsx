@@ -3,22 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Suspense, type ReactElement } from "react";
 
 /**
- * Where the nested `/shop/[...slug]` route puts its boundary, per branch.
+ * Where `/shop/[...slug]` renders a product or a category.
  *
- * The page passes `params` into `ShopRoute` inside Suspense and does not
- * await them itself. That is the Next.js 16 shape: URL data stays out of the
- * shared App Shell, and `prefetch={true}` can resolve the cached product
- * before the click. `loading.tsx` stays as the instant fallback. The child
- * still must not await `searchParams`: that read postpones the boundary and
- * the prerender is only the skeleton.
+ * The page awaits `ShopRoute` in the segment itself. A `<Suspense>` around
+ * that render outlines the page into a hidden segment, so the static shell
+ * is the skeleton and the gallery waits on `$RC`. The child must not await
+ * `searchParams`: that read, with no boundary, turns the route dynamic.
  *
- * The category branch has NO boundary either, for the same reason:
- * `CollectionRoute` reads no `searchParams`, so its heading and
- * page-1 grid render in the static shell. That only holds while
- * `CollectionProvider` — the client component every listing route mounts —
- * calls no `useSearchParams()`, which is itself a request-time read and turned
- * the whole route dynamic (`f`, 0-byte shell) while it was there. Both halves
- * are asserted below, because either one alone passes with the other broken.
+ * The category branch returns `CollectionRoute` with no boundary of its own.
+ * That only holds while `CollectionProvider` calls no `useSearchParams()`,
+ * which is itself a request-time read and turned the whole route dynamic
+ * (`f`, 0-byte shell) while it was there. Both halves are asserted below.
  *
  * The 404 gate (index / unknown / no candidate) is `app/not-found-status.test.ts`;
  * metadata and `generateStaticParams` are `./page.test.ts`.
@@ -97,7 +92,6 @@ vi.mock("@/components/headkit-ui/skeletons/collection-page-skeleton", () => ({
 
 import Page, { ShopRoute } from "./page";
 import { ProductPageBody } from "@/app/products/[...slug]/page";
-import { ProductPageShell } from "@/app/products/[...slug]/product-page-shell";
 import { CollectionRoute } from "@/app/collections/[...slug]/page";
 
 const HOODIE = {
@@ -134,21 +128,17 @@ beforeEach(() => {
   );
 });
 
-describe("shop/[...slug] — params stay inside Suspense", () => {
-  it("returns the product shell immediately and does not read the URL itself", () => {
+describe("shop/[...slug] — cached content renders in the page segment", () => {
+  it("returns the product body and does not read searchParams", async () => {
     const searchParams = trackedSearchParams();
 
-    const element = Page({
+    const element = (await Page({
       params: Promise.resolve({ slug: ["clothing", "hoodies", "blue-hoodie"] }),
       searchParams: searchParams.promise,
-    }) as ReactElement<{
-      fallback: ReactElement;
-      children: ReactElement;
-    }>;
+    })) as ReactElement<{ productSlug: string }>;
 
-    expect(element.type).toBe(Suspense);
-    expect(element.props.fallback.type).toBe(ProductPageShell);
-    expect(element.props.children.type).toBe(ShopRoute);
+    expect(element.type).toBe(ProductPageBody);
+    expect(element.props.productSlug).toBe("blue-hoodie");
     expect(searchParams.awaited()).toBe(false);
   });
 
@@ -214,6 +204,15 @@ describe("shop/[...slug] — params stay inside Suspense", () => {
 describe("shop/[...slug] — the category branch renders in the static shell", () => {
   it("returns CollectionRoute directly, with no boundary above it and no searchParams", async () => {
     const searchParams = trackedSearchParams();
+
+    const pageElement = (await Page({
+      params: Promise.resolve({ slug: ["clothing", "hoodies"] }),
+      searchParams: searchParams.promise,
+    })) as ReactElement;
+    expect(
+      pageElement.type,
+      "the page must not wrap the category in Suspense — that boundary is the skeleton shell",
+    ).toBe(CollectionRoute);
 
     const element = (await ShopRoute({
       params: Promise.resolve({ slug: ["clothing", "hoodies"] }),

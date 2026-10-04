@@ -109,7 +109,8 @@ export async function generateStaticParams(): Promise<{ slug: string[] }[]> {
     // pages left under the 45-minute ceiling after product HTML and the base
     // categories (`lib/collection-facet-plan.ts`). It is made before
     // `getFilters`. A set that does not fit is not sliced to a walk-order
-    // prefix. Unbuilt facet URLs still route; `loading.tsx` is their first paint.
+    // prefix. Unbuilt facet URLs still route. The first request fills the
+    // cache; there is no `loading.tsx` skeleton in front of them.
     const facetPlan = await readFacetCataloguePlan(
       "products" in sdk ? sdk.products : undefined,
     );
@@ -405,15 +406,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  *
  * ### The same mechanism governs `notFound()`, and it is gated here too
  *
- * A missing category answered 200 with a streamed not-found body for exactly
- * this reason, so the existence check is resolved here as well. The conditions
- * that let it set the status — and why `instant` is NOT one of them — live once
- * in "Setting a status code needs THREE conditions" in `apps/starter/AGENTS.md`;
- * Card clicks do not use that gate for the status line. `loading.tsx` on
- * this segment is the navigation shell, so a missing collection streams as
- * 200 with `noindex`, and a flat-URL 308 on this route streams as well.
- * `instant = true` below is the declaration that the shell is the UI.
- * Recorded in `apps/starter/AGENTS.md` under "Card routes navigate instantly".
+ * A missing category answered 200 with a streamed not-found body while
+ * `loading.tsx` wrapped this segment, so the existence check is resolved here
+ * as well. With that file gone, `notFound()` sets 404 and `permanentRedirect`
+ * sets 308. The conditions — and why `instant` is NOT one of them — live once
+ * in "Setting a status code needs THREE conditions" in `apps/starter/AGENTS.md`.
+ * `instant = true` stays: the prerendered document is the shell, and a click
+ * paints that document rather than a skeleton.
  *
  * ### The 308 carries the path, not the query
  *

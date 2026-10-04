@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Suspense, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { notFound, unstable_rethrow } from "next/navigation";
 import { cacheTag } from "next/cache";
 import { cacheLifeForProfile } from "@/lib/cache-profile";
@@ -16,7 +16,6 @@ import {
   generateMetadata as productMetadata,
   ProductPageBody,
 } from "@/app/products/[...slug]/page";
-import { ProductPageShell } from "@/app/products/[...slug]/product-page-shell";
 import { CollectionRoute } from "@/app/collections/[...slug]/page";
 import { collectionPathFromCategory } from "@/components/headkit-ui/collection/utils";
 import {
@@ -322,30 +321,25 @@ export async function generateMetadata({
 }
 
 /**
- * `params` are URL data. Next.js will not put them in the shared App Shell
- * unless this read sits inside Suspense and the product read is `"use cache"`.
- * Awaiting them in the page itself is what left every unvisited product on
- * the `loading.tsx` skeleton: the prefetch was the shell, and the body was a
- * cold server render.
+ * Cached catalogue markup renders in this segment, not inside `<Suspense>`.
  *
- * https://nextjs.org/docs/app/guides/adopting-partial-prefetching#move-url-data-behind-suspense
- * https://nextjs.org/docs/app/guides/optimizing-prefetching
+ * A page-level boundary — an explicit `<Suspense>` or `loading.tsx`, which is
+ * the same boundary — outlines a completed product or category into
+ * `<div hidden id="S:…">`. The HTML the browser paints first is then the
+ * skeleton, and the heading, gallery and first product row appear only when
+ * the inline `$RC` script runs. Measured on a prerendered rehearsal document
+ * (`x-nextjs-prerender: 1`): about 900 visible characters of nav and footer,
+ * with the H1 and every `fetchpriority="high"` image after that split.
  *
- * `loading.tsx` stays. It is the instant fallback while this child is not
- * ready. `generateStaticParams` plus `prefetch={true}` on the product card is
- * what makes the child a static-cache hit instead of that fallback.
- *
- * `notFound()` in this child is already inside `loading.tsx`, so a missing
- * product is a soft 404. That is the trade for keeping the loading fallback.
+ * `params` are awaited in {@link ShopRoute}, which this function awaits, so
+ * `notFound()` sets a real 404. There is no request-time read on this route:
+ * the product and the page-1 grid are `"use cache"`, and `searchParams` is
+ * not read. Product cards still pass `prefetch={true}`.
  */
 export const instant = true;
 
-export default function Page(props: Props): ReactNode {
-  return (
-    <Suspense fallback={<ProductPageShell />}>
-      <ShopRoute params={props.params} />
-    </Suspense>
-  );
+export default async function Page(props: Props): Promise<ReactNode> {
+  return ShopRoute({ params: props.params });
 }
 
 export async function ShopRoute({
@@ -365,8 +359,7 @@ export async function ShopRoute({
   // by already matching the tree that was just read.
   //
   // The build-time placeholder param 404s HERE. It is never served from a
-  // prerender, so skipping the gate for it would send a runtime request down
-  // into a `notFound()` below the boundary — the soft 404 this gate closes.
+  // prerender, so a runtime request for it is a junk URL.
   const { slug } = await params;
   if (slug[0] === STATIC_GEN_PLACEHOLDER_SLUG) notFound();
   // Not caught, deliberately — same rule as `getShopCategoryTree`: a thrown
@@ -378,9 +371,9 @@ export async function ShopRoute({
     const accepted = await resolveShopProduct(slug, resolved.candidates);
     if (!accepted) notFound();
 
-    // Cached product body. This child does not await `searchParams`, so the
-    // prerender can finish `getCachedProduct` into the static segment while
-    // the page-level Suspense keeps `params` out of the shared App Shell.
+    // Cached product body. This child does not await `searchParams`, and the
+    // page awaits it with no `<Suspense>` above it, so the gallery finishes
+    // into the static shell rather than a hidden segment.
     // Colourway links come from `productPath`, the nested shape this route
     // serves.
     //

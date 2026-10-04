@@ -343,7 +343,7 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
     ).toBe(false);
   });
 
-  it("composes the body with no page-level Suspense — the stock slot is the plain cached component", async () => {
+  it("composes the body with the inventory hole as its only Suspense", async () => {
     getCachedProduct.mockResolvedValue(FLAT_PRODUCT);
 
     const tree = await ProductPageBody({
@@ -354,9 +354,9 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
 
     const rendered = elements(tree);
     expect(
-      rendered.map((element) => element.type),
-      "the composition itself must not reintroduce a boundary around cached content",
-    ).not.toContain(Suspense);
+      rendered.filter((element) => element.type === Suspense),
+      "the product composition itself has no boundary; the inventory hole is the stock slot",
+    ).toEqual([]);
 
     const detail = rendered.find(
       (element) => element.type === ProductDetail,
@@ -365,9 +365,14 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
       detail,
       "positive control: the body rendered the detail",
     ).toBeDefined();
+    const slot = detail!.props.stockSlot as ReactElement<{
+      children?: ReactElement;
+    }>;
+    expect(slot.type).toBe(Suspense);
+    const child = slot.props.children as ReactElement;
     expect(
-      detail!.props.stockSlot.type,
-      "stock reads the same cached product entry, so it is rendered inline — no Suspense, no skeleton",
+      child.type,
+      "the hole's child is the live stock read, not the cached product",
     ).toBe(ProductStock);
   });
 

@@ -89,6 +89,11 @@ const FINITE_IN_BOTH_PROFILES: { file: string; fn: string; why: string }[] = [
     fn: "getBranding",
     why: "carries the store's indexing switch and canonical domain",
   },
+  {
+    file: "lib/product-cache.ts",
+    fn: "getLiveProductStock",
+    why: "is the PDP inventory hole; raising it to max bakes stock into the static shell",
+  },
 ];
 
 /**

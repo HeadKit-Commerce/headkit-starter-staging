@@ -106,34 +106,15 @@ async function ProjectsServer({
 }
 
 /**
- * Instant Navigation (Next.js 16.3) — sync App Shell + Suspense streaming.
- * @see https://nextjs.org/docs/app/guides/instant-navigation
+ * The landing is cached CMS content, so the header is the static shell.
+ * The list awaits `searchParams` and the page applies that filter on the
+ * server, so that read stays inside one `<Suspense>`.
+ *
+ * @see https://nextjs.org/docs/app/getting-started/caching
  */
 export const instant = true;
 
-export default function Page({ searchParams }: Props): React.ReactElement {
-  return (
-    <Suspense
-      fallback={
-        <>
-          <PostHeader
-            name={FALLBACK_TITLE}
-            description={FALLBACK_DESCRIPTION}
-            breadcrumbs={[
-              { name: "Home", uri: "/", current: false },
-              { name: FALLBACK_TITLE, uri: "/projects", current: true },
-            ]}
-          />
-          <EditorialGridSkeleton aspect="square" />
-        </>
-      }
-    >
-      <ProjectsLanding searchParams={searchParams} />
-    </Suspense>
-  );
-}
-
-async function ProjectsLanding({
+export default async function Page({
   searchParams,
 }: Props): Promise<React.ReactElement> {
   const page = await getProjectsLanding();

@@ -162,15 +162,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 /**
- * Brand-card destination. `loading.tsx` is the navigation shell. A missing
- * brand streams as 200 with `noindex`. See "Card routes navigate instantly"
- * in `apps/starter/AGENTS.md`.
+ * Brand page. The header and the page-1 grid are cached, so they are the
+ * static shell. `notFound()` in this export answers 404. There is no
+ * `loading.tsx`.
+ *
+ * @see https://nextjs.org/docs/app/getting-started/caching
  */
 export const instant = true;
 
 export default async function Page({ params }: Props) {
-  // Existence check. `loading.tsx` already wraps this page, so `notFound()`
-  // here streams as 200 with `noindex` rather than setting a 404. `BrandRoute`
+  // Existence check, above every boundary. There is no `loading.tsx`, so
+  // `notFound()` here sets 404. `BrandRoute`
   // repeats the checks and the `"use cache"` shell read dedupes. A THROWN
   // read still propagates: only a null brand is a genuine miss.
   //
