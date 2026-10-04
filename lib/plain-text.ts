@@ -83,10 +83,10 @@ const EXTRA_ENTITIES: Record<string, string> = {
  * into the client carousel.
  */
 export function plainTextFromHtml(html: string): string {
-  const stripped = html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ");
+  // React renders the result as text, so a tag strip is enough and a script
+  // body cannot run. Do not special-case <script>: a closing-tag regexp misses
+  // end tags such as `</script >`, which CodeQL reports as a bad HTML filter.
+  const stripped = html.replace(/<[^>]+>/g, " ");
   const named = stripped.replace(/&([a-z]+);/gi, (match, name: string) => {
     const extra = EXTRA_ENTITIES[name.toLowerCase()];
     return extra !== undefined ? extra : match;
