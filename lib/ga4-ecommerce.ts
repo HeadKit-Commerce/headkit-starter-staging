@@ -47,7 +47,9 @@ import { getFloatVal } from "@/lib/utils";
 
 declare global {
   interface Window {
-    dataLayer?: unknown[];
+    // Same type `@next/third-parties` declares. A second declaration has to
+    // match exactly or tsc rejects the merge (TS2717).
+    dataLayer?: Object[];
   }
 }
 
