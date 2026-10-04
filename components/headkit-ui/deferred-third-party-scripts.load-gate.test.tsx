@@ -3,6 +3,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
+// The real `GoogleTagManager` loads through `next/script`, which caches by src
+// and will not re-insert a tag the test already removed. This stands in for
+// that mount: one async `gtm.js` tag, and the same `gtm.start` dataLayer push
+// the inline script performs, so the consent-order assertions can see it.
+vi.mock("@next/third-parties/google", () => ({
+  GoogleTagManager: function MockGoogleTagManager({ gtmId }: { gtmId: string }) {
+    if (typeof document === "undefined") return null;
+    const src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(gtmId)}`;
+    if ([...document.scripts].some((script) => script.src === src)) return null;
+    const layer = ((window as unknown as { dataLayer?: unknown[] }).dataLayer =
+      (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? []);
+    layer.push({ "gtm.start": Date.now(), event: "gtm.js" });
+    const el = document.createElement("script");
+    el.id = "_next-gtm";
+    el.async = true;
+    el.src = src;
+    document.head.appendChild(el);
+    return null;
+  },
+}));
+
 import { DeferredThirdPartyScripts } from "@/components/headkit-ui/deferred-third-party-scripts";
 import { resetConsentStoreForTests } from "@/lib/consent-store";
 
@@ -101,6 +122,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetConsentStoreForTests();
   delete (window as unknown as { dataLayer?: unknown[] }).dataLayer;
+  document.getElementById("_next-gtm-init")?.remove();
+  document.getElementById("_next-gtm")?.remove();
   for (const script of gtmScripts()) script.remove();
   container = document.createElement("div");
   document.body.appendChild(container);

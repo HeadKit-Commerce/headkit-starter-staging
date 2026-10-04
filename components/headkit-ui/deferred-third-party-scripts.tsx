@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState, type ReactElement } from "react";
+import { GoogleTagManager } from "@next/third-parties/google";
+import Script from "next/script";
 
 import {
   CONSENT_ALL_DENIED,
@@ -65,10 +67,12 @@ const MAX_DELAY_MS = 10000;
  * `load` and then `requestIdleCallback` still ran inside the paint: after
  * `load` the thread is idle, so the callback fires immediately. Measured on
  * Bike Society helmets, gtm.js started at 1,052 ms and the LCP paint was at
- * 1,062 ms. The deferred schedule is now `load`, then a fixed 3.5 s timeout.
- * Implemented here rather than with `<Script>` because this loader owns the
- * consent ordering below, which `<Script>` cannot express. `load` fires after
- * every render-blocking resource and every eager image.
+ * 1,062 ms. The deferred schedule is now `load`, then a fixed 3.5 s timeout,
+ * and only then does this mount `GoogleTagManager` from `@next/third-parties`.
+ * That component loads `gtm.js` through `next/script` (`afterInteractive`).
+ * Mounting it from the layout would start the container straight after
+ * hydration, which is the schedule measured inside the LCP paint. `load`
+ * fires after every render-blocking resource and every eager image.
  *
  * WHAT IT TRADES. A visitor who leaves before `load` + idle is no longer
  * counted at all, and Klaviyo's on-site popups shift later by the same amount.
@@ -82,8 +86,13 @@ const MAX_DELAY_MS = 10000;
  * for the value table and for why the deferral is the platform default.
  *
  * CONSENT. When the store has the gate on, the Google consent default is
- * pushed INSIDE `load()`, immediately before the `gtm.start` message. It
- * composes with either schedule for free, because the default only has to
+ * pushed INSIDE `load()`, and only then does `GoogleTagManager` mount. Its
+ * inline script pushes `gtm.start` after that. The component's `dataLayer`
+ * prop cannot carry the default: it is `JSON.stringify`'d and pushed AFTER
+ * `gtm.start`, and a JSON value is not the `arguments` object Consent Mode
+ * reads. Klaviyo and HubSpot are not in `@next/third-parties`; they use
+ * `next/script` behind the same mount. It composes with either schedule for
+ * free, because the default only has to
  * precede the container IN THE DATALAYER, not in wall-clock time — so moving
  * the schedule from mount to the `load` event changes nothing about the
  * ordering, and it must stay that way; it is a deliberate Core Web Vitals
@@ -109,7 +118,9 @@ export function DeferredThirdPartyScripts({
   klaviyoPublicKey,
   hubspotPortalId,
   consentEnabled = false,
-}: Props): null {
+}: Props): ReactElement | null {
+  const [ready, setReady] = useState(false);
+
   useEffect(() => {
     if (!gtmId && !klaviyoPublicKey && !hubspotPortalId) return;
 
@@ -123,44 +134,20 @@ export function DeferredThirdPartyScripts({
       loaded = true;
       cleanup();
 
-      if (gtmId) {
+      if (gtmId && consentEnabled) {
         window.dataLayer = window.dataLayer ?? [];
-        if (consentEnabled) {
-          // MUST precede gtm.start in the dataLayer, and MUST be pushed as an
-          // `arguments` object — pushing a plain array is a silent no-op that
-          // sets the DoubleClick cookie anyway. `lib/consent.ts` carries the
-          // measurement. The `gtm.start` push three lines below IS a plain
-          // object literal and is correct as one.
-          pushConsentCommand(
-            window.dataLayer,
-            "default",
-            consentSignals(readConsent()?.choices ?? CONSENT_ALL_DENIED),
-          );
-        }
-        window.dataLayer.push({
-          "gtm.start": Date.now(),
-          event: "gtm.js",
-        });
-        const s = document.createElement("script");
-        s.async = true;
-        s.src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(gtmId)}`;
-        document.head.appendChild(s);
+        // MUST precede gtm.start in the dataLayer, and MUST be pushed as an
+        // `arguments` object — pushing a plain array is a silent no-op that
+        // sets the DoubleClick cookie anyway. `lib/consent.ts` carries the
+        // measurement. `GoogleTagManager` pushes `gtm.start` from its inline
+        // script after this component commits.
+        pushConsentCommand(
+          window.dataLayer,
+          "default",
+          consentSignals(readConsent()?.choices ?? CONSENT_ALL_DENIED),
+        );
       }
-
-      if (klaviyoPublicKey) {
-        const s = document.createElement("script");
-        s.async = true;
-        s.src = `https://static.klaviyo.com/onsite/js/klaviyo.js?company_id=${encodeURIComponent(klaviyoPublicKey)}`;
-        document.body.appendChild(s);
-      }
-
-      if (hubspotPortalId) {
-        const s = document.createElement("script");
-        s.id = "hs-script-loader";
-        s.async = true;
-        s.src = `//js.hs-scripts.com/${encodeURIComponent(hubspotPortalId)}.js`;
-        document.body.appendChild(s);
-      }
+      setReady(true);
     };
 
     // Eager hatch only. Idle-from-mount is the old schedule, kept on purpose.
@@ -253,5 +240,25 @@ export function DeferredThirdPartyScripts({
     };
   }, [gtmId, klaviyoPublicKey, hubspotPortalId, consentEnabled]);
 
-  return null;
+  if (!ready) return null;
+
+  return (
+    <>
+      {gtmId ? <GoogleTagManager gtmId={gtmId} /> : null}
+      {klaviyoPublicKey ? (
+        <Script
+          id="headkit-klaviyo"
+          strategy="afterInteractive"
+          src={`https://static.klaviyo.com/onsite/js/klaviyo.js?company_id=${encodeURIComponent(klaviyoPublicKey)}`}
+        />
+      ) : null}
+      {hubspotPortalId ? (
+        <Script
+          id="hs-script-loader"
+          strategy="afterInteractive"
+          src={`https://js.hs-scripts.com/${encodeURIComponent(hubspotPortalId)}.js`}
+        />
+      ) : null}
+    </>
+  );
 }

@@ -3,6 +3,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
+// See deferred-third-party-scripts.load-gate.test.tsx.
+vi.mock("@next/third-parties/google", () => ({
+  GoogleTagManager: function MockGoogleTagManager({ gtmId }: { gtmId: string }) {
+    if (typeof document === "undefined") return null;
+    const src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(gtmId)}`;
+    if ([...document.scripts].some((script) => script.src === src)) return null;
+    const layer = ((window as unknown as { dataLayer?: unknown[] }).dataLayer =
+      (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? []);
+    layer.push({ "gtm.start": Date.now(), event: "gtm.js" });
+    const el = document.createElement("script");
+    el.id = "_next-gtm";
+    el.async = true;
+    el.src = src;
+    document.head.appendChild(el);
+    return null;
+  },
+}));
+
 import { ConsentBanner } from "@/components/headkit-ui/consent-banner";
 import { DeferredThirdPartyScripts } from "@/components/headkit-ui/deferred-third-party-scripts";
 import { CONSENT_STORAGE_KEY, CONSENT_VERSION } from "@/lib/consent";
@@ -147,6 +165,8 @@ beforeEach(() => {
   installStorage();
   resetConsentStoreForTests();
   delete (window as unknown as { dataLayer?: unknown[] }).dataLayer;
+  document.getElementById("_next-gtm-init")?.remove();
+  document.getElementById("_next-gtm")?.remove();
   for (const script of gtmScripts()) script.remove();
   container = document.createElement("div");
   document.body.appendChild(container);

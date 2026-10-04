@@ -524,7 +524,7 @@ export function ProductDetail({
     });
     return base.length > 0
       ? base
-      : [{ src: "/placeholder.png", alt: productAlt }];
+      : [{ src: "/assets/HeadKit-Fallback.png", alt: productAlt }];
   }, [product.images, product.name, selectedVariation]);
 
   // pickFirstPrice, not `??`: the gateway sends absent sale prices as ""
@@ -673,7 +673,9 @@ export function ProductDetail({
         alt: stripTitleMarkers(decodeHtmlEntities(first.alt || product.name)),
       };
     }
-    return productAlt ? { src: "/placeholder.png", alt: productAlt } : null;
+    return productAlt
+      ? { src: "/assets/HeadKit-Fallback.png", alt: productAlt }
+      : null;
   })();
 
   // Sticky ATC bar: only after the primary ATC scrolls above the viewport
