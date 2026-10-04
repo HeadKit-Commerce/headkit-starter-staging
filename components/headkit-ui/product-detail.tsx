@@ -1008,6 +1008,8 @@ export function ProductDetail({
     isSizeAttrSlug(attr.slug),
   );
   const swatchAttribute = findSwatchAttribute(variationAttributes);
+  const swatchCommerceSrc =
+    product.image?.src || product.images[0]?.src || "";
   const sizeGuidePlacement = themeSizeGuidePlacement({
     sizeGuideHref,
     showMultiAdd,
@@ -1140,6 +1142,9 @@ export function ProductDetail({
                         (matchingWithOthers.length > 0 &&
                           matchingWithOthers.every(isVariationOutOfStock));
 
+                      const streamAttributeId = findSwatchAttribute([attr])
+                        ? String(attr.id)
+                        : "";
                       return (
                         <VariantSwatch
                           key={option.slug}
@@ -1148,6 +1153,12 @@ export function ProductDetail({
                           color1={option.swatchColor}
                           color2={option.swatchColor2}
                           imageSrc={option.swatchImage ?? ""}
+                          {...(streamAttributeId
+                            ? { attributeId: streamAttributeId }
+                            : {})}
+                          {...(swatchCommerceSrc
+                            ? { commerceSrc: swatchCommerceSrc }
+                            : {})}
                           selectedOptionValue={
                             selectedAttributes[attr.slug] ?? ""
                           }

@@ -2,6 +2,9 @@ import type {
   ProductSummaryFieldsFragment,
   ProductFilters,
 } from "@headkit/sdk";
+import { SwatchImageProvider } from "@/components/headkit-ui/swatch-image-provider";
+import { experimentalSwatchImagesEnabled } from "@/lib/experimental-swatch-images";
+import { loadSwatchImageMap } from "@/lib/swatch-visual";
 import { CollectionProvider } from "./collection-context";
 import { Filter } from "./filter";
 import { ProductGrid } from "./product-grid";
@@ -96,7 +99,14 @@ export function CollectionPage({
   initialBrands,
   preferHeaderLcp = false,
 }: CollectionPageProps) {
+  const swatchImagesEnabled = experimentalSwatchImagesEnabled();
   return (
+    <SwatchImageProvider
+      enabled={swatchImagesEnabled}
+      {...(swatchImagesEnabled
+        ? { promise: loadSwatchImageMap(initialProducts) }
+        : {})}
+    >
     <CollectionProvider
       // See `collectionInstanceKey`: without it a same-route navigation keeps
       // the previous route's products, total and pagination cursor.
@@ -135,5 +145,6 @@ export function CollectionPage({
         </div>
       </div>
     </CollectionProvider>
+    </SwatchImageProvider>
   );
 }

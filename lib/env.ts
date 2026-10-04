@@ -128,6 +128,16 @@ const serverSchema = clientSchema.extend({
     .enum(["conservative", "aggressive"])
     .optional()
     .catch(undefined),
+  // WooCommerce Store API `__experimental_visual` swatch photos. DEFAULT OFF:
+  // unset, empty, and any unrecognised value make zero attribute-term requests.
+  // Only "true" / "1" / "on" / "yes" starts the lookup, and the page streams
+  // the photo into the colour chip instead of waiting on WordPress.
+  //
+  // Declared here for the boot parse and as the place an operator looks. Read
+  // in `lib/experimental-swatch-images.ts`, which must not import this module.
+  // Deliberately NOT a z.enum: an unrecognised value must be accepted and mean
+  // off, not fail the store's boot.
+  HEADKIT_EXPERIMENTAL_SWATCH_IMAGES: z.string().optional(),
   // Collection facet prerendering is decided from catalogue size
   // (`lib/collection-facet-plan.ts`), not from this variable. A value left
   // in a store's environment is ignored. Kept so a boot parse does not

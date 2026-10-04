@@ -135,6 +135,8 @@ export const ProductCard = ({
     }
     return product.image?.src ?? "";
   });
+  const swatchCommerceSrc =
+    product?.image?.src || product?.variations?.[0]?.image?.src || "";
   const [isHovering, setIsHovering] = useState(false);
   const [armedSwatches, setArmedSwatches] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -384,6 +386,13 @@ export const ProductCard = ({
                                 color1={option?.swatchColor ?? undefined}
                                 color2={option?.swatchColor2 ?? undefined}
                                 imageSrc={option?.swatchImage ?? undefined}
+                                optionSlug={optionSlug}
+                                {...(attribute.id
+                                  ? { attributeId: String(attribute.id) }
+                                  : {})}
+                                {...(swatchCommerceSrc
+                                  ? { commerceSrc: swatchCommerceSrc }
+                                  : {})}
                               />
                             </InstantLink>
                           );

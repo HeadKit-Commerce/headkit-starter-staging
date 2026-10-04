@@ -19,6 +19,9 @@ import {
 import { TAG } from "@/lib/cache-tags";
 import { errorFields, logger } from "@/lib/logger";
 import { ProductDetail } from "@/components/headkit-ui/product-detail";
+import { SwatchImageProvider } from "@/components/headkit-ui/swatch-image-provider";
+import { experimentalSwatchImagesEnabled } from "@/lib/experimental-swatch-images";
+import { loadSwatchImageMap } from "@/lib/swatch-visual";
 import { ProductStock } from "@/components/headkit-ui/product-stock";
 import { ProductCarousel } from "@/components/headkit-ui/product-carousel";
 import { ProjectCarousel } from "@/components/headkit-ui/project/project-carousel";
@@ -770,7 +773,21 @@ export async function ProductPageBody({
     title: "Something similar",
   });
 
+  const swatchImagesEnabled = experimentalSwatchImagesEnabled();
   return (
+    <SwatchImageProvider
+      enabled={swatchImagesEnabled}
+      {...(swatchImagesEnabled
+        ? {
+            promise: loadSwatchImageMap([
+              product,
+              ...relatedAsProducts,
+              ...upsellsAsProducts,
+              ...bundlesAsProducts,
+            ]),
+          }
+        : {})}
+    >
     <div>
       <ProductJsonLD
         product={product}
@@ -866,5 +883,6 @@ export async function ProductPageBody({
         </section>
       )}
     </div>
+    </SwatchImageProvider>
   );
 }
