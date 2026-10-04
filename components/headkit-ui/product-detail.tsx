@@ -76,7 +76,7 @@ import { SizeChartTrigger } from "@/components/headkit-ui/size-chart-trigger";
 import { isBadgeTag, productBadgesFromTags } from "@/lib/product-badges";
 import { stripTitleMarkers } from "@/lib/title-emphasis";
 import { shopifyRichTextToHtml } from "@/lib/shopify-rich-text";
-import { getStoreTheme } from "@/lib/store-theme";
+import { useClientTheme } from "@/components/headkit-ui/client-theme-provider";
 import { themeSizeGuidePlacement } from "@/lib/size-guide-placement";
 import { distinctShortDescription } from "@/lib/product-excerpt";
 import { productSubtitle } from "@/lib/product-subtitle";
@@ -242,6 +242,7 @@ export function ProductDetail({
   const atcSectionRef = useRef<HTMLDivElement>(null);
   const { cartData, setCartData, toggleCart } = useCartContext();
   const isQuoteMode = useIsQuoteMode();
+  const { badgeTags: badgeAllowlist, sizeGuideHref } = useClientTheme();
 
   useEffect(() => {
     setWishlisted(isInWishlist(product.id));
@@ -1006,9 +1007,6 @@ export function ProductDetail({
       selectedColor === initialColor ||
       (!selectedColor && !initialColor));
 
-  const storeTheme = getStoreTheme();
-  const badgeAllowlist = storeTheme.catalog?.badgeTags;
-  const sizeGuideHref = storeTheme.pdp?.sizeGuideHref;
   const sizeChartHtml = shopifyRichTextToHtml(product.sizeChart ?? "");
   // Metafield modal next to Size / standalone — only when Shopify sizeChart
   // HTML exists AND the theme has not set a shopper Size Guide page. Theme

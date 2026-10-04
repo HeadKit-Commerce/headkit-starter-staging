@@ -16,7 +16,7 @@ import type { CatalogProduct } from "@/lib/catalog-display";
 import { TitleEmphasis } from "@/components/headkit-ui/title-emphasis";
 import { productBadgesFromTags } from "@/lib/product-badges";
 import { stripTitleMarkers } from "@/lib/title-emphasis";
-import { getStoreTheme } from "@/lib/store-theme";
+import { useClientTheme } from "@/components/headkit-ui/client-theme-provider";
 import {
   buildSelectItem,
   productToGa4Item,
@@ -119,6 +119,8 @@ export const ProductCard = ({
 }: Props) => {
   const TitleTag = titleAs;
   const { showSwatches, imageRollover } = useCatalogDisplay();
+  const { badgeTags, maxCardSwatches: themeMaxCardSwatches } =
+    useClientTheme();
   const lockedColour = product.colorwaySlug ?? null;
 
   const [colourSelected, setColourSelected] = useState<string | null>(() => {
@@ -227,12 +229,12 @@ export const ProductCard = ({
   if (!product) return null;
 
   const maxCardSwatches =
-    getStoreTheme().catalog?.maxCardSwatches ?? DEFAULT_MAX_CARD_SWATCHES;
+    themeMaxCardSwatches ?? DEFAULT_MAX_CARD_SWATCHES;
 
   const isNewIn = isNew || Boolean(product?.isNew);
   const customBadges = productBadgesFromTags(
     product.tags,
-    getStoreTheme().catalog?.badgeTags,
+    badgeTags,
     { hideNew: isNewIn, hideSale: product?.onSale ?? false },
   );
   const plainName = stripTitleMarkers(
