@@ -85,10 +85,10 @@ export function CollectionHeader({
               src={thumbnail!}
               fill
               className="object-cover object-center"
-              sizes="(max-width: 768px) 100vw, 66vw"
+              sizes="(max-width: 768px) calc(100vw - 2.5rem), 66vw"
               priority
               fetchPriority="high"
-              quality={75}
+              quality={50}
             />
           </div>
         </div>

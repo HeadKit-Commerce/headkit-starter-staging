@@ -497,7 +497,11 @@ export async function CollectionRoute({
   // — e.g. a transient WooCommerce 429. Swallowing it into notFound() bakes a
   // sticky 404 into the route cache (14-day stale). Let it propagate: Next then
   // serves the last good render and retries. Genuine 404s use the null check.
-  const { category, productFilter } = await getCategoryData(categorySlug);
+  // Overlap the two cached reads. The header image cannot paint until both
+  // have resolved, and they do not depend on each other.
+  const categoryPromise = getCategoryData(categorySlug);
+  const brandingPromise = getBranding();
+  const { category, productFilter } = await categoryPromise;
   if (!category) return notFound();
 
   const breadcrumbs = buildBreadcrumbFromCategory(category);
@@ -505,7 +509,7 @@ export async function CollectionRoute({
   // category tiles link beneath, so they name nested paths instead of the flat
   // shape this route now redirects.
   const canonicalBasePath = collectionPathFromCategory(category);
-  const { branding } = await getBranding();
+  const { branding } = await brandingPromise;
   const nonEmptySlugs = branding.hideEmptyCollections
     ? await getNonEmptyCollectionSlugs()
     : null;

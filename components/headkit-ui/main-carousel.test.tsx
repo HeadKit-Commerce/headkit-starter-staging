@@ -80,3 +80,27 @@ describe("MainCarousel title emphasis", () => {
     expect(html).toContain('alt="A new era of Towel"');
   });
 });
+
+describe("MainCarousel video slide", () => {
+  it("paints the optimized poster and leaves the MP4 out of the first HTML", () => {
+    const html = renderToStaticMarkup(
+      <MainCarousel
+        carouselItems={[
+          {
+            ...slide("Outdoor dining"),
+            image: "https://cdn.example.com/poster.jpg",
+            mobileImage: "https://cdn.example.com/poster-mobile.jpg",
+            video: "https://cdn.example.com/hero-desktop.mp4",
+            mobileVideo: "https://cdn.example.com/hero-mobile.mp4",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("https://cdn.example.com/poster-mobile.jpg");
+    expect(html).toContain("https://cdn.example.com/poster.jpg");
+    expect(html).toContain('fetchPriority="high"');
+    expect(html).not.toContain(".mp4");
+    expect(html).not.toContain('preload="auto"');
+  });
+});

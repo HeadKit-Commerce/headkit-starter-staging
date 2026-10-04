@@ -2,7 +2,7 @@
 
 import { getImageProps } from "next/image";
 import { ElementType, useState } from "react";
-import { AutoplayVideo } from "@/components/headkit-ui/autoplay-video";
+import { HeroVideoSlide } from "@/components/headkit-ui/hero-video-slide";
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
 import { TitleEmphasis } from "@/components/headkit-ui/title-emphasis";
@@ -94,30 +94,16 @@ export const MainCarousel = ({
                 <div className={mediaClass}>
                   {hasVideo ? (
                     <>
-                      {/* Mobile video (or desktop fallback). muted+playsInline
-                          required for autoplay; poster keeps LCP image-like. */}
-                      {mobileVideo || desktopVideo ? (
-                        <AutoplayVideo
-                          className="h-full w-full object-cover md:hidden"
-                          src={mobileVideo || desktopVideo}
-                          {...(slide.mobileImage || slide.image
-                            ? {
-                                poster: slide.mobileImage || slide.image!,
-                              }
-                            : {})}
-                          isActive={isActive}
-                          preload={index === 0 ? "auto" : "metadata"}
-                        />
-                      ) : null}
-                      {desktopVideo ? (
-                        <AutoplayVideo
-                          className="hidden h-full w-full object-cover md:block"
-                          src={desktopVideo}
-                          {...(slide.image ? { poster: slide.image } : {})}
-                          isActive={isActive}
-                          preload={index === 0 ? "auto" : "metadata"}
-                        />
-                      ) : null}
+                      {/* Poster is the LCP image. The MP4 starts after load. */}
+                      <HeroVideoSlide
+                        mobileSrc={mobileVideo}
+                        desktopSrc={desktopVideo}
+                        posterSrc={slide.mobileImage || slide.image}
+                        desktopPosterSrc={slide.image}
+                        posterAlt={stripTitleMarkers(decodeHtmlEntities(slide.header ?? ""))}
+                        isLcp={index === 0}
+                        isActive={isActive}
+                      />
                       <div
                         aria-hidden
                         className="absolute inset-0 hidden md:block bg-gradient-to-r from-black/50 via-black/25 to-transparent"
