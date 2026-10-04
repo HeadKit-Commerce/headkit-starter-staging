@@ -9,6 +9,7 @@ vi.mock("next/image", () => ({
     alt?: string;
     src?: string;
     className?: string;
+    quality?: number;
     style?: { transform?: string };
   }) => (
     // eslint-disable-next-line @next/next/no-img-element
@@ -16,6 +17,7 @@ vi.mock("next/image", () => ({
       alt={props.alt ?? ""}
       src={typeof props.src === "string" ? props.src : ""}
       className={props.className}
+      data-quality={props.quality}
       data-transform={props.style?.transform}
     />
   ),
@@ -58,6 +60,19 @@ describe("Lightbox zoom chrome", () => {
     expect(html).toContain('aria-label="Zoom out"');
     expect(html).toContain('data-transform="translate(0px, 0px) scale(1)"');
     expect(html).toContain("Zoom out");
+  });
+
+  it("opens the original at quality 100", () => {
+    const html = renderToStaticMarkup(
+      <Lightbox
+        images={[
+          { src: "/display.jpg", alt: "Front", fullSrc: "/original.jpg" },
+        ]}
+        initialSelectedIndex={0}
+      />,
+    );
+    expect(html).toContain('src="/original.jpg"');
+    expect(html).toContain('data-quality="100"');
   });
 
   it("keeps zoom available when there is only one image", () => {

@@ -34,7 +34,18 @@ interface Props {
    * slide: it renders the privacy-enhanced YouTube embed instead of a zoomable
    * image, and `src` (the poster frame) is not shown.
    */
-  images: { src: string; alt: string; videoId?: string }[];
+  images: {
+    src: string;
+    alt: string;
+    videoId?: string;
+    /** Original upload. The visible gallery keeps `src` (a derivative). */
+    fullSrc?: string;
+    /**
+     * Render a plain img. Set when the host is not in remotePatterns:
+     * next/image throws at render for that host and would take the page down.
+     */
+    plain?: boolean;
+  }[];
   initialSelectedIndex: number;
 }
 
@@ -193,20 +204,31 @@ const Lightbox = ({ images, initialSelectedIndex }: Props) => {
             onWheel={onWheel}
             style={{ touchAction: zoomed ? "none" : "auto" }}
           >
-            <Image
-              src={current.src}
-              alt={current.alt}
-              fill
-              draggable={false}
-              className="object-contain select-none"
-              sizes="100vw"
-              priority
-              style={{
-                transform: lightboxImageTransform(scale, pan),
-                transformOrigin: "center center",
-                transition: dragging ? "none" : "transform 200ms ease",
-              }}
-            />
+            {current.plain ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={current.fullSrc || current.src}
+                alt={current.alt}
+                draggable={false}
+                className="absolute inset-0 h-full w-full object-contain select-none"
+              />
+            ) : (
+              <Image
+                src={current.fullSrc || current.src}
+                alt={current.alt}
+                fill
+                draggable={false}
+                className="object-contain select-none"
+                sizes="100vw"
+                quality={100}
+                priority
+                style={{
+                  transform: lightboxImageTransform(scale, pan),
+                  transformOrigin: "center center",
+                  transition: dragging ? "none" : "transform 200ms ease",
+                }}
+              />
+            )}
           </div>
         )}
 
