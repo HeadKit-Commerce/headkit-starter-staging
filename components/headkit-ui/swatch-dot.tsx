@@ -14,11 +14,13 @@
  * LOOK at the small size — 16 px circle, 1 px border, a 1 px ring sitting 1 px
  * clear of the edge when selected — so a change to one is a change to both.
  *
- * It renders no interactive element and holds no state, so it adds no event
- * handler and no hook to the card. The hover ring is `group-hover:` off the
- * link, which is a class and not JavaScript.
+ * It renders no interactive element and holds no state of its own, so it adds
+ * no event handler and no hook to the card. The hover ring is `group-hover:`
+ * off the link, which is a class and not JavaScript. A missing photo can still
+ * stream in through `SwatchPhotoLayer`, which is the child that holds the hooks.
  */
 import { cn } from "@/lib/utils";
+import { SwatchPhotoLayer } from "@/components/headkit-ui/swatch-image-fill";
 
 interface Props {
   /** Colourway name, exposed to assistive tech by the link, not by the dot. */
@@ -29,6 +31,12 @@ interface Props {
   imageSrc?: string | undefined;
   /** The colourway the card is currently previewing. */
   isSelected: boolean;
+  /** Option slug, so a late photo can find this dot. */
+  optionSlug?: string | undefined;
+  /** Visual attribute id. Ignored unless the experimental lookup is on. */
+  attributeId?: string | undefined;
+  /** Product image URL used to find the WordPress host for a late photo. */
+  commerceSrc?: string | undefined;
 }
 
 /**
@@ -45,38 +53,32 @@ export function SwatchDot({
   color2,
   imageSrc,
   isSelected,
+  optionSlug,
+  attributeId,
+  commerceSrc,
 }: Props): React.JSX.Element {
   const ring = isSelected ? "outline-primary" : "outline-transparent";
-
-  if (imageSrc) {
-    return (
-      <span className={cn(DOT_CLASS, ring, "overflow-hidden")}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- tiny swatch, not LCP */}
-        <img src={imageSrc} alt="" className="h-full w-full object-cover" />
-        <span className="sr-only">{label}</span>
-      </span>
-    );
-  }
-
-  if (color1) {
-    const style = color2
+  const style = color1
+    ? color2
       ? {
           background: `linear-gradient(90deg, ${color1}, ${color1} 50%, ${color2} 51%)`,
         }
-      : { backgroundColor: color1 };
-    return (
-      <span className={cn(DOT_CLASS, ring)} style={style}>
-        <span className="sr-only">{label}</span>
-      </span>
-    );
-  }
+      : { backgroundColor: color1 }
+    : undefined;
 
-  // No colour and no image: the card has nothing to draw, so it draws the
-  // empty circle rather than a text chip. The PDP is where an unswatched
-  // option is legible as a labelled chip, and `VariantSwatch` still renders
-  // one there.
   return (
-    <span className={cn(DOT_CLASS, ring)}>
+    <span className={cn(DOT_CLASS, ring, "relative")} {...(style ? { style } : {})}>
+      {/* Clip the photo inside the dot. Overflow on the dot itself would crop
+          the selection outline. */}
+      <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+        <SwatchPhotoLayer
+          imageSrc={imageSrc ?? ""}
+          optionSlug={optionSlug ?? ""}
+          size="small"
+          {...(attributeId ? { attributeId } : {})}
+          {...(commerceSrc ? { commerceSrc } : {})}
+        />
+      </span>
       <span className="sr-only">{label}</span>
     </span>
   );
