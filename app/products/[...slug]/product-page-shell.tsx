@@ -2,13 +2,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ProductCardSkeleton } from "@/components/headkit-ui/skeletons/product-card-skeleton";
 
 /**
- * Instant-navigation fallback for a product URL.
+ * Fallback for the flat PDP's draft or missing branch.
  *
- * `/shop/[...slug]` renders this from the page Suspense boundary and from
- * `loading.tsx` while the cached product is not ready. The flat route also
- * renders it around the draft or missing branch, the one that awaits
- * `searchParams`. Opaque on purpose: a fade restarts whenever this shell
- * mounts again and flashes as the product replaces it.
+ * That branch is the one `<Suspense>` on `app/products/[...slug]`: it awaits
+ * `searchParams` for the Shopify preview key. A public catalogue product
+ * renders outside it, in the static shell. Opaque on purpose: a fade restarts
+ * whenever this shell mounts again and flashes as the product replaces it.
  */
 export function ProductPageShell(): React.JSX.Element {
   return (

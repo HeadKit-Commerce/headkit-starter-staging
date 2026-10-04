@@ -355,32 +355,36 @@ soft-404s in their own right:
 **Three route families stay gated:** `app/[...slug]`, `app/client/[...slug]` and the static
 `app/wholesale/page.tsx`. `app/not-found-status.test.ts` holds that list in executable form.
 
-### Card routes navigate instantly
+### Catalogue pages paint the cached document
 
-`app/shop`, `app/products/[...slug]`, `app/collections/[...slug]`, `app/brand/[...slug]`,
-`app/news/[...slug]` and `app/projects/[...slug]` are where cards go. Each has a `loading.tsx`.
-That file is Next.js's navigation shell: a click updates the URL immediately. If the destination
-was prerendered or already prefetched, that page's content is what renders. If it was not ready,
-that route's skeleton renders until the content streams in. The clicked link does not paint a
-skeleton of its own.
+`app/collections/[...slug]`, `app/shop`, `app/shop/[...slug]` and `app/products/[...slug]`
+have no `loading.tsx`. `/shop/[...slug]` does not wrap the page in `<Suspense>` either.
+That file and that wrapper are the same kind of boundary: React outlines a completed one
+into `<div hidden id="S:…">` and reveals it with `$RC`, so a prerendered response
+(`x-nextjs-prerender: 1`) still paints the skeleton first. Measured on Bike Society
+Rehearsal, 2026-10-04: category and product documents held about 900 visible characters
+(nav and footer) and put the H1 and the LCP image after the split.
 
-This is a Suspense boundary, and the costs are the ones this section already measured:
+The cached heading, gallery and page-1 grid are the static shell. A dynamic hole stays
+next to a request-time read only. The flat PDP keeps one, around `ProductPageContent`,
+and renders it only when the public read returned null. `notFound()` and
+`permanentRedirect` on the collection and shop segments run in the page, so a missing
+collection or shop URL answers 404 and a flat collection or flat product URL can set 308.
+Product cards still pass `prefetch={true}`.
 
-- A missing URL on these routes streams as **200** with `noindex`. It does not answer 404.
-- `permanentRedirect` on these routes cannot set **308**. Flat product and flat collection URLs
-  stream the redirect. Card clicks already use the canonical path, so a shopper does not hit it.
-- A prerendered document puts completed content in a hidden segment and reveals it with the
-  inline `$RC` script. With JavaScript off, the skeleton is what remains in the first paint.
-  Googlebot runs that script.
+### Card routes that still use a skeleton
 
-Those costs are accepted. Deleting `loading.tsx` to restore a real 404 brings back the blocked
-click these routes exist to avoid. CMS pages, client pages and wholesale stay gated.
+`app/brand/[...slug]`, `app/news/[...slug]` and `app/projects/[...slug]` keep `loading.tsx`.
+Brand awaits `searchParams` inside its boundary. News and projects are editorial. On these
+routes a missing URL streams as **200**, `permanentRedirect` cannot set **308**, and a
+prerendered document reveals completed content with `$RC`. CMS pages, client pages and
+wholesale stay gated.
 
-**`app/products/[...slug]` was already un-gated** for the Shopify Admin draft-preview flow, which
-another team owns: above a boundary a draft and a missing product are the SAME null
-`getCachedProduct`, and the preview key that separates them lives in `searchParams`. Recorded in
-`docs/tickets/products-flat-url-soft-404.md`. Its `loading.tsx` is the product skeleton; it does
-not change that preview gap.
+**`app/products/[...slug]` stays un-gated for a missing product** because of the Shopify
+Admin draft-preview flow, which another team owns: above a boundary a draft and a missing
+product are the SAME null `getCachedProduct`, and the preview key that separates them lives
+in `searchParams`. Recorded in `docs/tickets/products-flat-url-soft-404.md`. The public
+product itself is outside that boundary. There is no `loading.tsx` around it.
 
 `app/not-found-status.test.ts` covers condition 3 by LOADING each route module and calling
 `generateStaticParams` (with the SDK offline, which is the branch that matters), and conditions
@@ -424,14 +428,14 @@ around a fully cached brand grid and nothing else: measured on the deployed rehe
 a local production build of the same page reported 139 visible shell characters against 471
 in the tail. With the boundary removed the same page reports no hidden segment at all. That
 route is also the worked example of the second emitter rule above, so a change there is two
-rules at once. `/shop/[...slug]` is the Next.js 16 exception: `params` are URL data, so the
-page returns Suspense immediately and `ShopRoute` awaits them. The product read is `"use cache"`,
-and product cards pass `prefetch={true}`, so a prerendered URL resolves before the click
-instead of leaving the shopper on `loading.tsx`. The flat `/products/[...slug]` keeps ONE
-boundary, around `ProductPageContent`, and renders it only when the public read returned
-null — the one branch that must await `searchParams` (the Shopify preview key). `ProductStock`
-reads the same cached product entry (freshness is the theme's `headkit:product:<slug>` purge).
-Do not add a second Suspense around `CollectionRoute`: it reads no `searchParams`.
+rules at once. `/shop/[...slug]` awaits `params` in the page and renders `ProductPageBody` or
+`CollectionRoute` there. The product read is `"use cache"`, and product cards pass
+`prefetch={true}`. Do not put that render back inside `<Suspense>` or restore
+`app/shop/loading.tsx`: either one is the skeleton shell. The flat
+`/products/[...slug]` keeps ONE boundary, around `ProductPageContent`, and renders it only
+when the public read returned null — the one branch that must await `searchParams` (the
+Shopify preview key). `ProductStock` reads the same cached product entry (freshness is the
+theme's `headkit:product:<slug>` purge). `CollectionRoute` reads no `searchParams`.
 
 Measure, do not infer: `bun run scripts/static-shell-split.ts <.next/server/app/….html | url>`
 prints the split, the visible characters on each side, and every hidden segment. The route
@@ -1058,7 +1062,7 @@ nothing is unaffected; moving one is a measured, per-store decision.
   `generateMetadata` pins a NOINDEX, either of them until the next deploy.
   `lib/cache-profile-call-sites.test.ts` holds that list and fails if one is raised;
   `getCachedProduct` is the one deliberate exception, and says why at the call site.
-- **Collection facet HTML** (`lib/collection-facet-plan.ts`) follows catalogue size, the same way product HTML follows the HeadKit API plan. The build emits the whole indexable facet set or none of it. It does not read `HEADKIT_PRERENDER_COLLECTION_FACETS`, and it does not keep a walk-order prefix. A set that does not fit is served on demand: the collection route's `loading.tsx` paints first, then the page is cached. There is no `HEADKIT_PRERENDER_PRODUCT_LIMIT` and no `HEADKIT_PRERENDER_PRODUCT_COLOURWAYS`.
+- **Collection facet HTML** (`lib/collection-facet-plan.ts`) follows catalogue size, the same way product HTML follows the HeadKit API plan. The build emits the whole indexable facet set or none of it. It does not read `HEADKIT_PRERENDER_COLLECTION_FACETS`, and it does not keep a walk-order prefix. A set that does not fit is served on demand: the first request fills the cache. There is no collection `loading.tsx`. There is no `HEADKIT_PRERENDER_PRODUCT_LIMIT` and no `HEADKIT_PRERENDER_PRODUCT_COLOURWAYS`.
   An unbuilt URL still routes and still answers 200. The sitemap still advertises the
   catalogue. Colourway URLs share `productColourSlugs` with the sitemap, guarded by
   `app/product-url-emitter-parity.test.ts`.
