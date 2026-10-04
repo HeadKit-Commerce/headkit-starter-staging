@@ -75,6 +75,7 @@ const FeaturedImage = ({
         quality={quality}
         className={cn(objectClass, revealHover ? "opacity-0" : "opacity-100")}
         sizes={CATALOG_GRID_IMAGE_SIZES}
+        unoptimized={imageSrc === FALLBACK_IMAGE_SRC}
       />
       {hasHoverLayer ? (
         <Image

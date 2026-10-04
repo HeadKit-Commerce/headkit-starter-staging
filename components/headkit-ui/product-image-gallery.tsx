@@ -83,7 +83,11 @@ function GalleryTile({
         fill
         className={className}
         sizes={sizes}
-        unoptimized={isVideo}
+        unoptimized={
+          isVideo ||
+          item.src === "/placeholder.png" ||
+          item.src === FALLBACK_IMAGE_SRC
+        }
         {...(priority !== undefined ? { priority } : {})}
         {...(fetchPriority !== undefined ? { fetchPriority } : {})}
         {...(loading !== undefined ? { loading } : {})}

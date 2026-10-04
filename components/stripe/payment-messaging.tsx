@@ -108,21 +108,14 @@ export function shouldRenderMessaging(a: {
  * exactly that reason; it used dynamic import + a Suspense skeleton but still
  * requested Stripe.js from a mount effect, i.e. in the initial burst.
  *
- * BE PRECISE ABOUT WHAT THE OBSERVER BUYS. It does NOT wait for a scroll. This
- * badge sits directly under the Add-to-Cart row, which on a desktop PDP is
- * normally above the fold — measured locally at 309 px into a 720 px viewport —
- * and `rootMargin` widens the trigger zone by a further 200 px. An
- * IntersectionObserver fires its first callback within roughly one frame of
- * `observe()`, so on a typical PDP load Stripe.js is requested about one frame
- * after hydration, with no user gesture involved. What the observer reliably
- * buys is: the request leaves the render path, and a badge genuinely far down
- * the page costs nothing until approached.
- *
- * The CWV numbers are therefore NOT yet verified for this placement. LCP should
- * be unaffected (the script is async and post-paint); TBT/INP is the metric at
- * risk. Task 7 Step 4 of the plan takes the real measurement on a deployed
- * store, and prescribes layering `requestIdleCallback` on top of the observer
- * if it regresses. Do not quote a long-task or CLS figure here until that runs.
+ * BE PRECISE ABOUT WHAT THE OBSERVER BUYS. It does NOT wait for a scroll. The
+ * badge often sits under the price, above the fold, and `rootMargin` is 200px,
+ * so `observe()` would otherwise fire on the first frame of hydration. The
+ * effect waits for `load` (eager images, including LCP, are in that set) and
+ * then an idle callback before it observes. A badge far down the page still
+ * costs nothing until it is approached. It is not `next/script`: Stripe.js is
+ * loaded by `loadStripe` from `@stripe/stripe-js/pure`, which does not inject
+ * the script on import.
  *
  * EMPTY STATE. Stripe renders nothing when no plan is eligible — verified live:
  * an account with no eligible provider produces a host div of height 0 and no
@@ -148,27 +141,60 @@ export function PaymentMethodMessaging({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [near, setNear] = useState(false);
 
-  // Request Stripe.js only when the badge is close to the viewport.
+  // Stripe.js is hundreds of kilobytes. An above-the-fold badge intersects on
+  // the first frame of hydration, which pulls that script into the LCP window.
+  // `load` already waited for the eager images, then idle lets the paint finish.
   useEffect(() => {
     if (!gate || near) return;
     const node = hostRef.current;
     if (!node) return;
 
-    if (typeof IntersectionObserver === "undefined") {
-      setNear(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          setNear(true);
-          io.disconnect();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    io.observe(node);
-    return () => io.disconnect();
+    let cancelled = false;
+    let idleId: number | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let io: IntersectionObserver | undefined;
+
+    const observe = (): void => {
+      if (cancelled) return;
+      if (typeof IntersectionObserver === "undefined") {
+        setNear(true);
+        return;
+      }
+      io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            setNear(true);
+            io?.disconnect();
+          }
+        },
+        { rootMargin: "200px" },
+      );
+      io.observe(node);
+    };
+
+    const start = (): void => {
+      if (typeof window.requestIdleCallback === "function") {
+        idleId = window.requestIdleCallback(observe, { timeout: 2000 });
+      } else {
+        timeoutId = setTimeout(observe, 1500);
+      }
+    };
+
+    if (document.readyState === "complete") start();
+    else window.addEventListener("load", start, { once: true });
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("load", start);
+      if (
+        idleId !== undefined &&
+        typeof window.cancelIdleCallback === "function"
+      ) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      io?.disconnect();
+    };
   }, [gate, near]);
 
   /**

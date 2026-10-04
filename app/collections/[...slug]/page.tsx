@@ -518,10 +518,12 @@ export async function CollectionRoute({
       ? filterCategoriesByNonEmptySlugs(category.children, nonEmptySlugs)
       : (category.children ?? []);
   const hasChildren = childCategories.length > 0;
-  // Header owns LCP when: (1) leaf featured thumbnail, or (2) parent subcategory
-  // carousel (first card is priority). Keep product grid cards lazy in both cases.
-  const preferHeaderLcp =
-    hasChildren || (!hasChildren && Boolean(category.thumbnail));
+  // A parent collection's LCP is the subcategory carousel (its first card is
+  // already priority). Keep the product grid lazy there. A leaf is different:
+  // the square product card is taller than the short banner, so the first
+  // card is the LCP element and must not be lazy. Measured on Paralel dining
+  // chairs: the card was lazy, fetchpriority was absent, and it was the LCP.
+  const preferHeaderLcp = hasChildren;
 
   return (
     <>

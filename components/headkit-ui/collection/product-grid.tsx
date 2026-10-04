@@ -41,8 +41,9 @@ function LoadingSkeleton({
 
 export function ProductGrid({
   /**
-   * When the collection header already owns LCP (leaf featured thumbnail),
-   * skip grid `priority` so product cards do not steal bandwidth.
+   * When a parent collection's subcategory carousel owns LCP, skip grid
+   * `priority` so those cards do not steal bandwidth from it. A leaf's first
+   * product card is the LCP and keeps `priority`.
    */
   preferHeaderLcp = false,
 }: {
