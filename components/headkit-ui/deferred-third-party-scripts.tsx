@@ -33,8 +33,6 @@ declare global {
   }
 }
 
-/** Idle deadline once the page has finished loading (deferred schedule). */
-const IDLE_TIMEOUT_MS = 2000;
 /**
  * Idle deadline measured from MOUNT under the eager escape hatch
  * (`NEXT_PUBLIC_THIRD_PARTY_EAGER`). This is the cap every storefront used
@@ -53,9 +51,9 @@ const FALLBACK_DELAY_MS = 3500;
 const MAX_DELAY_MS = 10000;
 
 /**
- * Load marketing tags after the page has PAINTED, then on idle (or on the
- * first user gesture, whichever comes first). Keeps GTM / Klaviyo / HubSpot
- * off the LCP / TBT critical path.
+ * Load marketing tags after the page has PAINTED, then after a fixed delay
+ * (or on the first user gesture, whichever comes first). Keeps GTM / Klaviyo /
+ * HubSpot off the LCP / TBT critical path.
  *
  * A tiny dataLayer stub is installed immediately so early pushes are queued
  * until gtm.js arrives.
@@ -63,13 +61,14 @@ const MAX_DELAY_MS = 10000;
  * THE TRIGGER, and why it moved. This used to schedule straight from the
  * effect — `requestIdleCallback(..., { timeout: 4000 })`. An idle callback is
  * only ever as late as the main thread is busy, and a 4 s cap lands INSIDE the
- * paint window on a throttled mobile run whose LCP is ~5.9 s. Measured on the
- * Bike Society fork's deployed store, gtm.js started 1,151-1,467 ms BEFORE the
- * `load` event. The schedule now starts at `load` — Next's own
- * `<Script strategy="lazyOnload">` semantics, implemented here rather than
- * delegated to `<Script>` because this loader owns the consent ordering below,
- * which `<Script>` cannot express. `load` fires after every render-blocking
- * resource and every eager image, so LCP has happened by then.
+ * paint window on a throttled mobile run whose LCP is ~5.9 s. Waiting for
+ * `load` and then `requestIdleCallback` still ran inside the paint: after
+ * `load` the thread is idle, so the callback fires immediately. Measured on
+ * Bike Society helmets, gtm.js started at 1,052 ms and the LCP paint was at
+ * 1,062 ms. The deferred schedule is now `load`, then a fixed 3.5 s timeout.
+ * Implemented here rather than with `<Script>` because this loader owns the
+ * consent ordering below, which `<Script>` cannot express. `load` fires after
+ * every render-blocking resource and every eager image.
  *
  * WHAT IT TRADES. A visitor who leaves before `load` + idle is no longer
  * counted at all, and Klaviyo's on-site popups shift later by the same amount.
@@ -164,7 +163,7 @@ export function DeferredThirdPartyScripts({
       }
     };
 
-    // Prefer idle; hard-cap so tags still fire without interaction.
+    // Eager hatch only. Idle-from-mount is the old schedule, kept on purpose.
     const scheduleIdle = (idleTimeoutMs: number): void => {
       if (loaded || idleId !== undefined || timeoutId !== undefined) return;
       if ("requestIdleCallback" in window) {
@@ -176,12 +175,18 @@ export function DeferredThirdPartyScripts({
       }
     };
 
+    // Deferred schedule. A fixed delay, because idle-after-load runs immediately.
+    const scheduleAfterPaint = (): void => {
+      if (loaded || idleId !== undefined || timeoutId !== undefined) return;
+      timeoutId = setTimeout(load, FALLBACK_DELAY_MS);
+    };
+
     const onGesture = (): void => {
       load();
     };
 
     const onWindowLoad = (): void => {
-      scheduleIdle(IDLE_TIMEOUT_MS);
+      scheduleAfterPaint();
     };
 
     const cleanup = (): void => {
@@ -234,9 +239,9 @@ export function DeferredThirdPartyScripts({
       // The escape hatch: schedule from MOUNT, exactly as before the deferral.
       scheduleIdle(EAGER_IDLE_TIMEOUT_MS);
     } else if (document.readyState === "complete") {
-      // Hydration finished after the load event — the paint is already behind
-      // us, so there is nothing left to wait for.
-      scheduleIdle(IDLE_TIMEOUT_MS);
+      // Hydration finished after `load`. The paint may have just happened, so
+      // this still waits out the post-load delay rather than injecting now.
+      scheduleAfterPaint();
     } else {
       window.addEventListener("load", onWindowLoad, { once: true });
       ceilingId = setTimeout(load, MAX_DELAY_MS);

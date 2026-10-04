@@ -15,10 +15,10 @@ import { resetConsentStoreForTests } from "@/lib/consent-store";
  * `NEXT_PUBLIC_THIRD_PARTY_EAGER` still buys a store the old schedule back.
  *
  * WHERE IT STOPS.
- *  - jsdom has no `requestIdleCallback`, so every case here exercises the
- *    `setTimeout` fallback branch. That the real idle path also waits for
- *    `load` is the same two lines of code, and the LCP effect itself is a
- *    browser measurement — the numbers are in the PR.
+ *  - The deferred schedule is `load`, then a fixed 3.5 s timeout. The eager
+ *    hatch still uses idle-from-mount; jsdom has no `requestIdleCallback`, so
+ *    that hatch exercises its `setTimeout` fallback. LCP itself is a browser
+ *    measurement — the numbers are in the PR.
  *  - Nothing here loads gtm.js, reaches Google, or observes a cookie. "The
  *    tags still fire" is a browser claim, not one of these assertions.
  *  - `document.readyState` is stubbed. A real browser's ordering of hydration
@@ -212,7 +212,7 @@ describe("the per-store consent gate and the schedule are orthogonal", () => {
 describe("a page that had already loaded when the effect ran", () => {
   beforeEach(() => setReadyState("complete"));
 
-  it("schedules straight away — there is nothing left to wait for", () => {
+  it("still waits the post-load delay when load has already fired", () => {
     render();
     act(() => {
       vi.advanceTimersByTime(3500);
