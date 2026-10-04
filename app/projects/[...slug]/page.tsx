@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Image from "next/image";
-import { Suspense } from "react";
 import { notFound, unstable_rethrow } from "next/navigation";
 import { cacheLife, cacheTag } from "next/cache";
 import type { Product, RelatedProduct } from "@headkit/sdk";
@@ -13,7 +12,6 @@ import { ProjectCarousel } from "@/components/headkit-ui/project/project-carouse
 import { SectionHeader } from "@/components/headkit-ui/section-header";
 import { ArticleJsonLD } from "@/components/seo/article-json-ld";
 import { BreadcrumbJsonLD } from "@/components/seo/breadcrumb-json-ld";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   makeSeoMetadata,
   resolveStoreName,
@@ -28,23 +26,7 @@ interface Props {
   params: Promise<{ slug: string[] }>;
 }
 
-function ProjectArticleSkeleton(): ReactNode {
-  return (
-    <div className="space-y-6 px-5 py-8 md:px-10">
-      <Skeleton animated={false} className="h-4 w-40" />
-      <Skeleton animated={false} className="h-10 w-2/3 max-w-xl" />
-      <Skeleton
-        animated={false}
-        className="aspect-[16/9] w-full max-w-4xl rounded-brand"
-      />
-      <div className="max-w-3xl space-y-3">
-        <Skeleton animated={false} className="h-4 w-full" />
-        <Skeleton animated={false} className="h-4 w-full" />
-        <Skeleton animated={false} className="h-4 w-11/12" />
-      </div>
-    </div>
-  );
-}
+
 
 function mapRelatedToProduct(r: RelatedProduct): Product {
   return {
@@ -155,9 +137,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 /**
- * Project-card destination. `loading.tsx` is the navigation shell. A missing
- * project streams as 200 with `noindex`. See "Card routes navigate instantly"
- * in `apps/starter/AGENTS.md`.
+ * The project is cached CMS content, so it is the static shell. There is no
+ * `loading.tsx` and no `<Suspense>` around it. `notFound()` in this export
+ * answers 404.
+ *
+ * @see https://nextjs.org/docs/app/getting-started/caching
  */
 export const instant = true;
 
@@ -169,11 +153,7 @@ export default async function Page(props: Props): Promise<ReactNode> {
   if (!projectSlug || projectSlug === STATIC_GEN_PLACEHOLDER_SLUG) notFound();
   if (!(await getProject(projectSlug))) notFound();
 
-  return (
-    <Suspense fallback={<ProjectArticleSkeleton />}>
-      <ProjectArticleContent {...props} />
-    </Suspense>
-  );
+  return <ProjectArticleContent {...props} />;
 }
 
 async function ProjectArticleContent({
@@ -185,16 +165,10 @@ async function ProjectArticleContent({
     return notFound();
   }
 
-  // Deliberately UNCAUGHT, and the reason is NOT the status code. This
-  // component runs BELOW the `<Suspense>` that already committed the 200, so
-  // neither a `notFound()` nor a thrown error can set a status here — both
-  // answer 200. What changes is the BODY and its robots meta: a late
-  // `notFound()` tells a shopper this project does not exist when the gate in
-  // the default export just proved it does, while a throw renders
-  // `app/error.tsx`, is loggable, and commits no wrong content as the page.
-  // `generateMetadata`'s catch marks that render `noindex` so the error body
-  // is never offered to a crawler. The miss case is the null below, owned
-  // jointly with that gate.
+  // Deliberately UNCAUGHT. A thrown read is transport or infra: it renders
+  // `app/error.tsx` and does not invent a body for a document the gate above
+  // just proved exists. `generateMetadata`'s catch marks that render
+  // `noindex`. The miss case is the null below, owned jointly with that gate.
   const [project, { storeSettings }] = await Promise.all([
     getProject(projectSlug),
     getBranding(),

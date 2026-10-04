@@ -49,6 +49,12 @@ const MISSING = [
     path: "/collections/this-category-does-not-exist-xyz",
   },
   { family: "shop", path: "/shop/this-product-does-not-exist-xyz" },
+  { family: "brand", path: "/brand/this-brand-does-not-exist-xyz" },
+  { family: "news", path: "/news/this-post-does-not-exist-xyz" },
+  {
+    family: "project",
+    path: "/projects/this-project-does-not-exist-xyz",
+  },
   // The one gated route with no dynamic segment, so its condition set differs
   // from every entry above: no `generateStaticParams`, no in-page `<Suspense>`.
   // It is also the one whose 404 depends on the FIXTURE — a store that has a
@@ -61,14 +67,13 @@ const MISSING = [
 ] as const;
 
 /**
- * Brand, news and project URLs still stream a missing page as 200, because
- * those routes keep `loading.tsx`. Catalogue routes do not: a missing
- * collection or shop URL answers 404. `/products/{missing}` stays a soft 404
- * so the Shopify preview key can be read below its one boundary.
+ * Brand, news and project articles are cached documents with no `loading.tsx`,
+ * so a missing URL answers 404. `/products/{missing}` stays a soft 404 so the
+ * Shopify preview key can be read below its one boundary.
  */
 
 /** Route prefixes to sample a REAL, live URL for from the sitemap. */
-const LIVE_PREFIXES = ["/products/", "/collections/", "/news/", "/shop/"];
+const LIVE_PREFIXES = ["/products/", "/collections/", "/news/", "/shop/", "/brand/", "/projects/"];
 
 /** Every `<loc>` in the sitemap, as site-relative paths. */
 async function sitemapPaths(request: APIRequestContext): Promise<string[]> {

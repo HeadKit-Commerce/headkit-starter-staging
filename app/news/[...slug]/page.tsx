@@ -153,9 +153,9 @@ async function collectRecentPostSlugs(limit: number): Promise<string[]> {
  * `x-nextjs-postponed: 1`), so the 200 is committed by the shell before the
  * page component runs and the hoisted `notFound()` can only add a `noindex`
  * meta. Adding this made `/news/{missing}` answer 404 with no other change —
- * the sibling routes that already 404ed all declared one. It is a FOURTH
- * boundary source alongside the in-page `<Suspense>`, a `loading.tsx` and an
- * ancestor-layout boundary; `app/not-found-status.test.ts` asserts it.
+ * the sibling routes that already 404ed all declared one. A `loading.tsx` or an in-page `<Suspense>` would commit 200 before
+ * this gate. Neither wraps this route. `app/not-found-status.test.ts` asserts
+ * `generateStaticParams`.
  *
  * Posts used to be left un-enumerated because a post's carousels and landing
  * were uncached, so a prerender bought nothing: every view paid the same
@@ -246,10 +246,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * measures a built file.
  */
 /**
- * Post-card destination. `loading.tsx` is the navigation shell, so a click
- * shows this page or its skeleton. That boundary is the JS-off cost recorded
- * under "Card routes navigate instantly" in `apps/starter/AGENTS.md`. A
- * missing post streams as 200 with `noindex`.
+ * The article is cached CMS content, so it is the static shell. There is no
+ * `loading.tsx` and no `<Suspense>` around it. `notFound()` in this export
+ * answers 404.
+ *
+ * @see https://nextjs.org/docs/app/getting-started/caching
  */
 export const instant = true;
 

@@ -372,13 +372,22 @@ and renders it only when the public read returned null. `notFound()` and
 collection or shop URL answers 404 and a flat collection or flat product URL can set 308.
 Product cards still pass `prefetch={true}`.
 
-### Card routes that still use a skeleton
+### Known content is the static shell
 
-`app/brand/[...slug]`, `app/news/[...slug]` and `app/projects/[...slug]` keep `loading.tsx`.
-Brand awaits `searchParams` inside its boundary. News and projects are editorial. On these
-routes a missing URL streams as **200**, `permanentRedirect` cannot set **308**, and a
-prerendered document reveals completed content with `$RC`. CMS pages, client pages and
-wholesale stay gated.
+Brand lists, brand page-1 grids, news articles and project articles are cached
+CMS content. `app/brand`, `app/brand/[...slug]`, `app/news/[...slug]` and
+`app/projects/[...slug]` have no `loading.tsx` and do not wrap that document
+in `<Suspense>`. A missing URL calls `notFound()` in the page and answers 404.
+
+The news and projects indexes keep one `<Suspense>` around the list that
+awaits `searchParams`. The landing header stays outside it.
+
+`app/collections/[...slug]`, `app/sale`, `app/new` and `app/featured` render
+page 1 of the cached catalogue in the shell. They do not await
+`searchParams`. A product page renders the cached product outside every
+boundary. Inventory streams behind one `<Suspense>` (`cacheLife("seconds")`).
+The flat PDP's other boundary is only the null-product branch, so a Shopify
+draft can read its preview key.
 
 **`app/products/[...slug]` stays un-gated for a missing product** because of the Shopify
 Admin draft-preview flow, which another team owns: above a boundary a draft and a missing

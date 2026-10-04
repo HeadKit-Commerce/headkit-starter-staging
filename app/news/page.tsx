@@ -162,37 +162,15 @@ async function PostsServer({
 }
 
 /**
- * Instant Navigation (Next.js 16.3) — header can stream with posts under Suspense.
- * @see https://nextjs.org/docs/app/guides/instant-navigation
+ * The landing is cached CMS content, so the header is the static shell.
+ * The list awaits `searchParams` and the page applies that filter on the
+ * server, so that read stays inside one `<Suspense>`.
+ *
+ * @see https://nextjs.org/docs/app/getting-started/caching
  */
 export const instant = true;
 
-export default function Page({ searchParams }: Props) {
-  // The static shell paints before the landing resolves. Store copy belongs
-  // here too, or a store that titles the index in theme.json flashes "News".
-  const shell = postsIndexHeading(null, getStoreTheme().copy?.postsIndex);
-  return (
-    <Suspense
-      fallback={
-        <>
-          <PostHeader
-            name={shell.title}
-            description={shell.description}
-            breadcrumbs={[
-              { name: "Home", uri: "/", current: false },
-              { name: shell.title, uri: "/news", current: true },
-            ]}
-          />
-          <EditorialGridSkeleton aspect="portrait" />
-        </>
-      }
-    >
-      <NewsRoute searchParams={searchParams} />
-    </Suspense>
-  );
-}
-
-async function NewsRoute({ searchParams }: Props) {
+export default async function Page({ searchParams }: Props) {
   const [page, postsBase] = await Promise.all([
     getNewsLanding(),
     getPostsBasePath(),
