@@ -323,6 +323,10 @@ const nextConfig: NextConfig = {
     // logos). AVIF first, WebP fallback — never serve source PNG/JPEG bytes
     // when the optimizer can negotiate a smaller format.
     formats: ["image/avif", "image/webp"],
+    // Next's default list ends at 3840, and that largest width becomes the
+    // <img src> fallback for every `sizes` that uses vw. These storefronts
+    // never paint a 4K hero; 2048 matches the largest WordPress derivative.
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048],
     // See `imageMinimumCacheTTL` above: absent unless the store sets a value, and
     // absent means Next's 4 h default.
     ...(imageMinimumCacheTTL > 0

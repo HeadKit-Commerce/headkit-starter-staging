@@ -84,6 +84,7 @@ function GalleryTile({
         className={className}
         sizes={sizes}
         unoptimized={isVideo}
+        {...(item.src === FALLBACK_IMAGE_SRC ? { quality: 50 as const } : {})}
         {...(priority !== undefined ? { priority } : {})}
         {...(fetchPriority !== undefined ? { fetchPriority } : {})}
         {...(loading !== undefined ? { loading } : {})}

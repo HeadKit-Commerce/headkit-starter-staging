@@ -29,7 +29,11 @@ interface Props {
   quality?: 50 | 65 | 75 | 100;
 }
 
-/** Local fallback when a product/category has no thumbnail — never fetched from WP. */
+/**
+ * Local fallback when a product/category has no thumbnail. It goes through
+ * `next/image` at quality 50 with the catalog `sizes`, so the browser requests
+ * the slot width rather than the largest device size.
+ */
 const FALLBACK_IMAGE_SRC = "/assets/HeadKit-Fallback.png";
 
 const FeaturedImage = ({
@@ -72,7 +76,7 @@ const FeaturedImage = ({
         fill
         priority={priority}
         fetchPriority={priority ? "high" : "auto"}
-        quality={quality}
+        quality={imageSrc === FALLBACK_IMAGE_SRC ? 50 : quality}
         className={cn(objectClass, revealHover ? "opacity-0" : "opacity-100")}
         sizes={CATALOG_GRID_IMAGE_SIZES}
       />

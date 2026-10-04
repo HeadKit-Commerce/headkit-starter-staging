@@ -187,9 +187,10 @@ export function serializeConsent(decision: ConsentDecision): string {
  * `.doubleclick.net` anyway, with no error, no warning, and a dataLayer that
  * reads correctly in the console.
  *
- * This is the trap to reach for the local idiom on: the `gtm.start` push a few
- * lines away in `deferred-third-party-scripts.tsx` IS a plain object literal,
- * and that is correct for that message and wrong for this one.
+ * This is the trap to reach for the local idiom on: `GoogleTagManager` pushes
+ * `gtm.start` as a plain object from its inline script, and that is correct
+ * for that message and wrong for this one. The loader pushes this command
+ * before that component mounts, so the default precedes `gtm.start`.
  * `lib/consent.test.ts` asserts the pushed value is `arguments`-shaped, because
  * a test that only checks the payload's contents is green under the bug.
  */
