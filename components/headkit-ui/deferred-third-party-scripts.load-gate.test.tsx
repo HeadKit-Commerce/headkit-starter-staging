@@ -3,12 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-// The real `GoogleTagManager` loads through `next/script`, which caches by src
-// and will not re-insert a tag the test already removed. This stands in for
-// that mount: one async `gtm.js` tag, and the same `gtm.start` dataLayer push
-// the inline script performs, so the consent-order assertions can see it.
 vi.mock("@next/third-parties/google", () => ({
-  GoogleTagManager: function MockGoogleTagManager({ gtmId }: { gtmId: string }) {
+  GoogleTagManager: function MockGoogleTagManager({
+    gtmId,
+  }: {
+    gtmId: string;
+  }) {
     if (typeof document === "undefined") return null;
     const src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(gtmId)}`;
     if ([...document.scripts].some((script) => script.src === src)) return null;
@@ -27,29 +27,6 @@ vi.mock("@next/third-parties/google", () => ({
 import { DeferredThirdPartyScripts } from "@/components/headkit-ui/deferred-third-party-scripts";
 import { resetConsentStoreForTests } from "@/lib/consent-store";
 
-/**
- * The claim: by default the tag stack loads on the first gesture, not from
- * mount and not from a timer. A timeout that fires while Lighthouse is still
- * waiting for a quiet window restarts the trace and pulls GTM into the paint.
- * `NEXT_PUBLIC_THIRD_PARTY_EAGER` still buys a store the old schedule back.
- *
- * WHERE IT STOPS.
- *  - The eager hatch still uses idle-from-mount; jsdom has no
- *    `requestIdleCallback`, so that hatch exercises its `setTimeout` fallback.
- *  - Nothing here loads gtm.js, reaches Google, or observes a cookie. "The
- *    tags still fire" is a browser claim, not one of these assertions.
- *  - `document.readyState` is stubbed. A real browser's ordering of hydration
- *    against `load` is not reproducible here; both branches are covered
- *    explicitly instead.
- *  - The escape-hatch cases stub `process.env`. In a production build Next
- *    INLINES `NEXT_PUBLIC_*` at build time, so what a deployed store actually
- *    does depends on the value present when its build ran — which no unit
- *    test can see.
- *
- * The CONSENT ordering under the default schedule is also covered by
- * `consent-gate.test.tsx`, which drives the banner and this loader together.
- */
-
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -62,12 +39,31 @@ function gtmScripts(): HTMLScriptElement[] {
   );
 }
 
-/** jsdom reports `complete`; both branches have to be reachable. */
-function setReadyState(value: DocumentReadyState): void {
-  Object.defineProperty(document, "readyState", {
-    configurable: true,
-    get: () => value,
-  });
+function consentCommands(): unknown[] {
+  const dataLayer =
+    (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
+  return dataLayer.filter(
+    (entry) => Object.prototype.toString.call(entry) === "[object Arguments]",
+  );
+}
+
+function indexOfGtmStart(): number {
+  const dataLayer =
+    (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
+  return dataLayer.findIndex(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      "gtm.start" in (entry as Record<string, unknown>),
+  );
+}
+
+function indexOfConsentCommand(): number {
+  const dataLayer =
+    (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
+  return dataLayer.findIndex(
+    (entry) => Object.prototype.toString.call(entry) === "[object Arguments]",
+  );
 }
 
 let container: HTMLElement;
@@ -84,41 +80,9 @@ function render(consentEnabled = false): void {
   });
 }
 
-/** The consent commands pushed so far, in dataLayer order. */
-function consentCommands(): unknown[] {
-  const dataLayer =
-    (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
-  return dataLayer.filter(
-    (entry) => Object.prototype.toString.call(entry) === "[object Arguments]",
-  );
-}
-
-/** Index of the first consent command in the dataLayer, or -1. */
-function indexOfConsentCommand(): number {
-  const dataLayer =
-    (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
-  return dataLayer.findIndex(
-    (entry) => Object.prototype.toString.call(entry) === "[object Arguments]",
-  );
-}
-
-/** Index of the `gtm.start` message, or -1. */
-function indexOfGtmStart(): number {
-  const dataLayer =
-    (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
-  return dataLayer.findIndex(
-    (entry) =>
-      typeof entry === "object" &&
-      entry !== null &&
-      "gtm.start" in (entry as Record<string, unknown>),
-  );
-}
-
 beforeEach(() => {
-  vi.useFakeTimers();
   resetConsentStoreForTests();
   delete (window as unknown as { dataLayer?: unknown[] }).dataLayer;
-  document.getElementById("_next-gtm-init")?.remove();
   document.getElementById("_next-gtm")?.remove();
   for (const script of gtmScripts()) script.remove();
   container = document.createElement("div");
@@ -129,153 +93,21 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  vi.useRealTimers();
-  vi.unstubAllEnvs();
-  setReadyState("complete");
 });
 
-describe("a page still loading", () => {
-  beforeEach(() => setReadyState("loading"));
-
-  it("loads nothing while the page is still painting", () => {
-    render();
-    act(() => {
-      // Past the 4 s cap this used to schedule against, which is what put the
-      // tag stack inside the paint window.
-      vi.advanceTimersByTime(5000);
-    });
-
-    expect(gtmScripts()).toHaveLength(0);
-  });
-
-  it("does not load on the load event or on a timer", () => {
-    render();
-    act(() => {
-      vi.advanceTimersByTime(5000);
-      window.dispatchEvent(new Event("load"));
-      vi.advanceTimersByTime(60_000);
-    });
-    expect(gtmScripts()).toHaveLength(0);
-  });
-
-  it("loads immediately on a gesture", () => {
-    render();
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
-
+describe("GoogleTagManager from @next/third-parties", () => {
+  it("mounts gtm.js after hydration when the consent gate is off", () => {
+    render(false);
     expect(gtmScripts()).toHaveLength(1);
     expect(gtmScripts()[0]?.async).toBe(true);
-  });
-
-  it("loads exactly once when a gesture is repeated", () => {
-    render();
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-      window.dispatchEvent(new Event("scroll"));
-      vi.advanceTimersByTime(30_000);
-    });
-
-    expect(gtmScripts()).toHaveLength(1);
-  });
-});
-
-describe("the per-store consent gate and the schedule are orthogonal", () => {
-  // `consentEnabled` decides WHETHER a consent command is pushed; the schedule
-  // decides WHEN the container loads. Neither may be read from the other, and
-  // a merge of the two is exactly where that could have gone wrong.
-  beforeEach(() => setReadyState("loading"));
-
-  it("still pushes the default BEFORE gtm.start on the deferred schedule", () => {
-    render(true);
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
-
-    expect(gtmScripts()).toHaveLength(1);
-    expect(consentCommands()).toHaveLength(1);
-    expect(indexOfConsentCommand()).toBeGreaterThanOrEqual(0);
-    expect(indexOfConsentCommand()).toBeLessThan(indexOfGtmStart());
-  });
-
-  it("pushes no consent command with the gate off, and still waits for a gesture", () => {
-    render(false);
-    act(() => {
-      window.dispatchEvent(new Event("load"));
-      vi.advanceTimersByTime(60_000);
-    });
-    expect(gtmScripts()).toHaveLength(0);
-
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
-    expect(gtmScripts()).toHaveLength(1);
     expect(consentCommands()).toHaveLength(0);
   });
-});
 
-describe("a page that had already loaded when the effect ran", () => {
-  beforeEach(() => setReadyState("complete"));
-
-  it("still waits for a gesture when load has already fired", () => {
-    render();
-    act(() => {
-      vi.advanceTimersByTime(60_000);
-    });
-    expect(gtmScripts()).toHaveLength(0);
-
-    act(() => {
-      window.dispatchEvent(new Event("keydown"));
-    });
-    expect(gtmScripts()).toHaveLength(1);
-  });
-});
-
-describe("NEXT_PUBLIC_THIRD_PARTY_EAGER — the way back", () => {
-  beforeEach(() => setReadyState("loading"));
-
-  it('with "true", schedules from MOUNT again and never waits for load', () => {
-    vi.stubEnv("NEXT_PUBLIC_THIRD_PARTY_EAGER", "true");
-    render();
-    act(() => {
-      // No load event, no gesture. The old schedule fires on its own cap.
-      vi.advanceTimersByTime(3500);
-    });
-
-    expect(gtmScripts()).toHaveLength(1);
-  });
-
-  it("still pushes the consent default before gtm.start under the hatch", () => {
-    // The hard constraint: the Consent Mode v2 default precedes any Google
-    // tag under EVERY value of the switch.
-    vi.stubEnv("NEXT_PUBLIC_THIRD_PARTY_EAGER", "1");
+  it("pushes the consent default before gtm.start when the gate is on", () => {
     render(true);
-    act(() => {
-      vi.advanceTimersByTime(3500);
-    });
-
     expect(gtmScripts()).toHaveLength(1);
     expect(consentCommands()).toHaveLength(1);
     expect(indexOfConsentCommand()).toBeGreaterThanOrEqual(0);
     expect(indexOfConsentCommand()).toBeLessThan(indexOfGtmStart());
-  });
-
-  it("treats an empty value and a typo as the deferred default", () => {
-    // A cleared platform variable arrives as "", and an operator typo must
-    // not silently move analytics timing back.
-    for (const value of ["", "ture", "enabled"]) {
-      vi.stubEnv("NEXT_PUBLIC_THIRD_PARTY_EAGER", value);
-      render();
-      act(() => {
-        vi.advanceTimersByTime(5000);
-      });
-      expect(gtmScripts(), `value ${JSON.stringify(value)}`).toHaveLength(0);
-
-      act(() => root.unmount());
-      container.remove();
-      container = document.createElement("div");
-      document.body.appendChild(container);
-      root = createRoot(container);
-    }
   });
 });

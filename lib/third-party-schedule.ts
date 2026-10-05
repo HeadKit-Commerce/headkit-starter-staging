@@ -9,13 +9,11 @@ import { isFlagOptedIn } from "@/lib/nav-interaction-flags";
  * ever as late as the main thread is busy — on the Bike Society fork, measured
  * on the deployed store, gtm.js started at 250-265 ms while the `load` event
  * was at 1,405-1,717 ms, so the whole third-party stack arrived 1,151-1,467 ms
- * BEFORE the page finished loading, squarely inside a ~5.9 s LCP window. A
- * later `load` + 3.5 s timer was still inside the lab trace: Lighthouse keeps
- * recording until the network and the main thread have been quiet, so the
- * timer restarted that wait. Measured on Bike Society home, gtm.js started at
- * 3.6 s, largest paint was 5.2 s, and interactive was 11.6 s. The default is
- * now the first pointer, key, or scroll. Hand-rolled in that component because
- * it owns a Consent Mode ordering `<Script>` cannot express.
+ * BEFORE the page finished loading, squarely inside a ~5.9 s LCP window.
+ * `DeferredThirdPartyScripts` no longer reads this switch. Every store loads
+ * Google Tag Manager through `@next/third-parties/google` `GoogleTagManager`,
+ * which runs after hydration. The function remains so an existing env value
+ * does not become an unknown export.
  *
  * THIS IS A PLATFORM-WIDE TIMING CHANGE, so it carries a way back.
  * `NEXT_PUBLIC_THIRD_PARTY_EAGER` restores the previous schedule for one
