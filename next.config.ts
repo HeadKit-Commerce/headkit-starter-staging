@@ -332,7 +332,7 @@ const nextConfig: NextConfig = {
     ...(imageMinimumCacheTTL > 0
       ? { minimumCacheTTL: imageMinimumCacheTTL }
       : {}),
-    // 65 = PLP/carousel default (FeaturedImage); 50 = cart thumbs; 75 = heroes.
+    // 65 = catalog grid cards; 50 = phone hero encode and carousel cards; 75 = desktop hero.
     qualities: [50, 65, 75, 100],
     remotePatterns,
     // Next 16 blocks image URLs that resolve to a private/loopback IP (SSRF

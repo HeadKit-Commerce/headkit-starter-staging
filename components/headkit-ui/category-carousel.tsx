@@ -1,5 +1,6 @@
 "use client";
 
+import { CAROUSEL_CARD_IMAGE_SIZES } from "@/components/headkit-ui/catalog-grid";
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { FeaturedImage } from "@/components/headkit-ui/featured-image";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
@@ -66,6 +67,8 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
               alt={name}
               // Below-fold on home — never compete with the hero LCP image.
               priority={false}
+              quality={50}
+              sizes={CAROUSEL_CARD_IMAGE_SIZES}
               className="aspect-video"
             />
             <h2 className="pt-3 text-[17px] text-primary">{name}</h2>

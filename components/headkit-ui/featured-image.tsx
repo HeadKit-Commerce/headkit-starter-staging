@@ -27,6 +27,11 @@ interface Props {
    * PLP/carousel default 65 balances visual quality vs bytes; heroes can pass 75.
    */
   quality?: 50 | 65 | 75 | 100;
+  /**
+   * Slot width for `next/image`. Defaults to the catalog grid. A carousel
+   * card is narrower than that grid on a phone and must pass its own hint.
+   */
+  sizes?: string;
 }
 
 /**
@@ -45,6 +50,7 @@ const FeaturedImage = ({
   priority = false,
   fit = "cover",
   quality = 65,
+  sizes = CATALOG_GRID_IMAGE_SIZES,
 }: Props) => {
   // Empty/whitespace means "no image" — use the storefront fallback asset only.
   const trimmed = src?.trim();
@@ -78,7 +84,7 @@ const FeaturedImage = ({
         fetchPriority={priority ? "high" : "auto"}
         quality={imageSrc === FALLBACK_IMAGE_SRC ? 50 : quality}
         className={cn(objectClass, revealHover ? "opacity-0" : "opacity-100")}
-        sizes={CATALOG_GRID_IMAGE_SIZES}
+        sizes={sizes}
       />
       {hasHoverLayer ? (
         <Image
@@ -92,7 +98,7 @@ const FeaturedImage = ({
           quality={quality}
           aria-hidden
           className={cn(objectClass, revealHover ? "opacity-100" : "opacity-0")}
-          sizes={CATALOG_GRID_IMAGE_SIZES}
+          sizes={sizes}
         />
       ) : null}
     </div>

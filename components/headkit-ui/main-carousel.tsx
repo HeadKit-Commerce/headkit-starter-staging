@@ -9,6 +9,7 @@ import type { HeroCarouselItem } from "@headkit/sdk";
 import { stripTitleMarkers } from "@/lib/title-emphasis";
 import { decodeHtmlEntities, cn } from "@/lib/utils";
 import {
+  heroImageSizes,
   heroLayoutClasses,
   heroMediaClasses,
   type HeroLayout,
@@ -92,6 +93,7 @@ function HeroSlideView({
               desktopSrc={slide.image || slide.mobileImage || ""}
               alt={alt}
               isLcp={index === 0}
+              sizes={heroImageSizes(heroLayout)}
               className="h-full w-full object-cover"
             />
           ) : null}

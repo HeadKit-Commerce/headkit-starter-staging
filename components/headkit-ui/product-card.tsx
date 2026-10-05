@@ -103,6 +103,10 @@ interface Props {
   listName?: string;
   /** Zero-based position of this card within `listName`. */
   listIndex?: number;
+  /** Slot width. Carousel cards are narrower than the catalog grid on a phone. */
+  imageSizes?: string;
+  /** Optimizer quality. Carousel cards pass 50; the grid keeps 65. */
+  imageQuality?: 50 | 65 | 75 | 100;
 }
 
 export const ProductCard = ({
@@ -116,6 +120,8 @@ export const ProductCard = ({
   titleAs = "h3",
   listName,
   listIndex,
+  imageSizes,
+  imageQuality,
 }: Props) => {
   const TitleTag = titleAs;
   const { showSwatches, imageRollover } = useCatalogDisplay();
@@ -290,6 +296,8 @@ export const ProductCard = ({
           alt={plainName}
           priority={priority}
           fit="contain"
+          {...(imageSizes ? { sizes: imageSizes } : {})}
+          {...(imageQuality ? { quality: imageQuality } : {})}
         />
       </InstantLink>
       <div className="pt-3">

@@ -1,5 +1,6 @@
 "use client";
 
+import { CAROUSEL_CARD_IMAGE_SIZES } from "@/components/headkit-ui/catalog-grid";
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { ProductCard } from "@/components/headkit-ui/product-card";
 import type { ProductSummaryFieldsFragment } from "@headkit/sdk";
@@ -54,7 +55,13 @@ const ProductCarousel = ({
     <Carousel
       items={items}
       renderItem={(product) => (
-        <ProductCard product={product} isNew={product.isNew} prefetch />
+        <ProductCard
+          product={product}
+          isNew={product.isNew}
+          prefetch
+          imageSizes={CAROUSEL_CARD_IMAGE_SIZES}
+          imageQuality={50}
+        />
       )}
       itemKey={(product) => product.id || product.slug}
       id={id}

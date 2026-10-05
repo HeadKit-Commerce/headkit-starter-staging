@@ -11,6 +11,11 @@ interface Props {
   /** First slide. Its poster is the LCP image for this breakpoint only. */
   isLcp: boolean;
   className?: string;
+  /**
+   * Slot width. Defaults to the full viewport. An inset hero passes
+   * `calc(100vw - 2.5rem)` so a phone does not take the next larger encode.
+   */
+  sizes?: string;
   mobileWidth?: number;
   mobileHeight?: number;
   desktopWidth?: number;
@@ -29,6 +34,7 @@ export function ArtDirectedImage({
   alt,
   isLcp,
   className,
+  sizes = "100vw",
   mobileWidth = 768,
   mobileHeight = 768,
   desktopWidth = 1920,
@@ -37,17 +43,19 @@ export function ArtDirectedImage({
   const mobile = getImageProps({
     alt,
     src: mobileSrc,
-    sizes: "100vw",
+    sizes,
     width: mobileWidth,
     height: mobileHeight,
-    quality: isLcp ? 65 : 50,
+    // Phone slot is about 370px. q=50 is the next allowed step under 65 and
+    // is what the mobile encode uses. Desktop stays at 75.
+    quality: 50,
   });
   const desktopDiffers = desktopSrc.length > 0 && desktopSrc !== mobileSrc;
   const desktop = desktopDiffers
     ? getImageProps({
         alt,
         src: desktopSrc,
-        sizes: "100vw",
+        sizes,
         width: desktopWidth,
         height: desktopHeight,
         quality: 75,
