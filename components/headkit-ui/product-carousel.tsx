@@ -35,9 +35,10 @@ export const CAROUSEL_FIRST_ROW = 4;
  * boundary here was inert for streaming but not for the static shell: React
  * outlines any completed boundary over `progressiveChunkSize` (12 800 bytes)
  * into a `<div hidden id="S:…">` after the shell, and a carousel of cards is
- * past that budget. Callers that are the LCP (or the product itself) must
- * render this component in the shell. Below-fold callers use `HydrateLater`
- * so the hero or gallery hydrates first.
+ * past that budget, so every related / upsell / editorial carousel was hidden
+ * with JavaScript off even when fully prerendered. Cached carousels stay in
+ * the static shell.
+ * https://nextjs.org/docs/app/getting-started/caching#static-cached-and-streaming
  */
 const ProductCarousel = ({
   products,
