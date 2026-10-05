@@ -178,6 +178,7 @@ export function NavigationBar({
         {centeredLogo ? (
           <NavigationMenuLink asChild>
             <InstantLink
+        prefetch={true}
               href="/"
               aria-label="Home"
               className="headkit-nav-logo absolute left-1/2 z-[1] cursor-pointer hover:opacity-75"
@@ -196,6 +197,7 @@ export function NavigationBar({
             <NavigationMenuItem className="mr-4 hover:opacity-75">
               <NavigationMenuLink asChild>
                 <InstantLink
+        prefetch={true}
                   href="/"
                   aria-label="Home"
                   className="cursor-pointer"
@@ -356,6 +358,7 @@ function Preheader({
           ) : null}
           {links?.map(({ label, uri }, i) => (
             <InstantLink
+        prefetch={true}
               key={i}
               href={uri}
               className="underline text-brand-bg"
@@ -527,6 +530,7 @@ export function MegaMenu({
         <li className="col-span-full">
           <NavigationMenuLink asChild>
             <InstantLink
+        prefetch={true}
               href={viewAll.href}
               pendingVariant="text"
               className="font-semibold text-primary hover:opacity-80 underline block"
@@ -554,6 +558,7 @@ export function MegaMenu({
               <div key={group.id}>
                 <NavigationMenuLink asChild>
                   <InstantLink
+        prefetch={true}
                     href={removeTrailingSlash(group.uri)}
                     pendingVariant="text"
                     className="font-semibold text-primary hover:opacity-80 uppercase block mb-2"
@@ -588,6 +593,7 @@ function MegaMenuChild({ item, depth }: { item: NavMenuItem; depth: number }) {
     <li>
       <NavigationMenuLink asChild>
         <InstantLink
+        prefetch={true}
           href={removeTrailingSlash(item.uri)}
           pendingVariant="text"
           className={cn(
@@ -665,6 +671,7 @@ export function MobileMenuBranch({
   return (
     <div>
       <InstantLink
+        prefetch={true}
         href={removeTrailingSlash(item.uri)}
         pendingVariant="text"
         className={cn(
@@ -737,6 +744,7 @@ function MobileMenuItem({
 
   return (
     <InstantLink
+        prefetch={true}
       href={removeTrailingSlash(item.uri)}
       pendingVariant="text"
       className={cn(

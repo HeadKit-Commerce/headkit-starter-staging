@@ -57,6 +57,7 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
         return (
           <InstantLink
             href={href}
+            prefetch={true}
             pendingVariant="card"
             className="group block"
           >

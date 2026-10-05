@@ -1,7 +1,7 @@
 "use client";
 
-import { getImageProps } from "next/image";
 import { ElementType, useState } from "react";
+import { ArtDirectedImage } from "@/components/headkit-ui/art-directed-image";
 import { HeroVideoSlide } from "@/components/headkit-ui/hero-video-slide";
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
@@ -80,7 +80,7 @@ export const MainCarousel = ({
                         </p>
                       ) : null}
                       <div className="mt-8">
-                        <InstantLink href={slide?.url ?? "#"}>
+                        <InstantLink href={slide?.url ?? "#"} prefetch={true}>
                           <Button className="text-brand-bg">
                             {slide?.buttonText}
                           </Button>
@@ -110,71 +110,21 @@ export const MainCarousel = ({
                       />
                     </>
                   ) : slide?.image ? (
-                    (() => {
-                      const isLcp = index === 0;
-                      const headerAlt = stripTitleMarkers(
-                        decodeHtmlEntities(slide.header ?? ""),
-                      );
-                      const desktop = {
-                        alt: headerAlt,
-                        sizes: "100vw",
-                        width: 1920,
-                        height: 1080,
-                        // Desktop can afford slightly higher quality; mobile LCP
-                        // path stays leaner under Slow 4G (~65 vs 75).
-                        quality: 75 as const,
-                        priority: isLcp,
-                        fetchPriority: (isLcp ? "high" : "auto") as
-                          | "high"
-                          | "auto",
-                      };
-                      const {
-                        props: { srcSet: desktopSrcSet, sizes: desktopSizes },
-                      } = getImageProps({ ...desktop, src: slide.image });
-                      // Prefer a real mobile asset when CMS provides one; fall
-                      // back to the desktop image at a smaller encode budget.
-                      const mobileSrc = slide.mobileImage || slide.image;
-                      const {
-                        props: { srcSet: mobileSrcSet, ...mobileRest },
-                      } = getImageProps({
-                        alt: headerAlt,
-                        sizes: "100vw",
-                        width: 768,
-                        height: 768,
-                        quality: 65 as const,
-                        priority: isLcp,
-                        fetchPriority: (isLcp ? "high" : "auto") as
-                          | "high"
-                          | "auto",
-                        src: mobileSrc,
-                      });
-                      return (
-                        <>
-                          <picture>
-                            <source
-                              media="(min-width: 768px)"
-                              srcSet={desktopSrcSet}
-                              sizes={desktopSizes}
-                            />
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              {...mobileRest}
-                              srcSet={mobileSrcSet}
-                              alt={headerAlt}
-                              className="h-full w-full object-cover"
-                              width={768}
-                              height={768}
-                              fetchPriority={isLcp ? "high" : "auto"}
-                              decoding={isLcp ? "sync" : "async"}
-                            />
-                          </picture>
-                          <div
-                            aria-hidden
-                            className="absolute inset-0 hidden md:block bg-gradient-to-r from-black/50 via-black/25 to-transparent"
-                          />
-                        </>
-                      );
-                    })()
+                    <>
+                      <ArtDirectedImage
+                        mobileSrc={slide.mobileImage || slide.image}
+                        desktopSrc={slide.image}
+                        alt={stripTitleMarkers(
+                          decodeHtmlEntities(slide.header ?? ""),
+                        )}
+                        isLcp={index === 0}
+                        className="h-full w-full object-cover"
+                      />
+                      <div
+                        aria-hidden
+                        className="absolute inset-0 hidden md:block bg-gradient-to-r from-black/50 via-black/25 to-transparent"
+                      />
+                    </>
                   ) : null}
                 </div>
               </div>

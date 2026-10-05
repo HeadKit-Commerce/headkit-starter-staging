@@ -41,7 +41,12 @@ export function SubcategoryCard({
   const thumbnail = subcategory.thumbnail?.trim() || null;
 
   return (
-    <InstantLink href={href} pendingVariant="card" className="group block">
+    <InstantLink
+      href={href}
+      prefetch={true}
+      pendingVariant="card"
+      className="group block"
+    >
       <FeaturedImage
         src={thumbnail}
         alt={name}

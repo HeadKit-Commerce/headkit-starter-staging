@@ -380,9 +380,7 @@ export const instant = true;
 
 export default function ProductPage(props: Props) {
   return (
-    <Suspense fallback={<ProductPageShell />}>
-      <ProductRoute {...props} />
-    </Suspense>
+    <ProductRoute {...props} />
   );
 }
 

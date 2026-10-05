@@ -1,5 +1,3 @@
-import { Suspense } from "react";
-import { CollectionPageSkeleton } from "@/components/headkit-ui/skeletons/collection-page-skeleton";
 import type { Metadata } from "next";
 import { notFound, permanentRedirect, unstable_rethrow } from "next/navigation";
 import { headkit as sdk } from "@/lib/sdk";
@@ -446,9 +444,7 @@ export const instant = true;
 
 export default function Page(props: Props) {
   return (
-    <Suspense fallback={<CollectionPageSkeleton />}>
-      <CollectionPageContent {...props} />
-    </Suspense>
+    <CollectionPageContent {...props} />
   );
 }
 
