@@ -5,6 +5,7 @@ import type {
 import { SwatchImageProvider } from "@/components/headkit-ui/swatch-image-provider";
 import { experimentalSwatchImagesEnabled } from "@/lib/experimental-swatch-images";
 import { loadSwatchImageMap } from "@/lib/swatch-visual";
+import { HydrateLater } from "@/components/headkit-ui/hydrate-later";
 import { CollectionProvider } from "./collection-context";
 import { Filter } from "./filter";
 import { ProductGrid } from "./product-grid";
@@ -136,7 +137,10 @@ export function CollectionPage({
       initialBrands={initialBrands}
     >
       <div className="headkit-collection flex flex-col gap-4">
-        <Filter />
+        {/* Filters hydrate after the grid so the first product photo can paint. */}
+        <HydrateLater>
+          <Filter />
+        </HydrateLater>
         <LoadPrevious />
         <ProductGrid preferHeaderLcp={preferHeaderLcp} />
         <div className="flex flex-col items-center gap-5 pb-10">

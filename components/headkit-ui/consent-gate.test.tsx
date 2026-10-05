@@ -206,11 +206,8 @@ describe("with the gate OFF — every store that has not turned it on", () => {
     expect(bannerVisible()).toBe(false);
   });
 
-  it("still loads the tags, exactly as before the gate existed", () => {
+  it("still loads the tags on the first render, with no gesture", () => {
     render(false);
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
 
     expect(gtmScripts()).toHaveLength(1);
     expect(gtmScripts()[0]?.async).toBe(true);
@@ -234,9 +231,6 @@ describe("with the gate OFF — every store that has not turned it on", () => {
     resetConsentStoreForTests();
 
     render(false);
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
 
     expect(consentCommands()).toHaveLength(0);
     expect(gtmScripts()).toHaveLength(1);
@@ -256,30 +250,17 @@ describe("with the gate OFF — every store that has not turned it on", () => {
 });
 
 describe("the gate, with no choice made — what Lighthouse sees", () => {
-  it("tells the container denied BEFORE gtm.start", () => {
+  it("does not tag the visit until the visitor accepts", () => {
     render();
     act(() => {
       window.dispatchEvent(new Event("pointerdown"));
+      window.dispatchEvent(new Event("scroll"));
+      vi.advanceTimersByTime(60_000);
     });
 
-    const commands = consentCommands();
-    expect(commands).toHaveLength(1);
-    expect(commands[0]?.command).toBe("default");
-    expect(commands[0]?.signals).toMatchObject({
-      ad_storage: "denied",
-      ad_user_data: "denied",
-      ad_personalization: "denied",
-      analytics_storage: "denied",
-      security_storage: "granted",
-    });
-
-    // Order is the load-bearing part: a default that lands after the container
-    // initialises gates nothing.
-    const consentIndex = dataLayer().findIndex(
-      (entry) => Object.prototype.toString.call(entry) === "[object Arguments]",
-    );
-    expect(consentIndex).toBeGreaterThanOrEqual(0);
-    expect(consentIndex).toBeLessThan(indexOfGtmStart());
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
+    expect(bannerVisible()).toBe(true);
   });
 
   it("shows the banner, and offers decline and accept as equal one-press controls", () => {
@@ -312,48 +293,44 @@ describe("the gate, with no choice made — what Lighthouse sees", () => {
       vi.advanceTimersByTime(60_000);
     });
 
-    expect(gtmScripts()).toHaveLength(1);
-    expect(consentCommands().map((entry) => entry.command)).toEqual([
-      "default",
-    ]);
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
     expect(bannerVisible()).toBe(true);
     expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
   });
 
-  it("never grants on a scroll, which also loads the tags", () => {
+  it("never grants on a scroll", () => {
     render();
     act(() => {
       window.dispatchEvent(new Event("scroll"));
     });
 
-    expect(gtmScripts()).toHaveLength(1);
-    expect(consentCommands().map((entry) => entry.command)).toEqual([
-      "default",
-    ]);
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
     expect(bannerVisible()).toBe(true);
   });
 });
 
 describe("after accepting", () => {
-  it("pushes a granted consent update and stores the decision", () => {
+  it("pushes a granted consent default, then mounts the container", () => {
     render();
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
 
     press("Accept");
 
     const commands = consentCommands();
-    expect(commands.map((entry) => entry.command)).toEqual([
-      "default",
-      "update",
-    ]);
-    expect(commands[1]?.signals).toMatchObject({
+    expect(commands.map((entry) => entry.command)).toEqual(["default"]);
+    expect(commands[0]?.signals).toMatchObject({
       ad_storage: "granted",
       ad_user_data: "granted",
       ad_personalization: "granted",
       analytics_storage: "granted",
     });
+    expect(gtmScripts()).toHaveLength(1);
+    const consentIndex = dataLayer().findIndex(
+      (entry) => Object.prototype.toString.call(entry) === "[object Arguments]",
+    );
+    expect(consentIndex).toBeGreaterThanOrEqual(0);
+    expect(consentIndex).toBeLessThan(indexOfGtmStart());
     expect(bannerVisible()).toBe(false);
 
     const stored = JSON.parse(
@@ -378,38 +355,24 @@ describe("after accepting", () => {
     resetConsentStoreForTests();
 
     render();
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
 
     const commands = consentCommands();
     expect(commands).toHaveLength(1);
     expect(commands[0]?.command).toBe("default");
     expect(commands[0]?.signals).toMatchObject({ ad_storage: "granted" });
+    expect(gtmScripts()).toHaveLength(1);
     expect(bannerVisible()).toBe(false);
   });
 });
 
 describe("after declining", () => {
-  it("keeps every signal denied and hides the banner", () => {
+  it("does not mount the container, and hides the banner", () => {
     render();
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
 
     press("Decline");
 
-    const commands = consentCommands();
-    expect(commands.map((entry) => entry.command)).toEqual([
-      "default",
-      "update",
-    ]);
-    expect(commands[1]?.signals).toMatchObject({
-      ad_storage: "denied",
-      ad_user_data: "denied",
-      ad_personalization: "denied",
-      analytics_storage: "denied",
-    });
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
     expect(bannerVisible()).toBe(false);
   });
 
@@ -425,14 +388,9 @@ describe("after declining", () => {
     root = createRoot(container);
 
     render();
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
 
-    const commands = consentCommands();
-    expect(commands).toHaveLength(1);
-    expect(commands[0]?.command).toBe("default");
-    expect(commands[0]?.signals).toMatchObject({ ad_storage: "denied" });
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
     expect(bannerVisible()).toBe(false);
   });
 });
@@ -462,60 +420,50 @@ describe("the re-open control", () => {
   });
 });
 
-describe("the deferral still gates the consent default", () => {
-  it("loads GoogleTagManager with the denied default and no stored grant", () => {
+describe("acceptance, not a gesture, mounts the container", () => {
+  it("loads nothing until Accept, then the granted default", () => {
     render();
 
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
+
+    press("Accept");
+
+    const commands = consentCommands();
     expect(gtmScripts()).toHaveLength(1);
-    expect(consentCommands().map((entry) => entry.command)).toEqual([
-      "default",
-    ]);
-    expect(Array.isArray(dataLayer())).toBe(true);
-    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
+    expect(commands.map((entry) => entry.command)).toEqual(["default"]);
+    expect(commands[0]?.signals).toMatchObject({ ad_storage: "granted" });
   });
 
-  it("a timer does not grant consent or load a second container", () => {
+  it("a timer does not grant consent or load the container", () => {
     render();
 
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
 
-    expect(gtmScripts()).toHaveLength(1);
-    expect(consentCommands().map((entry) => entry.command)).toEqual([
-      "default",
-    ]);
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
   });
 
-  it("still loads on the first gesture, before the cap", () => {
+  it("a gesture does not load the container", () => {
     render();
     act(() => {
       window.dispatchEvent(new Event("pointerdown"));
     });
 
-    expect(gtmScripts()).toHaveLength(1);
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
   });
 
-  it("loads exactly once when a gesture and the cap both happen", () => {
+  it("loads exactly once when Accept and a timer both happen", () => {
     render();
+    press("Accept");
     act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
       vi.advanceTimersByTime(10_000);
     });
 
     expect(gtmScripts()).toHaveLength(1);
     expect(consentCommands()).toHaveLength(1);
-  });
-
-  it("a press after the container loads is a consent update", () => {
-    render();
-    press("Accept");
-
-    const commands = consentCommands();
-    expect(commands.map((entry) => entry.command)).toEqual([
-      "default",
-      "update",
-    ]);
-    expect(commands[1]?.signals).toMatchObject({ ad_storage: "granted" });
   });
 });
