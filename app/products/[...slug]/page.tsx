@@ -378,7 +378,15 @@ export async function generateMetadata({
  */
 export const instant = true;
 
-export default async function ProductPage({ params, searchParams }: Props) {
+export default function ProductPage(props: Props) {
+  return (
+    <Suspense fallback={<ProductPageShell />}>
+      <ProductRoute {...props} />
+    </Suspense>
+  );
+}
+
+export async function ProductRoute({ params, searchParams }: Props) {
   const { slug } = await params;
   const productSlug = slug[0]!;
   const colorSlug = slug[1];

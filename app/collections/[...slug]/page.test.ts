@@ -141,7 +141,11 @@ import {
 } from "@/components/headkit-ui/collection/utils";
 import { setRequestHost } from "@/lib/test-support/request-host";
 import { decodeFilterSlug } from "@/components/headkit-ui/collection/utils";
-import Page, { generateMetadata, generateStaticParams } from "./page";
+import {
+  CollectionPageContent,
+  generateMetadata,
+  generateStaticParams,
+} from "./page";
 
 /** A category that lives at /collections/parent/child, whatever URL asked for it. */
 function nestedCategory(): Record<string, unknown> {
@@ -318,7 +322,7 @@ describe("Tier-2 filtered canonical", () => {
 async function redirectTargetFor(slug: string[]): Promise<string | null> {
   redirectedTo.mockClear();
   try {
-    await Page({
+    await CollectionPageContent({
       params: Promise.resolve({ slug }),
     });
   } catch (error) {
@@ -368,7 +372,7 @@ describe("the flat collection shape 308s onto the nested one", () => {
 
     redirectedTo.mockClear();
     await expect(
-      Page({
+      CollectionPageContent({
         params: Promise.resolve({ slug: ["child"] }),
       }),
     ).rejects.toThrow("notFound");

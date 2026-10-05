@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { ProductPageShell } from "@/app/products/[...slug]/product-page-shell";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { notFound, unstable_rethrow } from "next/navigation";
@@ -338,8 +340,12 @@ export async function generateMetadata({
  */
 export const instant = true;
 
-export default async function Page(props: Props): Promise<ReactNode> {
-  return ShopRoute({ params: props.params });
+export default function Page(props: Props): ReactNode {
+  return (
+    <Suspense fallback={<ProductPageShell />}>
+      <ShopRoute params={props.params} />
+    </Suspense>
+  );
 }
 
 export async function ShopRoute({

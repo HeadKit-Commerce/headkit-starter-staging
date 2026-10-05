@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { CollectionPageSkeleton } from "@/components/headkit-ui/skeletons/collection-page-skeleton";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { notFound, unstable_rethrow } from "next/navigation";
@@ -170,7 +172,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  */
 export const instant = true;
 
-export default async function Page({ params }: Props) {
+export default function Page(props: Props) {
+  return (
+    <Suspense fallback={<CollectionPageSkeleton variant="brand" />}>
+      <BrandPageContent {...props} />
+    </Suspense>
+  );
+}
+
+export async function BrandPageContent({ params }: Props) {
   // Existence check, above every boundary. There is no `loading.tsx`, so
   // `notFound()` here sets 404. `BrandRoute`
   // repeats the checks and the `"use cache"` shell read dedupes. A THROWN

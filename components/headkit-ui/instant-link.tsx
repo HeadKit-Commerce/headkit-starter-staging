@@ -215,6 +215,65 @@ export function mouseDownNavigationRefusal(event: {
  * like a plain top-level link. Only `next/link`-specific props are stripped — they
  * are not valid DOM attributes on `<a>`.
  */
+/**
+ * The address a click should show immediately, or null when it should not
+ * touch the history entry.
+ *
+ * Catalogue pages await their cached read before returning UI, so Next does
+ * not call `pushState` until that read finishes and the address bar stays on
+ * the page being left. Committing the destination here moves the bar on the
+ * click. The state written is the one Next already stored (`history.state`,
+ * which carries `__NA`). Next patches `pushState`, and a state without
+ * `__NA` is treated as an external navigation. When the payload arrives,
+ * Next `replaceState`s this same entry because the URL already matches, and
+ * Back still returns to the page that was left.
+ *
+ * A page-level `<Suspense>` would also move the URL, which is the Instant
+ * Navigation guide's shape. It is not how these routes are built. On Next.js
+ * 16.3.8, `notFound()` inside that boundary answers 200, and a completed
+ * boundary larger than 500 bytes is outlined into `<div hidden id="S:…">`
+ * once the document has passed 12 KB, so the prerendered product would not
+ * be in the first paint.
+ */
+export function optimisticHistoryUrl(
+  href: string,
+  location: { origin: string; pathname: string; search: string; hash: string },
+): string | null {
+  let url: URL;
+  try {
+    // Resolve the way the browser does: `bike` on `/collections/road` is
+    // `/collections/bike`, not `/bike`.
+    url = new URL(
+      href,
+      `${location.origin}${location.pathname}${location.search}`,
+    );
+  } catch {
+    return null;
+  }
+  if (url.origin !== location.origin) return null;
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${location.pathname}${location.search}${location.hash}`;
+  return next === current ? null : next;
+}
+
+function commitOptimisticUrl(
+  href: ComponentProps<typeof Link>["href"],
+  replace: boolean | undefined,
+): void {
+  if (typeof window === "undefined") return;
+  const hrefStr = typeof href === "string" ? href : hrefToString(href);
+  if (!hrefStr) return;
+  const next = optimisticHistoryUrl(hrefStr, window.location);
+  if (!next) return;
+  const state = window.history.state;
+  try {
+    if (replace) window.history.replaceState(state, "", next);
+    else window.history.pushState(state, "", next);
+  } catch {
+    // A URL the history API rejects must not swallow the navigation.
+  }
+}
+
 export function InstantLink({
   prefetch,
   pendingVariant: _pendingVariant = "card",
@@ -268,6 +327,7 @@ export function InstantLink({
   const {
     onMouseDown: callerOnMouseDown,
     onClick: callerOnClick,
+    replace,
     ...linkRest
   } = rest;
 
@@ -311,11 +371,33 @@ export function InstantLink({
     }
     suppressNextClickRef.current = false;
     callerOnClick?.(event);
+    if (event.defaultPrevented) return;
+    // next/link runs after this handler and ignores a modified click. Moving
+    // the address bar first would change this tab while the browser opens
+    // another one.
+    const anchor = event.currentTarget;
+    if (
+      mouseDownNavigationRefusal({
+        button: event.button,
+        defaultPrevented: false,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        anchorTarget: anchor.getAttribute("target"),
+        anchorDownload: anchor.hasAttribute("download"),
+      }) !== null ||
+      event.nativeEvent.which === 2
+    ) {
+      return;
+    }
+    commitOptimisticUrl(normalizedHref, replace);
   };
 
   return (
     <Link
       {...linkRest}
+      {...(replace === undefined ? {} : { replace })}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       href={normalizedHref}

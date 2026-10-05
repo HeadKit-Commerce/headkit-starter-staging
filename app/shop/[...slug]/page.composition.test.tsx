@@ -129,16 +129,16 @@ beforeEach(() => {
 });
 
 describe("shop/[...slug] — cached content renders in the page segment", () => {
-  it("returns the product body and does not read searchParams", async () => {
+  it("returns the shell immediately and does not read searchParams", () => {
     const searchParams = trackedSearchParams();
 
-    const element = (await Page({
+    const element = Page({
       params: Promise.resolve({ slug: ["clothing", "hoodies", "blue-hoodie"] }),
       searchParams: searchParams.promise,
-    })) as ReactElement<{ productSlug: string }>;
+    }) as ReactElement<{ children: ReactElement }>;
 
-    expect(element.type).toBe(ProductPageBody);
-    expect(element.props.productSlug).toBe("blue-hoodie");
+    expect(element.type).toBe(Suspense);
+    expect(element.props.children.type).toBe(ShopRoute);
     expect(searchParams.awaited()).toBe(false);
   });
 
@@ -205,14 +205,15 @@ describe("shop/[...slug] — the category branch renders in the static shell", (
   it("returns CollectionRoute directly, with no boundary above it and no searchParams", async () => {
     const searchParams = trackedSearchParams();
 
-    const pageElement = (await Page({
+    const pageElement = Page({
       params: Promise.resolve({ slug: ["clothing", "hoodies"] }),
       searchParams: searchParams.promise,
-    })) as ReactElement;
+    }) as ReactElement<{ children: ReactElement }>;
     expect(
       pageElement.type,
-      "the page must not wrap the category in Suspense — that boundary is the skeleton shell",
-    ).toBe(CollectionRoute);
+      "the page returns the Instant Navigation shell without awaiting the category",
+    ).toBe(Suspense);
+    expect(pageElement.props.children.type).toBe(ShopRoute);
 
     const element = (await ShopRoute({
       params: Promise.resolve({ slug: ["clothing", "hoodies"] }),
