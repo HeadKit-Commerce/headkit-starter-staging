@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { CollectionPageSkeleton } from "@/components/headkit-ui/skeletons/collection-page-skeleton";
 import type { Metadata } from "next";
 import { notFound, permanentRedirect, unstable_rethrow } from "next/navigation";
 import { headkit as sdk } from "@/lib/sdk";
@@ -442,7 +444,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  */
 export const instant = true;
 
-export default async function Page({ params }: Props) {
+export default function Page(props: Props) {
+  return (
+    <Suspense fallback={<CollectionPageSkeleton />}>
+      <CollectionPageContent {...props} />
+    </Suspense>
+  );
+}
+
+export async function CollectionPageContent({ params }: Props) {
   const { slug } = await params;
   // The build-time placeholder is never served from a prerender, so a runtime
   // request for it is a junk URL and must 404 HERE. Skipping the gate for it

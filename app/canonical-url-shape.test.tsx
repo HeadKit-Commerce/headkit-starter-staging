@@ -349,7 +349,7 @@ vi.mock("@/components/headkit-ui/instant-link", () => ({
 }));
 
 import { generateMetadata as shopMetadata } from "./shop/[...slug]/page";
-import FlatProductPage, { ProductPageContent } from "./products/[...slug]/page";
+import { ProductPageContent, ProductRoute } from "./products/[...slug]/page";
 import sitemap from "./sitemap";
 import {
   resolveShopPath,
@@ -389,7 +389,7 @@ async function flatRedirectTarget(
 ): Promise<string | null> {
   redirectedTo.mockClear();
   try {
-    await FlatProductPage({
+    await ProductRoute({
       params: Promise.resolve({ slug }),
       ...(searchParams
         ? { searchParams: Promise.resolve(searchParams) }
@@ -1249,11 +1249,11 @@ describe("the flat route's 308 and Shopify Admin preview", () => {
       getProductForPage: (): Promise<unknown> => Promise.resolve(PRODUCT),
     }));
     vi.resetModules();
-    const { default: Page } = await import("./products/[...slug]/page");
+    const { ProductRoute: Route } = await import("./products/[...slug]/page");
 
     redirectedTo.mockClear();
     await expect(
-      Page({ params: Promise.resolve({ slug: ["blue-hoodie"] }) }),
+      Route({ params: Promise.resolve({ slug: ["blue-hoodie"] }) }),
       "a provider auth failure here would abort the whole tenant export; the redirect is a consolidation and losing it costs one duplicate URL, not the page",
     ).resolves.toBeTruthy();
 

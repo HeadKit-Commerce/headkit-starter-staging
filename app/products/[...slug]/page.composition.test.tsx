@@ -154,7 +154,7 @@ vi.mock("@/components/headkit-ui/skeletons/product-card-skeleton", () => ({
   ProductCardSkeleton: (): null => null,
 }));
 
-import ProductPage, { ProductPageBody, ProductPageContent } from "./page";
+import { ProductPageBody, ProductPageContent, ProductRoute } from "./page";
 import { ProductPageShell } from "./product-page-shell";
 import { ProductStock } from "@/components/headkit-ui/product-stock";
 import { ProductDetail } from "@/components/headkit-ui/product-detail";
@@ -279,7 +279,7 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
     const searchParams = trackedSearchParams({ preview_key: "unused" });
 
     const body = pageContent(
-      (await ProductPage({
+      (await ProductRoute({
         params: Promise.resolve({ slug: [SLUG] }),
         searchParams: searchParams.promise,
       })) as ReactElement,
@@ -309,7 +309,7 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
     getCachedProduct.mockResolvedValue(FLAT_PRODUCT);
 
     const body = pageContent(
-      (await ProductPage({
+      (await ProductRoute({
         params: Promise.resolve({ slug: [SLUG, "red"] }),
       })) as ReactElement,
     ) as ReactElement<{ colorSlug: unknown }>;
@@ -321,7 +321,7 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
   it("mounts the metadata marker as one EMPTY sibling boundary, never a wrapper", async () => {
     getCachedProduct.mockResolvedValue(FLAT_PRODUCT);
 
-    const element = (await ProductPage({
+    const element = (await ProductRoute({
       params: Promise.resolve({ slug: [SLUG] }),
     })) as ReactElement;
     const children = routeChildren(element);
@@ -381,7 +381,7 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
     const searchParams = trackedSearchParams({ preview_key: "k" });
 
     await expect(
-      ProductPage({
+      ProductRoute({
         params: Promise.resolve({ slug: [SLUG] }),
         searchParams: searchParams.promise,
       }),
@@ -400,7 +400,7 @@ describe("products/[...slug] — a NULL public read is the only path into the bo
     const searchParams = trackedSearchParams({ preview_key: "draft-key" });
 
     const boundary = pageContent(
-      (await ProductPage({
+      (await ProductRoute({
         params: Promise.resolve({ slug: [SLUG] }),
         searchParams: searchParams.promise,
       })) as ReactElement,
@@ -431,7 +431,7 @@ describe("products/[...slug] — a NULL public read is the only path into the bo
 
   it("answers the build-time placeholder from the boundary without touching the cache", async () => {
     const boundary = pageContent(
-      (await ProductPage({
+      (await ProductRoute({
         params: Promise.resolve({ slug: ["__hk_static_placeholder"] }),
       })) as ReactElement,
     );
@@ -444,7 +444,7 @@ describe("products/[...slug] — a NULL public read is the only path into the bo
     getCachedProduct.mockRejectedValue(new Error("provider 401"));
 
     const boundary = pageContent(
-      (await ProductPage({
+      (await ProductRoute({
         params: Promise.resolve({ slug: [SLUG] }),
       })) as ReactElement,
     );
