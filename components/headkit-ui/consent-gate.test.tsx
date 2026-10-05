@@ -312,10 +312,8 @@ describe("the gate, with no choice made — what Lighthouse sees", () => {
       vi.advanceTimersByTime(60_000);
     });
 
-    expect(gtmScripts()).toHaveLength(1);
-    expect(consentCommands().map((entry) => entry.command)).toEqual([
-      "default",
-    ]);
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
     expect(bannerVisible()).toBe(true);
     expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
   });
@@ -463,28 +461,32 @@ describe("the re-open control", () => {
 });
 
 describe("the deferral still gates the consent default", () => {
-  it("loads GoogleTagManager with the denied default and no stored grant", () => {
+  it("loads nothing until a gesture, then the denied default", () => {
     render();
 
-    expect(gtmScripts()).toHaveLength(1);
-    expect(consentCommands().map((entry) => entry.command)).toEqual([
-      "default",
-    ]);
-    expect(Array.isArray(dataLayer())).toBe(true);
-    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
-  });
-
-  it("a timer does not grant consent or load a second container", () => {
-    render();
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
 
     act(() => {
-      vi.advanceTimersByTime(60_000);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     expect(gtmScripts()).toHaveLength(1);
     expect(consentCommands().map((entry) => entry.command)).toEqual([
       "default",
     ]);
+    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("a timer does not grant consent or load the container", () => {
+    render();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
   });
 
   it("still loads on the first gesture, before the cap", () => {
@@ -507,15 +509,19 @@ describe("the deferral still gates the consent default", () => {
     expect(consentCommands()).toHaveLength(1);
   });
 
-  it("a press after the container loads is a consent update", () => {
+  it("a press before the container loads is carried as the default", () => {
     render();
     press("Accept");
 
+    expect(gtmScripts()).toHaveLength(0);
+
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
+
     const commands = consentCommands();
-    expect(commands.map((entry) => entry.command)).toEqual([
-      "default",
-      "update",
-    ]);
-    expect(commands[1]?.signals).toMatchObject({ ad_storage: "granted" });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]?.command).toBe("default");
+    expect(commands[0]?.signals).toMatchObject({ ad_storage: "granted" });
   });
 });
