@@ -2,19 +2,27 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
+const preload = vi.hoisted(() => vi.fn());
+
 vi.mock("react-dom", async () => {
   const actual = await vi.importActual<typeof import("react-dom")>("react-dom");
-  return { ...actual, preload: () => {} };
+  return { ...actual, preload };
 });
 import { ProductImageGallery } from "./product-image-gallery";
 
 vi.mock("next/image", () => ({
-  default: (props: { alt?: string; src?: string; className?: string }) => (
+  default: (props: {
+    alt?: string;
+    src?: string;
+    className?: string;
+    sizes?: string;
+  }) => (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       alt={props.alt ?? ""}
       src={typeof props.src === "string" ? props.src : ""}
       className={props.className}
+      data-sizes={props.sizes}
     />
   ),
   getImageProps: ({ src }: { src: string }) => ({
@@ -78,6 +86,9 @@ describe("ProductImageGallery layouts", () => {
   it("defaults to grid masonry and marks the hook", () => {
     const html = markup();
     expect(html).toContain('data-pdp-gallery="grid"');
+    expect(html).toContain("headkit-pdp-gallery");
+    expect(html).toContain('data-gallery-tile=""');
+    expect(html).toContain('data-gallery-lead=""');
     expect(html).toContain("md:grid md:grid-cols-2");
     expect(html).toContain("col-span-2");
     expect(html).not.toContain("Previous image");
@@ -116,6 +127,38 @@ describe("ProductImageGallery layouts", () => {
     expect(html).toContain("Go to image 2");
     expect(html).not.toContain("Previous image");
     expect(html).not.toContain("md:grid md:grid-cols-2");
+  });
+
+  it("preloads the hero per breakpoint and honours a store size override", () => {
+    preload.mockClear();
+    const html = renderToStaticMarkup(
+      <ProductImageGallery
+        images={IMAGES}
+        desktopHeroSizes="(min-width: 768px) 66vw, 100vw"
+        desktopTileSizes="(min-width: 768px) 33vw, 100vw"
+      />,
+    );
+    expect(preload).toHaveBeenCalledWith(
+      "/a.jpg",
+      expect.objectContaining({
+        as: "image",
+        media: "(max-width: 767px)",
+        imageSizes: "100vw",
+        fetchPriority: "high",
+      }),
+    );
+    expect(preload).toHaveBeenCalledWith(
+      "/a.jpg",
+      expect.objectContaining({
+        as: "image",
+        media: "(min-width: 768px)",
+        imageSizes: "(min-width: 768px) 66vw, 100vw",
+        fetchPriority: "high",
+      }),
+    );
+    expect(html).toContain('data-sizes="(min-width: 768px) 66vw, 100vw"');
+    expect(html).toContain('data-sizes="(min-width: 768px) 33vw, 100vw"');
+    expect(html).toContain('data-sizes="100vw"');
   });
 
   it("coerces an unknown layout to grid", () => {

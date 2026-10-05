@@ -5,7 +5,6 @@ import Image, { getImageProps } from "next/image";
 import { preload } from "react-dom";
 import { cn } from "@/lib/utils";
 import { BadgeList } from "@/components/headkit-ui/badge-list";
-import type { CustomProductBadge } from "@/lib/product-badges";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { Lightbox } from "@/components/ui/lightbox";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icon";
@@ -31,9 +30,20 @@ interface Props {
   images: GalleryImage[];
   isSale?: boolean;
   isNew?: boolean;
-  badges?: CustomProductBadge[];
+  badges?: { label: string; slug: string }[];
   /** Branding `pdpGalleryLayout`. Unknown values fall back to grid. */
   layout?: string;
+  /**
+   * Desktop hero `sizes`. Defaults to a half-width PDP column. A store whose
+   * gallery column is wider passes its own hint (Bike Society: 66vw). The
+   * phone carousel stays `100vw`. `sizes` cannot be set from CSS.
+   */
+  desktopHeroSizes?: string;
+  /**
+   * Desktop secondary-tile `sizes` for the grid layout. Defaults to a
+   * quarter-width column. Bike Society's half of a two-thirds column is 33vw.
+   */
+  desktopTileSizes?: string;
   /**
    * WooCommerce "Product Video" URL (`product.productVideoUrl`). When it parses
    * as a YouTube video the gallery appends one video tile as its LAST item and
@@ -51,14 +61,17 @@ const FALLBACK_ITEM: GalleryImage = {
 const SWIPE_THRESHOLD_PX = 40;
 const MOBILE_GALLERY_MEDIA = "(max-width: 767px)";
 const DESKTOP_GALLERY_MEDIA = "(min-width: 768px)";
+const DEFAULT_DESKTOP_HERO_SIZES = "(min-width: 768px) 50vw, 100vw";
+const DEFAULT_DESKTOP_TILE_SIZES = "(min-width: 768px) 25vw, 100vw";
 
 /**
  * The gallery renders a phone carousel and a desktop layout from the same
  * photo. `priority` on both would preload both encodes on every device.
  * Each preload is scoped with `media`, and the `<img>` copies stay lazy so a
- * `display: none` layout is not fetched.
+ * `display: none` layout is not fetched. `desktopSizes` must match the hero
+ * `<img>` `sizes` so the preloaded URL is the one the browser requests.
  */
-function preloadGalleryLcp(src: string): void {
+function preloadGalleryLcp(src: string, desktopSizes: string): void {
   const mobile = getImageProps({
     alt: "",
     src,
@@ -69,7 +82,7 @@ function preloadGalleryLcp(src: string): void {
     alt: "",
     src,
     fill: true,
-    sizes: "(min-width: 768px) 50vw, 100vw",
+    sizes: desktopSizes,
   });
   if (mobile.props.srcSet) {
     preload(mobile.props.src, {
@@ -84,7 +97,7 @@ function preloadGalleryLcp(src: string): void {
     preload(desktop.props.src, {
       as: "image",
       imageSrcSet: desktop.props.srcSet,
-      imageSizes: "(min-width: 768px) 50vw, 100vw",
+      imageSizes: desktopSizes,
       media: DESKTOP_GALLERY_MEDIA,
       fetchPriority: "high",
     });
@@ -97,7 +110,7 @@ interface GalleryTileProps {
   sizes: string;
   priority?: boolean;
   fetchPriority?: "high" | "auto";
-  loading?: "lazy" | undefined;
+  loading?: "lazy" | "eager" | undefined;
   draggable?: boolean;
 }
 
@@ -160,6 +173,8 @@ export function ProductImageGallery({
   badges = [],
   layout: rawLayout,
   videoUrl,
+  desktopHeroSizes = DEFAULT_DESKTOP_HERO_SIZES,
+  desktopTileSizes = DEFAULT_DESKTOP_TILE_SIZES,
 }: Props) {
   const layout: PdpGalleryLayout = resolvePdpGalleryLayout(
     rawLayout ?? DEFAULT_PDP_GALLERY_LAYOUT,
@@ -190,7 +205,7 @@ export function ProductImageGallery({
 
   const lcpSrc = galleryImages[0]?.src;
   if (lcpSrc && lcpSrc !== FALLBACK_IMAGE_SRC && !galleryImages[0]?.videoId) {
-    preloadGalleryLcp(lcpSrc);
+    preloadGalleryLcp(lcpSrc, desktopHeroSizes);
   }
 
   // Reset selection when the image set changes (e.g. colourway swap).
@@ -253,7 +268,10 @@ export function ProductImageGallery({
 
       <Dialog>
         <DialogTrigger className="block w-full appearance-none border-0 bg-transparent p-0 text-left">
-          <div className="relative aspect-square overflow-hidden bg-white">
+          <div
+            className="relative aspect-square overflow-hidden bg-white"
+            data-gallery-lead={selectedIndex === 0 ? "" : undefined}
+          >
             <GalleryTile
               item={galleryImages[selectedIndex] ?? FALLBACK_ITEM}
               className={
@@ -297,7 +315,7 @@ export function ProductImageGallery({
 
   if (layout === "thumbnails") {
     return (
-      <div data-pdp-gallery="thumbnails">
+      <div className="headkit-pdp-gallery" data-pdp-gallery="thumbnails">
         <div className="hidden flex-col gap-3 md:flex md:flex-row md:items-start">
           <div
             className="relative flex-1 overflow-hidden rounded-brand bg-white touch-pan-y"
@@ -309,11 +327,15 @@ export function ProductImageGallery({
             {badgesOverlay}
             <Dialog>
               <DialogTrigger className="block w-full appearance-none border-0 bg-transparent p-0 text-left">
-                <div className="relative aspect-square overflow-hidden bg-white md:aspect-[var(--pdp-gallery-hero-aspect,3/4)]">
+                <div
+                  className="relative aspect-square overflow-hidden bg-white md:aspect-[var(--pdp-gallery-hero-aspect,3/4)]"
+                  data-gallery-tile=""
+                  data-gallery-lead={selectedIndex === 0 ? "" : undefined}
+                >
                   <GalleryTile
                     item={galleryImages[selectedIndex] ?? FALLBACK_ITEM}
                     className="object-cover object-center"
-                    sizes="(min-width: 768px) 50vw, 100vw"
+                    sizes={desktopHeroSizes}
                     loading="lazy"
                     draggable={false}
                   />
@@ -367,7 +389,7 @@ export function ProductImageGallery({
     return (
       <div
         data-pdp-gallery="carousel"
-        className="relative overflow-hidden rounded-brand bg-white touch-pan-y"
+        className="headkit-pdp-gallery relative overflow-hidden rounded-brand bg-white touch-pan-y"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
@@ -376,13 +398,17 @@ export function ProductImageGallery({
         {badgesOverlay}
         <Dialog>
           <DialogTrigger className="block w-full appearance-none border-0 bg-transparent p-0 text-left">
-            <div className="relative aspect-square overflow-hidden bg-white md:aspect-[var(--pdp-gallery-hero-aspect,1/1)]">
+            <div
+              className="relative aspect-square overflow-hidden bg-white md:aspect-[var(--pdp-gallery-hero-aspect,1/1)]"
+              data-gallery-tile=""
+              data-gallery-lead={selectedIndex === 0 ? "" : undefined}
+            >
               <GalleryTile
                 item={galleryImages[selectedIndex] ?? FALLBACK_ITEM}
                 className="object-cover object-center"
-                sizes="(min-width: 768px) 50vw, 100vw"
-                priority
+                sizes={desktopHeroSizes}
                 fetchPriority="high"
+                loading="eager"
                 draggable={false}
               />
             </div>
@@ -439,13 +465,17 @@ export function ProductImageGallery({
 
   if (layout === "stack") {
     return (
-      <div data-pdp-gallery="stack">
+      <div className="headkit-pdp-gallery" data-pdp-gallery="stack">
         <div className="hidden flex-col gap-5 md:flex">
           {galleryImages.map((item, index) => (
             <Dialog key={`${item.src}-${index}`}>
               <DialogTrigger className="relative block w-full cursor-pointer appearance-none overflow-hidden rounded-brand border-0 bg-white p-0 text-left">
                 {index === 0 ? badgesOverlay : null}
-                <div className="relative aspect-square overflow-hidden">
+                <div
+                  className="relative aspect-square overflow-hidden"
+                  data-gallery-tile=""
+                  data-gallery-lead={index === 0 ? "" : undefined}
+                >
                   <GalleryTile
                     item={item}
                     className={
@@ -453,7 +483,7 @@ export function ProductImageGallery({
                         ? "object-cover object-center"
                         : "object-cover object-top"
                     }
-                    sizes="(min-width: 768px) 50vw, 100vw"
+                    sizes={desktopHeroSizes}
                     loading="lazy"
                   />
                 </div>
@@ -468,17 +498,12 @@ export function ProductImageGallery({
   }
 
   return (
-    <div data-pdp-gallery="grid">
+    <div className="headkit-pdp-gallery" data-pdp-gallery="grid">
       {/* Desktop: masonry-style two-column grid.
-          RC-3 perf notes:
-          - Non-first images are loading="lazy": lazy images inside this
-            CSS-hidden (mobile) container never intersect the viewport, so a
-            phone no longer downloads the whole desktop grid.
-          - The first image shares the exact src/sizes/quality of the mobile
-            carousel's first image, so its priority preload and network fetch
-            dedupe with the mobile variant — one preload total.
-          - quality is the default (75); q=100 doubled bytes for no visible
-            gain on a 50vw render. */}
+          The phone carousel and this grid share one photo. Preloads are
+          media-scoped (see preloadGalleryLcp); these copies stay lazy so a
+          display:none layout is not fetched. Hero/tile sizes default to a
+          half-width column and are overridable per store. */}
       <div className="hidden gap-5 md:grid md:grid-cols-2">
         {galleryImages.map((item, index) => (
           <Dialog key={index}>
@@ -493,7 +518,11 @@ export function ProductImageGallery({
                   <BadgeList isSale={isSale} isNewIn={isNew} badges={badges} />
                 </div>
               )}
-              <div className="relative aspect-square overflow-hidden">
+              <div
+                className="relative aspect-square overflow-hidden"
+                data-gallery-tile=""
+                data-gallery-lead={index === 0 ? "" : undefined}
+              >
                 <GalleryTile
                   item={item}
                   className={
@@ -501,11 +530,7 @@ export function ProductImageGallery({
                       ? "object-cover object-center"
                       : "object-cover object-top"
                   }
-                  sizes={
-                    index === 0
-                      ? "(min-width: 768px) 50vw, 100vw"
-                      : "(min-width: 768px) 25vw, 100vw"
-                  }
+                  sizes={index === 0 ? desktopHeroSizes : desktopTileSizes}
                   loading="lazy"
                 />
               </div>
