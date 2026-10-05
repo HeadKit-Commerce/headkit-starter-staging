@@ -209,7 +209,7 @@ describe("with the gate OFF — every store that has not turned it on", () => {
   it("still loads the tags, exactly as before the gate existed", () => {
     render(false);
     act(() => {
-      vi.advanceTimersByTime(4000);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     expect(gtmScripts()).toHaveLength(1);
@@ -235,7 +235,7 @@ describe("with the gate OFF — every store that has not turned it on", () => {
 
     render(false);
     act(() => {
-      vi.advanceTimersByTime(4000);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     expect(consentCommands()).toHaveLength(0);
@@ -259,7 +259,7 @@ describe("the gate, with no choice made — what Lighthouse sees", () => {
   it("tells the container denied BEFORE gtm.start", () => {
     render();
     act(() => {
-      vi.advanceTimersByTime(4000);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     const commands = consentCommands();
@@ -312,9 +312,8 @@ describe("the gate, with no choice made — what Lighthouse sees", () => {
       vi.advanceTimersByTime(60_000);
     });
 
-    expect(consentCommands().map((entry) => entry.command)).toEqual([
-      "default",
-    ]);
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
     expect(bannerVisible()).toBe(true);
     expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
   });
@@ -337,7 +336,7 @@ describe("after accepting", () => {
   it("pushes a granted consent update and stores the decision", () => {
     render();
     act(() => {
-      vi.advanceTimersByTime(4000);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     press("Accept");
@@ -378,7 +377,7 @@ describe("after accepting", () => {
 
     render();
     act(() => {
-      vi.advanceTimersByTime(4000);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     const commands = consentCommands();
@@ -393,7 +392,7 @@ describe("after declining", () => {
   it("keeps every signal denied and hides the banner", () => {
     render();
     act(() => {
-      vi.advanceTimersByTime(4000);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     press("Decline");
@@ -425,7 +424,7 @@ describe("after declining", () => {
 
     render();
     act(() => {
-      vi.advanceTimersByTime(4000);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     const commands = consentCommands();
@@ -471,16 +470,16 @@ describe("the deferral still gates the consent default", () => {
     expect(Array.isArray(dataLayer())).toBe(true);
   });
 
-  it("still loads on the idle cap with no interaction", () => {
+  it("does not load on a timer with no interaction", () => {
     render();
     expect(gtmScripts()).toHaveLength(0);
 
     act(() => {
-      vi.advanceTimersByTime(4000);
+      vi.advanceTimersByTime(60_000);
     });
 
-    expect(gtmScripts()).toHaveLength(1);
-    expect(gtmScripts()[0]?.async).toBe(true);
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
   });
 
   it("still loads on the first gesture, before the cap", () => {
@@ -512,7 +511,7 @@ describe("the deferral still gates the consent default", () => {
     expect(consentCommands()).toHaveLength(0);
 
     act(() => {
-      vi.advanceTimersByTime(4000);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     const commands = consentCommands();

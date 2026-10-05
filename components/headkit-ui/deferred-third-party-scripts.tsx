@@ -38,42 +38,27 @@ type Props = {
 const EAGER_IDLE_TIMEOUT_MS = 4000;
 /** No `requestIdleCallback` (Safari): a fixed delay instead. */
 const FALLBACK_DELAY_MS = 3500;
-/**
- * Absolute ceiling measured from mount, deferred schedule only. A page whose
- * `load` event never arrives — a hung image, a stalled third-party
- * subresource — must still report, or the deferral turns into data loss. The
- * eager schedule needs none: it never waits for `load` in the first place.
- */
-const MAX_DELAY_MS = 10000;
 
 /**
- * Load marketing tags after the page has PAINTED, then after a fixed delay
- * (or on the first user gesture, whichever comes first). Keeps GTM / Klaviyo /
- * HubSpot off the LCP / TBT critical path.
+ * Load marketing tags on the first pointer, key, or scroll. A timer does not
+ * stay out of a Lighthouse trace: the runner keeps recording until the network
+ * and the main thread have been quiet, and a timeout that fires during that
+ * wait starts GTM, which then pulls Facebook and Google Ads onto the thread.
+ * Measured on Bike Society home after the 3.5 s post-load timer: gtm.js at
+ * 3.6 s, largest paint at 5.2 s, interactive at 11.6 s. A visit with no
+ * gesture is not tagged. Keeps GTM / Klaviyo / HubSpot off the LCP / TBT path.
  *
  * A tiny dataLayer stub is installed immediately so early pushes are queued
  * until gtm.js arrives.
  *
- * THE TRIGGER, and why it moved. This used to schedule straight from the
- * effect — `requestIdleCallback(..., { timeout: 4000 })`. An idle callback is
- * only ever as late as the main thread is busy, and a 4 s cap lands INSIDE the
- * paint window on a throttled mobile run whose LCP is ~5.9 s. Waiting for
- * `load` and then `requestIdleCallback` still ran inside the paint: after
- * `load` the thread is idle, so the callback fires immediately. Measured on
- * Bike Society helmets, gtm.js started at 1,052 ms and the LCP paint was at
- * 1,062 ms. The deferred schedule is now `load`, then a fixed 3.5 s timeout,
- * and only then does this mount `GoogleTagManager` from `@next/third-parties`.
- * That component loads `gtm.js` through `next/script` (`afterInteractive`).
- * Mounting it from the layout would start the container straight after
- * hydration, which is the schedule measured inside the LCP paint. `load`
- * fires after every render-blocking resource and every eager image.
+ * THE TRIGGER. Idle-from-mount and `load` plus a fixed timeout were both
+ * measured inside the paint. The default is now the first gesture only.
+ * `GoogleTagManager` still loads `gtm.js` through `next/script`
+ * (`afterInteractive`) once this component mounts it.
  *
- * WHAT IT TRADES. A visitor who leaves before `load` + idle is no longer
- * counted at all, and Klaviyo's on-site popups shift later by the same amount.
- * The first-gesture trigger is deliberately kept AHEAD of the load wait: a
- * shopper who scrolls or taps has engaged, and that session is worth more than
- * the paint it costs. `MAX_DELAY_MS` is what stops a page that never finishes
- * loading from reporting nothing at all.
+ * WHAT IT TRADES. A visit with no pointer, key, or scroll is not counted, and
+ * Klaviyo's on-site popups wait for that same gesture. A shopper who scrolls
+ * or taps has engaged, and that session is worth more than the paint it costs.
  *
  * THE WAY BACK. `NEXT_PUBLIC_THIRD_PARTY_EAGER` restores the previous
  * mount-scheduled behaviour for one store — see `lib/third-party-schedule.ts`
@@ -121,7 +106,6 @@ export function DeferredThirdPartyScripts({
     let loaded = false;
     let idleId: number | undefined;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let ceilingId: ReturnType<typeof setTimeout> | undefined;
 
     const load = (): void => {
       if (loaded) return;
@@ -156,18 +140,8 @@ export function DeferredThirdPartyScripts({
       }
     };
 
-    // Deferred schedule. A fixed delay, because idle-after-load runs immediately.
-    const scheduleAfterPaint = (): void => {
-      if (loaded || idleId !== undefined || timeoutId !== undefined) return;
-      timeoutId = setTimeout(load, FALLBACK_DELAY_MS);
-    };
-
     const onGesture = (): void => {
       load();
-    };
-
-    const onWindowLoad = (): void => {
-      scheduleAfterPaint();
     };
 
     const cleanup = (): void => {
@@ -175,8 +149,6 @@ export function DeferredThirdPartyScripts({
         window.cancelIdleCallback(idleId);
       }
       if (timeoutId !== undefined) clearTimeout(timeoutId);
-      if (ceilingId !== undefined) clearTimeout(ceilingId);
-      window.removeEventListener("load", onWindowLoad);
       window.removeEventListener("pointerdown", onGesture);
       window.removeEventListener("keydown", onGesture);
       window.removeEventListener("scroll", onGesture, true);
@@ -219,13 +191,6 @@ export function DeferredThirdPartyScripts({
     if (thirdPartyEagerLoadEnabled()) {
       // The escape hatch: schedule from MOUNT, exactly as before the deferral.
       scheduleIdle(EAGER_IDLE_TIMEOUT_MS);
-    } else if (document.readyState === "complete") {
-      // Hydration finished after `load`. The paint may have just happened, so
-      // this still waits out the post-load delay rather than injecting now.
-      scheduleAfterPaint();
-    } else {
-      window.addEventListener("load", onWindowLoad, { once: true });
-      ceilingId = setTimeout(load, MAX_DELAY_MS);
     }
 
     return () => {

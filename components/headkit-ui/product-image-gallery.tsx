@@ -280,7 +280,8 @@ export function ProductImageGallery({
                   : "object-cover object-top"
               }
               sizes="100vw"
-              loading="lazy"
+              loading={selectedIndex === 0 ? "eager" : "lazy"}
+              fetchPriority={selectedIndex === 0 ? "high" : "auto"}
               draggable={false}
             />
           </div>

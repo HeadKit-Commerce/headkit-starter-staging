@@ -16,6 +16,8 @@ vi.mock("next/image", () => ({
     src?: string;
     className?: string;
     sizes?: string;
+    loading?: string;
+    fetchPriority?: string;
   }) => (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -23,6 +25,8 @@ vi.mock("next/image", () => ({
       src={typeof props.src === "string" ? props.src : ""}
       className={props.className}
       data-sizes={props.sizes}
+      data-loading={props.loading}
+      data-fetch-priority={props.fetchPriority}
     />
   ),
   getImageProps: ({ src }: { src: string }) => ({
@@ -89,6 +93,8 @@ describe("ProductImageGallery layouts", () => {
     expect(html).toContain("headkit-pdp-gallery");
     expect(html).toContain('data-gallery-tile=""');
     expect(html).toContain('data-gallery-lead=""');
+    expect(html).toContain('data-loading="eager"');
+    expect(html).toContain('data-fetch-priority="high"');
     expect(html).toContain("md:grid md:grid-cols-2");
     expect(html).toContain("col-span-2");
     expect(html).not.toContain("Previous image");

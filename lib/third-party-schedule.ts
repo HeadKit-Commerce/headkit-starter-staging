@@ -9,21 +9,21 @@ import { isFlagOptedIn } from "@/lib/nav-interaction-flags";
  * ever as late as the main thread is busy — on the Bike Society fork, measured
  * on the deployed store, gtm.js started at 250-265 ms while the `load` event
  * was at 1,405-1,717 ms, so the whole third-party stack arrived 1,151-1,467 ms
- * BEFORE the page finished loading, squarely inside a ~5.9 s LCP window. The
- * default is now the `load` event, then a fixed 3.5 s timeout. Idle-after-load
- * fires immediately and was measured starting gtm.js in the same gap as the
- * LCP paint. Hand-rolled in that component because it owns a Consent Mode
- * ordering `<Script>` cannot express.
+ * BEFORE the page finished loading, squarely inside a ~5.9 s LCP window. A
+ * later `load` + 3.5 s timer was still inside the lab trace: Lighthouse keeps
+ * recording until the network and the main thread have been quiet, so the
+ * timer restarted that wait. Measured on Bike Society home, gtm.js started at
+ * 3.6 s, largest paint was 5.2 s, and interactive was 11.6 s. The default is
+ * now the first pointer, key, or scroll. Hand-rolled in that component because
+ * it owns a Consent Mode ordering `<Script>` cannot express.
  *
  * THIS IS A PLATFORM-WIDE TIMING CHANGE, so it carries a way back.
  * `NEXT_PUBLIC_THIRD_PARTY_EAGER` restores the previous schedule for one
  * store, with no code change and no fork:
  *
- *   unset / absent      -> DEFERRED (the default): wait for `load`, then a
- *                          fixed 3.5 s timeout (not an idle callback — idle
- *                          after `load` runs in the same gap as the LCP
- *                          paint), with a 10 s ceiling from mount and the
- *                          first-gesture trigger kept ahead of the load wait.
+ *   unset / absent      -> DEFERRED (the default): first pointer, key, or
+ *                          scroll. No timer. A visit with no gesture is not
+ *                          tagged.
  *   ""                  -> DEFERRED (a platform env editor stores a cleared
  *                          variable as an empty string, and "I cleared it"
  *                          must read as "use the default")
@@ -36,12 +36,12 @@ import { isFlagOptedIn } from "@/lib/nav-interaction-flags";
  *                          timing back; the failure mode of an unrecognised
  *                          value is "the switch did nothing")
  *
- * WHAT EAGER BUYS, and it is the only reason the hatch exists: a visitor who
- * leaves before `load` + idle is not counted at all under the default, and
- * Klaviyo's on-site popups shift later by the same amount. A store whose
- * analytics or popup timing matters more than its paint can have the old
- * behaviour back; it should not be the platform default, because for most
- * stores the tag stack in the paint window is a pure loss.
+ * WHAT EAGER BUYS, and it is the only reason the hatch exists: under the
+ * default, a visit with no gesture is not counted, and Klaviyo's on-site
+ * popups wait for that gesture. A store whose analytics or popup timing
+ * matters more than its paint can have the old behaviour back; it should not
+ * be the platform default, because the tag stack in the paint window is a
+ * pure loss.
  *
  * ORTHOGONAL TO CONSENT, and that must stay true. `consentEnabled` decides
  * WHETHER a Consent Mode default is pushed; this decides WHEN the container

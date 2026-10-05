@@ -28,18 +28,14 @@ import { DeferredThirdPartyScripts } from "@/components/headkit-ui/deferred-thir
 import { resetConsentStoreForTests } from "@/lib/consent-store";
 
 /**
- * The claim: by default the tag stack is scheduled from the `load` EVENT, not
- * from mount — so an idle gap inside the paint window can no longer pull the
- * third-party stack in ahead of LCP — while the two properties that make the
- * deferral safe are kept (a gesture still loads immediately, and a page whose
- * `load` never arrives still reports at the ceiling), AND
+ * The claim: by default the tag stack loads on the first gesture, not from
+ * mount and not from a timer. A timeout that fires while Lighthouse is still
+ * waiting for a quiet window restarts the trace and pulls GTM into the paint.
  * `NEXT_PUBLIC_THIRD_PARTY_EAGER` still buys a store the old schedule back.
  *
  * WHERE IT STOPS.
- *  - The deferred schedule is `load`, then a fixed 3.5 s timeout. The eager
- *    hatch still uses idle-from-mount; jsdom has no `requestIdleCallback`, so
- *    that hatch exercises its `setTimeout` fallback. LCP itself is a browser
- *    measurement — the numbers are in the PR.
+ *  - The eager hatch still uses idle-from-mount; jsdom has no
+ *    `requestIdleCallback`, so that hatch exercises its `setTimeout` fallback.
  *  - Nothing here loads gtm.js, reaches Google, or observes a cookie. "The
  *    tags still fire" is a browser claim, not one of these assertions.
  *  - `document.readyState` is stubbed. A real browser's ordering of hydration
@@ -152,44 +148,31 @@ describe("a page still loading", () => {
     expect(gtmScripts()).toHaveLength(0);
   });
 
-  it("schedules only once the load event fires", () => {
+  it("does not load on the load event or on a timer", () => {
     render();
     act(() => {
       vi.advanceTimersByTime(5000);
       window.dispatchEvent(new Event("load"));
+      vi.advanceTimersByTime(60_000);
     });
     expect(gtmScripts()).toHaveLength(0);
-
-    act(() => {
-      vi.advanceTimersByTime(3500);
-    });
-    expect(gtmScripts()).toHaveLength(1);
-    expect(gtmScripts()[0]?.async).toBe(true);
   });
 
-  it("still reports at the ceiling when load never arrives", () => {
-    render();
-    act(() => {
-      vi.advanceTimersByTime(10_000);
-    });
-
-    // A deferral that can silently never fire is data loss, not a win.
-    expect(gtmScripts()).toHaveLength(1);
-  });
-
-  it("loads immediately on a gesture, ahead of the load wait", () => {
+  it("loads immediately on a gesture", () => {
     render();
     act(() => {
       window.dispatchEvent(new Event("pointerdown"));
     });
 
     expect(gtmScripts()).toHaveLength(1);
+    expect(gtmScripts()[0]?.async).toBe(true);
   });
 
-  it("loads exactly once when the load event and the ceiling both happen", () => {
+  it("loads exactly once when a gesture is repeated", () => {
     render();
     act(() => {
-      window.dispatchEvent(new Event("load"));
+      window.dispatchEvent(new Event("pointerdown"));
+      window.dispatchEvent(new Event("scroll"));
       vi.advanceTimersByTime(30_000);
     });
 
@@ -206,8 +189,7 @@ describe("the per-store consent gate and the schedule are orthogonal", () => {
   it("still pushes the default BEFORE gtm.start on the deferred schedule", () => {
     render(true);
     act(() => {
-      window.dispatchEvent(new Event("load"));
-      vi.advanceTimersByTime(3500);
+      window.dispatchEvent(new Event("pointerdown"));
     });
 
     expect(gtmScripts()).toHaveLength(1);
@@ -216,16 +198,16 @@ describe("the per-store consent gate and the schedule are orthogonal", () => {
     expect(indexOfConsentCommand()).toBeLessThan(indexOfGtmStart());
   });
 
-  it("pushes no consent command with the gate off, and still waits for load", () => {
+  it("pushes no consent command with the gate off, and still waits for a gesture", () => {
     render(false);
     act(() => {
-      vi.advanceTimersByTime(5000);
+      window.dispatchEvent(new Event("load"));
+      vi.advanceTimersByTime(60_000);
     });
     expect(gtmScripts()).toHaveLength(0);
 
     act(() => {
-      window.dispatchEvent(new Event("load"));
-      vi.advanceTimersByTime(3500);
+      window.dispatchEvent(new Event("pointerdown"));
     });
     expect(gtmScripts()).toHaveLength(1);
     expect(consentCommands()).toHaveLength(0);
@@ -235,12 +217,16 @@ describe("the per-store consent gate and the schedule are orthogonal", () => {
 describe("a page that had already loaded when the effect ran", () => {
   beforeEach(() => setReadyState("complete"));
 
-  it("still waits the post-load delay when load has already fired", () => {
+  it("still waits for a gesture when load has already fired", () => {
     render();
     act(() => {
-      vi.advanceTimersByTime(3500);
+      vi.advanceTimersByTime(60_000);
     });
+    expect(gtmScripts()).toHaveLength(0);
 
+    act(() => {
+      window.dispatchEvent(new Event("keydown"));
+    });
     expect(gtmScripts()).toHaveLength(1);
   });
 });
