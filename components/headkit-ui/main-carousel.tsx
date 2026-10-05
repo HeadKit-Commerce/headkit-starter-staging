@@ -1,9 +1,7 @@
-"use client";
-
-import { ElementType, useState } from "react";
+import { type ElementType } from "react";
 import { ArtDirectedImage } from "@/components/headkit-ui/art-directed-image";
+import { HeroRotator } from "@/components/headkit-ui/hero-rotator";
 import { HeroVideoSlide } from "@/components/headkit-ui/hero-video-slide";
-import { Carousel } from "@/components/headkit-ui/carousel";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
 import { TitleEmphasis } from "@/components/headkit-ui/title-emphasis";
 import { Button } from "@/components/ui/button";
@@ -34,122 +32,109 @@ function slideVideo(slide: HeroSlide, mobile: boolean): string {
   return slide.video || "";
 }
 
+/**
+ * Server Component. The heading and the largest image render here, not
+ * inside a client carousel, so they are part of the static shell and do
+ * not ship their own JavaScript.
+ * https://nextjs.org/docs/app/getting-started/server-and-client-components
+ * https://nextjs.org/docs/app/getting-started/caching#static-cached-and-streaming
+ */
+function HeroSlideView({
+  slide,
+  index,
+  heroLayout,
+  mediaClass,
+  active,
+}: {
+  slide: HeroSlide;
+  index: number;
+  heroLayout: HeroLayout;
+  mediaClass: string;
+  active: boolean;
+}): React.JSX.Element {
+  const HeaderTag: ElementType = index === 0 ? "h1" : "h2";
+  const desktopVideo = slideVideo(slide, false);
+  const mobileVideo = slideVideo(slide, true);
+  const hasVideo = Boolean(desktopVideo || mobileVideo);
+  const alt = stripTitleMarkers(decodeHtmlEntities(slide.header ?? ""));
+
+  return (
+    <div className="basis-full w-full relative">
+      <div
+        className={cn(
+          "relative flex flex-col-reverse overflow-hidden md:flex-col",
+          heroLayout === "inset" ? "rounded-brand" : "rounded-none",
+        )}
+      >
+        <div className="z-10 h-full w-full md:absolute">
+          <div className="mx-auto flex h-full items-center">
+            <div className="py-[20px] md:w-[400px] md:pl-[20px] lg:w-[600px] lg:pl-[100px]">
+              <HeaderTag className="text-[40px] leading-normal text-primary md:text-[48px] md:text-brand-bg!">
+                <TitleEmphasis text={slide.header ?? ""} highlight />
+              </HeaderTag>
+              {slide.description ? (
+                <p className="mt-8 text-base font-semibold text-black md:text-3xl md:text-brand-bg!">
+                  {decodeHtmlEntities(slide.description)}
+                </p>
+              ) : null}
+              <div className="mt-8">
+                <InstantLink href={slide.url ?? "#"} prefetch={true}>
+                  <Button className="text-brand-bg">{slide.buttonText}</Button>
+                </InstantLink>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className={mediaClass}>
+          {slide.image || slide.mobileImage ? (
+            <ArtDirectedImage
+              mobileSrc={slide.mobileImage || slide.image}
+              desktopSrc={slide.image || slide.mobileImage || ""}
+              alt={alt}
+              isLcp={index === 0}
+              className="h-full w-full object-cover"
+            />
+          ) : null}
+          {hasVideo ? (
+            <HeroVideoSlide
+              mobileSrc={mobileVideo}
+              desktopSrc={desktopVideo}
+              isActive={active}
+            />
+          ) : null}
+          <div
+            aria-hidden
+            className="absolute inset-0 hidden md:block bg-gradient-to-r from-black/50 via-black/25 to-transparent"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export const MainCarousel = ({
   carouselItems,
   heroLayout = "inset",
-}: Props) => {
-  // Schedule windows are applied in WordPress (headkit_query_active_carousels).
+}: Props): React.JSX.Element | null => {
   const items = carouselItems as HeroSlide[];
-  const [activeIndex, setActiveIndex] = useState(0);
-
   if (items.length === 0) return null;
 
   const shellClass = heroLayoutClasses(heroLayout);
   const mediaClass = heroMediaClasses(heroLayout);
+  const slides = items.map((slide, index) => (
+    <HeroSlideView
+      key={slide.id || String(index)}
+      slide={slide}
+      index={index}
+      heroLayout={heroLayout}
+      mediaClass={mediaClass}
+      active={index === 0 || items.length === 1}
+    />
+  ));
 
   return (
     <div className={cn("headkit-hero-carousel overflow-hidden", shellClass)}>
-      <Carousel
-        items={items}
-        onSlideChange={setActiveIndex}
-        renderItem={(carousel, index) => {
-          const slide = carousel as HeroSlide;
-          const HeaderTag: ElementType = index === 0 ? "h1" : "h2";
-          const desktopVideo = slideVideo(slide, false);
-          const mobileVideo = slideVideo(slide, true);
-          const hasVideo = Boolean(desktopVideo || mobileVideo);
-          const isActive = index === activeIndex;
-
-          return (
-            <div className="basis-full w-full relative">
-              <div
-                className={cn(
-                  "relative flex flex-col-reverse overflow-hidden md:flex-col",
-                  heroLayout === "inset" ? "rounded-brand" : "rounded-none",
-                )}
-              >
-                <div className="z-10 h-full w-full md:absolute">
-                  <div className="mx-auto flex h-full items-center">
-                    <div className="py-[20px] md:w-[400px] md:pl-[20px] lg:w-[600px] lg:pl-[100px]">
-                      <HeaderTag className="text-[40px] leading-normal text-primary md:text-[48px] md:text-brand-bg!">
-                        <TitleEmphasis text={slide?.header ?? ""} highlight />
-                      </HeaderTag>
-                      {slide?.description ? (
-                        <p className="mt-8 text-base font-semibold text-black md:text-3xl md:text-brand-bg!">
-                          {decodeHtmlEntities(slide.description)}
-                        </p>
-                      ) : null}
-                      <div className="mt-8">
-                        <InstantLink href={slide?.url ?? "#"} prefetch={true}>
-                          <Button className="text-brand-bg">
-                            {slide?.buttonText}
-                          </Button>
-                        </InstantLink>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* Desktop: prefer 16:9; cap height so ultrawide never overflows
-                    the fold (object-cover crops within the box). Mobile stays square. */}
-                <div className={mediaClass}>
-                  {hasVideo ? (
-                    <>
-                      {/* Poster is the LCP image. The MP4 starts after load. */}
-                      <HeroVideoSlide
-                        mobileSrc={mobileVideo}
-                        desktopSrc={desktopVideo}
-                        posterSrc={slide.mobileImage || slide.image}
-                        desktopPosterSrc={slide.image}
-                        posterAlt={stripTitleMarkers(decodeHtmlEntities(slide.header ?? ""))}
-                        isLcp={index === 0}
-                        isActive={isActive}
-                      />
-                      <div
-                        aria-hidden
-                        className="absolute inset-0 hidden md:block bg-gradient-to-r from-black/50 via-black/25 to-transparent"
-                      />
-                    </>
-                  ) : slide?.image ? (
-                    <>
-                      <ArtDirectedImage
-                        mobileSrc={slide.mobileImage || slide.image}
-                        desktopSrc={slide.image}
-                        alt={stripTitleMarkers(
-                          decodeHtmlEntities(slide.header ?? ""),
-                        )}
-                        isLcp={index === 0}
-                        className="h-full w-full object-cover"
-                      />
-                      <div
-                        aria-hidden
-                        className="absolute inset-0 hidden md:block bg-gradient-to-r from-black/50 via-black/25 to-transparent"
-                      />
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          );
-        }}
-        className="w-full"
-        // One slide: no fade blend, no slide autoplay / loop — the video
-        // handles a hard 0-gap wrap. Multi-slide heroes keep fade rotation.
-        loop={items.length > 1}
-        transition={items.length > 1 ? "fade" : "slide"}
-        autoplay={
-          items.length > 1
-            ? { enabled: true, delay: 5000, stopOnInteraction: true }
-            : { enabled: false }
-        }
-        showScrollbar={false}
-        showPagination={items.length > 1}
-        paginationDotClassName="bg-white/50"
-        paginationClassName="top-[calc(100vw-4.5rem)] md:top-auto md:bottom-6"
-        itemSizing={{ base: "w-full" }}
-        itemKey={(slide) => slide.id}
-        gap="gap-0"
-        padding="px-0"
-      />
+      {items.length > 1 ? <HeroRotator>{slides}</HeroRotator> : slides}
     </div>
   );
 };
