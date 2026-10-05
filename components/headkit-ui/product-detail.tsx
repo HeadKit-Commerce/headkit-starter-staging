@@ -1,5 +1,7 @@
 "use client";
 
+import dynamic from "next/dynamic";
+
 import {
   useMemo,
   useState,
@@ -59,7 +61,6 @@ import {
   getFloatVal,
   getStoreCurrency,
 } from "@/lib/utils";
-import { PaymentMethodMessaging } from "@/components/stripe/payment-messaging";
 import { isInWishlist, toggleWishlist } from "@/lib/wishlist";
 import {
   buildAddToCart,
@@ -217,6 +218,14 @@ function readImageFullSrc(img: object): string | undefined {
   const value = (img as { fullSrc?: unknown }).fullSrc;
   return typeof value === "string" && value !== "" ? value : undefined;
 }
+
+const PaymentMethodMessaging = dynamic(
+  () =>
+    import("@/components/stripe/payment-messaging").then(
+      (m) => m.PaymentMethodMessaging,
+    ),
+  { loading: () => null },
+);
 
 export function ProductDetail({
   product,

@@ -1,3 +1,4 @@
+import { HydrateLater } from "@/components/headkit-ui/hydrate-later";
 import { notFound, permanentRedirect, unstable_rethrow } from "next/navigation";
 import { Suspense } from "react";
 import type { Metadata } from "next";
@@ -826,6 +827,7 @@ export async function ProductPageBody({
       </div>
 
       {featuredProjects.length > 0 ? (
+        <HydrateLater>
         <section className="overflow-hidden py-10">
           <SectionHeader
             title="Featured in projects"
@@ -838,9 +840,11 @@ export async function ProductPageBody({
             <ProjectCarousel projects={featuredProjects} imageAspect="video" />
           </div>
         </section>
+        </HydrateLater>
       ) : null}
 
       {upsellsAsProducts.length > 0 && (
+        <HydrateLater>
         <section className="overflow-x-clip py-10">
           <SectionHeader
             title="You might also like…"
@@ -854,11 +858,13 @@ export async function ProductPageBody({
             />
           </div>
         </section>
+        </HydrateLater>
       )}
 
       <div className="headkit-pdp-beside-bundles">
         <PdpBesideBundles />
         {bundlesAsProducts.length > 0 && (
+        <HydrateLater>
           <section className="overflow-x-clip py-10">
             <SectionHeader
               title={bundlesCopy.title}
@@ -874,10 +880,12 @@ export async function ProductPageBody({
               />
             </div>
           </section>
+        </HydrateLater>
         )}
       </div>
 
       {relatedAsProducts.length > 0 && (
+        <HydrateLater>
         <section className="overflow-x-clip py-10">
           <SectionHeader
             title={relatedCopy.title}
@@ -893,6 +901,7 @@ export async function ProductPageBody({
             />
           </div>
         </section>
+        </HydrateLater>
       )}
     </div>
     </SwatchImageProvider>

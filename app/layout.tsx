@@ -263,7 +263,7 @@ export default async function RootLayout({
         not next/font body classNames (those fought the layered body rule).
       */}
       <body className="antialiased font-sans">
-        {/* Marketing tags. GoogleTagManager from @next/third-parties, mounted on the first gesture. */}
+        {/* Marketing tags. GoogleTagManager from @next/third-parties (afterInteractive). A visit is tagged with no gesture unless this store's cookie gate is on. */}
         <DeferredThirdPartyScripts
           gtmId={gtmId}
           klaviyoPublicKey={klaviyoPublicKey}
