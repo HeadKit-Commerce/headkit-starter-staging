@@ -58,14 +58,6 @@ function indexOfGtmStart(): number {
   );
 }
 
-function indexOfConsentCommand(): number {
-  const dataLayer =
-    (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
-  return dataLayer.findIndex(
-    (entry) => Object.prototype.toString.call(entry) === "[object Arguments]",
-  );
-}
-
 let container: HTMLElement;
 let root: Root;
 
@@ -96,30 +88,21 @@ afterEach(() => {
 });
 
 describe("GoogleTagManager from @next/third-parties", () => {
-  it("does not mount gtm.js before a gesture", () => {
+  it("mounts gtm.js on the first render when the consent gate is off", () => {
     render(false);
-    expect(gtmScripts()).toHaveLength(0);
-    expect(consentCommands()).toHaveLength(0);
-  });
-
-  it("mounts gtm.js on the first gesture when the consent gate is off", () => {
-    render(false);
-    act(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    });
     expect(gtmScripts()).toHaveLength(1);
     expect(gtmScripts()[0]?.async).toBe(true);
     expect(consentCommands()).toHaveLength(0);
+    expect(indexOfGtmStart()).toBe(0);
   });
 
-  it("pushes the consent default before gtm.start when the gate is on", () => {
+  it("does not mount gtm.js before acceptance when the gate is on", () => {
     render(true);
     act(() => {
       window.dispatchEvent(new Event("pointerdown"));
+      window.dispatchEvent(new Event("scroll"));
     });
-    expect(gtmScripts()).toHaveLength(1);
-    expect(consentCommands()).toHaveLength(1);
-    expect(indexOfConsentCommand()).toBeGreaterThanOrEqual(0);
-    expect(indexOfConsentCommand()).toBeLessThan(indexOfGtmStart());
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
   });
 });

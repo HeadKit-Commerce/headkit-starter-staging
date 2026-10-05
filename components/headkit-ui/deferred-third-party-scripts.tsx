@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { GoogleTagManager } from "@next/third-parties/google";
 import Script from "next/script";
 
 import {
-  CONSENT_ALL_DENIED,
   consentSignals,
   pushConsentCommand,
+  type ConsentDecision,
 } from "@/lib/consent";
 import { readConsent, subscribeConsent } from "@/lib/consent-store";
 
@@ -16,11 +16,16 @@ type Props = {
   klaviyoPublicKey?: string | null | undefined;
   hubspotPortalId?: string | null | undefined;
   /**
-   * Store cookie-consent gate. Absent means off: no consent default is
-   * pushed.
+   * Store cookie-consent gate. Absent means off: the visit is tagged with
+   * no consent command and no gesture.
    */
   consentEnabled?: boolean | undefined;
 };
+
+function decisionAllowsTags(decision: ConsentDecision | null): boolean {
+  if (!decision) return false;
+  return decision.choices.analytics || decision.choices.advertising;
+}
 
 /**
  * Marketing tags for every storefront. One file; store differences are props.
@@ -28,27 +33,18 @@ type Props = {
  * Google Tag Manager is `GoogleTagManager` from `@next/third-parties/google`.
  * https://nextjs.org/docs/app/guides/third-party-libraries
  *
- * That component loads `gtm.js` through `next/script` after hydration
- * (`afterInteractive`). Measured on the deployed stores, that starts the
- * container at about 250 ms, and the container then loads Facebook and
- * Google Ads before the hero paints. Largest paint went to 9–11 s.
- *
- * `next/script` documents `lazyOnload` as the strategy that waits until the
- * page has fetched its own resources and the browser is idle
- * (https://nextjs.org/docs/app/api-reference/components/script#lazyonload).
- * The package does not accept a `strategy` prop, and idle-after-load was
- * measured in the same gap as the largest paint. The component is therefore
- * mounted on the first pointer, key, or scroll: a real session that engages,
- * and not a timer that Lighthouse waits out and then records. A visit with
- * no gesture is not tagged.
+ * The package loads `gtm.js` through `next/script` with the default
+ * `afterInteractive` strategy (after some hydration, no `strategy` prop).
+ * A visit is tagged with no gesture. When this store's cookie gate is on,
+ * the container stays unmounted until the visitor accepts — a decline or
+ * an unanswered banner does not tag the visit.
  *
  * The package's `dataLayer` prop is JSON and is pushed after `gtm.start`,
- * which Consent Mode does not read. When the gate is on, the default is
- * pushed as an `arguments` object in the gesture handler, before this
- * component mounts `GoogleTagManager`.
+ * which Consent Mode does not read. The accept path pushes an `arguments`
+ * default before this component mounts `GoogleTagManager`.
  *
  * Klaviyo and HubSpot are not in `@next/third-parties`. They use
- * `next/script` with `lazyOnload` on that same gesture.
+ * `next/script` with `lazyOnload` on the same schedule as the container.
  */
 export function DeferredThirdPartyScripts({
   gtmId,
@@ -56,64 +52,41 @@ export function DeferredThirdPartyScripts({
   hubspotPortalId,
   consentEnabled = false,
 }: Props): ReactElement | null {
-  const [ready, setReady] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  const pushedDefault = useRef(false);
 
   useEffect(() => {
-    if (!gtmId && !klaviyoPublicKey && !hubspotPortalId) return;
+    if (!consentEnabled) return;
 
-    let loaded = false;
-
-    const load = (): void => {
-      if (loaded) return;
-      loaded = true;
-      cleanup();
-      if (gtmId) {
-        window.dataLayer = window.dataLayer ?? [];
-        if (consentEnabled) {
+    const apply = (): void => {
+      const decision = readConsent();
+      const dataLayer = (window.dataLayer = window.dataLayer ?? []);
+      if (!decision || !decisionAllowsTags(decision)) {
+        if (pushedDefault.current && decision) {
           pushConsentCommand(
-            window.dataLayer,
-            "default",
-            consentSignals(readConsent()?.choices ?? CONSENT_ALL_DENIED),
+            dataLayer,
+            "update",
+            consentSignals(decision.choices),
           );
         }
+        return;
       }
-      setReady(true);
+      if (!pushedDefault.current) {
+        pushConsentCommand(dataLayer, "default", consentSignals(decision.choices));
+        pushedDefault.current = true;
+        setAccepted(true);
+        return;
+      }
+      pushConsentCommand(dataLayer, "update", consentSignals(decision.choices));
     };
 
-    const cleanup = (): void => {
-      window.removeEventListener("pointerdown", load);
-      window.removeEventListener("keydown", load);
-      window.removeEventListener("scroll", load, true);
-    };
+    apply();
+    return subscribeConsent(apply);
+  }, [consentEnabled]);
 
-    window.addEventListener("pointerdown", load, { once: true });
-    window.addEventListener("keydown", load, { once: true });
-    window.addEventListener("scroll", load, {
-      once: true,
-      capture: true,
-      passive: true,
-    });
-
-    const unsubscribe =
-      consentEnabled && gtmId
-        ? subscribeConsent(() => {
-            if (!loaded) return;
-            const dataLayer = (window.dataLayer = window.dataLayer ?? []);
-            pushConsentCommand(
-              dataLayer,
-              "update",
-              consentSignals(readConsent()?.choices ?? CONSENT_ALL_DENIED),
-            );
-          })
-        : null;
-
-    return () => {
-      cleanup();
-      unsubscribe?.();
-    };
-  }, [gtmId, klaviyoPublicKey, hubspotPortalId, consentEnabled]);
-
-  if (!ready) return null;
+  const mountTags = !consentEnabled || accepted;
+  if (!mountTags) return null;
+  if (!gtmId && !klaviyoPublicKey && !hubspotPortalId) return null;
 
   return (
     <>

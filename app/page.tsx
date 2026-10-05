@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { unstable_rethrow } from "next/navigation";
 import { cacheLife, cacheTag } from "next/cache";
@@ -56,6 +57,7 @@ import {
   extendHomepageCategories,
   HomeAfterFeatured,
 } from "@/overrides/home-slots";
+import { HydrateLater } from "@/components/headkit-ui/hydrate-later";
 
 const EMPTY_COLLECTION = {
   products: [] as Product[],
@@ -258,6 +260,33 @@ export async function HomeContent() {
 
   const heroLayout = theme.layout.heroLayout;
 
+  const heroSegmentIndex = showHardcodedHero
+    ? -1
+    : segments.findIndex(
+        (seg) =>
+          seg.kind === "block" &&
+          seg.block.cssClasses.includes("headkit-hero-carousel"),
+      );
+  const hasHero = showHardcodedHero || heroSegmentIndex >= 0;
+
+  // Sections after the hero hydrate on their own so the hero can paint
+  // first (Next.js streaming — each Suspense boundary is a hydration unit).
+  // The hero itself stays outside every boundary.
+  const deferSegment = (index: number): boolean => {
+    if (showHardcodedHero) return true;
+    if (heroSegmentIndex >= 0) return index > heroSegmentIndex;
+    return index > 0;
+  };
+
+  let keptShellSection = hasHero;
+  const belowHero = (node: ReactNode): ReactNode => {
+    if (!keptShellSection) {
+      keptShellSection = true;
+      return node;
+    }
+    return <HydrateLater>{node}</HydrateLater>;
+  };
+
   // Exactly ONE product carousel on this page keeps a warm first row, and only
   // when the store runs the prefetch budget (`NEXT_PUBLIC_NAV_PREFETCH_BUDGET`;
   // with it off, `InstantLink` prefetches every link as it does today and this
@@ -277,106 +306,121 @@ export async function HomeContent() {
         <MainCarousel carouselItems={carousels} heroLayout={heroLayout} />
       )}
 
-      {/* WP front-page content in editor document order */}
+      {/* WP front-page content in editor document order.
+          Segments after the hero are their own hydration units. */}
       {segments.map((seg, index) => {
-        if (seg.kind === "html") {
-          return (
+        const section =
+          seg.kind === "html" ? (
             <section
               key={`wp-html-${index}`}
               className="headkit-cms-html hk-section-content px-5 md:px-10 py-10"
             >
               <EditorialContent html={seg.html} />
             </section>
+          ) : (
+            <BlockEditor
+              key={`wp-block-${index}`}
+              blocks={[seg.block]}
+              prefetchFirstProductCarouselRow={index === warmCarouselSegment}
+            />
           );
-        }
+        if (!deferSegment(index)) return section;
         return (
-          <BlockEditor
-            key={`wp-block-${index}`}
-            blocks={[seg.block]}
-            prefetchFirstProductCarouselRow={index === warmCarouselSegment}
-          />
+          <HydrateLater key={`wp-later-${index}`}>{section}</HydrateLater>
         );
       })}
 
       {/* Platform commerce modules (not WP page blocks) */}
 
       {/* Featured Products — skipped when WP already provides a product carousel */}
-      {showHardcodedFeatured && (
-        <section className="headkit-product-carousel overflow-x-clip py-10">
-          <SectionHeader
-            title={featuredCopy.title}
-            description={featuredCopy.description}
-            allButton={featuredCopy.allButton}
-            allButtonPath={featuredCopy.allButtonPath}
-            className="px-5 md:px-10"
-          />
-          <div className="mt-8">
-            <ProductCarousel
-              products={featuredProducts.slice(0, 12)}
-              id="featured-products"
-              prefetchCount={
-                warmPlatformFeaturedCarousel ? CAROUSEL_FIRST_ROW : 0
-              }
+      {showHardcodedFeatured &&
+        belowHero(
+          <section className="headkit-product-carousel overflow-x-clip py-10">
+            <SectionHeader
+              title={featuredCopy.title}
+              description={featuredCopy.description}
+              allButton={featuredCopy.allButton}
+              allButtonPath={featuredCopy.allButtonPath}
+              className="px-5 md:px-10"
             />
-          </div>
-        </section>
-      )}
+            <div className="mt-8">
+              <ProductCarousel
+                products={featuredProducts.slice(0, 12)}
+                id="featured-products"
+                prefetchCount={
+                  warmPlatformFeaturedCarousel ? CAROUSEL_FIRST_ROW : 0
+                }
+              />
+            </div>
+          </section>,
+        )}
 
       <HomeAfterFeatured />
 
       {/* On Sale — skipped when WP already provides a product-on-sale carousel */}
-      {showHardcodedSale && (
-        <section className="headkit-product-carousel overflow-x-clip py-10">
-          <SectionHeader
-            title="On Sale"
-            description=""
-            allButton="View All"
-            allButtonPath="/sale"
-            className="px-5 md:px-10"
-          />
-          <div className="mt-8">
-            <ProductCarousel
-              products={onSaleProducts.products.slice(0, 12) as Product[]}
-              id="on-sale-products"
-              prefetchCount={warmPlatformSaleCarousel ? CAROUSEL_FIRST_ROW : 0}
+      {showHardcodedSale &&
+        belowHero(
+          <section className="headkit-product-carousel overflow-x-clip py-10">
+            <SectionHeader
+              title="On Sale"
+              description=""
+              allButton="View All"
+              allButtonPath="/sale"
+              className="px-5 md:px-10"
             />
-          </div>
-        </section>
-      )}
+            <div className="mt-8">
+              <ProductCarousel
+                products={onSaleProducts.products.slice(0, 12) as Product[]}
+                id="on-sale-products"
+                prefetchCount={
+                  warmPlatformSaleCarousel ? CAROUSEL_FIRST_ROW : 0
+                }
+              />
+            </div>
+          </section>,
+        )}
 
       {/* Shop by Category — skipped when WP provides headkit-category-carousel */}
-      {showHardcodedCategories && (
-        <section className="headkit-category-carousel overflow-hidden py-10">
-          <SectionHeader
-            title="Shop by Category"
-            description=""
-            allButton="View All"
-            allButtonPath="/shop"
-            className="px-5 md:px-10"
-          />
-          <div className="mt-8">
-            <CategoryCarousel
-              categories={featuredCategories}
-              {...(homepageCardLink ? { cardLinkText: homepageCardLink } : {})}
+      {showHardcodedCategories &&
+        belowHero(
+          <section className="headkit-category-carousel overflow-hidden py-10">
+            <SectionHeader
+              title="Shop by Category"
+              description=""
+              allButton="View All"
+              allButtonPath="/shop"
+              className="px-5 md:px-10"
             />
-          </div>
-        </section>
-      )}
+            <div className="mt-8">
+              <CategoryCarousel
+                categories={featuredCategories}
+                {...(homepageCardLink
+                  ? { cardLinkText: homepageCardLink }
+                  : {})}
+              />
+            </div>
+          </section>,
+        )}
 
-      {showLatestPosts && postsBasePath ? (
-        <section className="headkit-post-carousel overflow-hidden py-10">
-          <SectionHeader
-            title={latestNewsCopy.title}
-            description={latestNewsCopy.description}
-            allButton={latestNewsCopy.allButton}
-            allButtonPath={latestNewsCopy.allButtonPath}
-            className="px-5 md:px-10"
-          />
-          <div className="mt-8">
-            <PostCarousel posts={latestPosts} postsBasePath={postsBasePath} />
-          </div>
-        </section>
-      ) : null}
+      {showLatestPosts && postsBasePath
+        ? belowHero(
+            <section className="headkit-post-carousel overflow-hidden py-10">
+              <SectionHeader
+                title={latestNewsCopy.title}
+                description={latestNewsCopy.description}
+                allButton={latestNewsCopy.allButton}
+                allButtonPath={latestNewsCopy.allButtonPath}
+                className="px-5 md:px-10"
+              />
+              <div className="mt-8">
+                <PostCarousel
+                  posts={latestPosts}
+                  postsBasePath={postsBasePath}
+                />
+              </div>
+            </section>,
+          )
+        : null}
     </>
   );
 }
