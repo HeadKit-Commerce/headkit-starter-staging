@@ -1,6 +1,5 @@
 import { notFound, permanentRedirect, unstable_rethrow } from "next/navigation";
 import { Suspense } from "react";
-import { ProductPageShell } from "@/app/products/[...slug]/product-page-shell";
 import type { Metadata } from "next";
 import type {
   ProductFieldsFragment,
