@@ -101,7 +101,18 @@ const ON_DEMAND_UNAVAILABLE: FacetCataloguePlan = {
 };
 
 function bulkPrefetchEnabled(status: Record<string, unknown>): boolean {
-  return status.enabled === true;
+  // `enabled: false` is a real off (below the threshold, or a theme that
+  // cannot format a full product). A payload that names ENABLED and omits
+  // the boolean is the same commerce decision.
+  if (status.enabled === true) return true;
+  if (status.enabled === false) return false;
+  const reason = status.reason;
+  return reason === "ENABLED" || reason === "enabled";
+}
+
+function logDuringBuild(message: string): void {
+  if (process.env.NEXT_PHASE !== "phase-production-build") return;
+  console.log(message);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -141,6 +152,26 @@ export function facetPlanFromStatus(status: unknown): FacetCataloguePlan {
               typeof path === "string" && path.length > 0,
           )
         : [];
+      // Same reading as `planFromStatus`: an on-demand mode with no reason
+      // and no hot set is a zero mode, not a measured refusal. Product HTML
+      // still builds for a counted catalogue under the ceiling, so facets
+      // follow that catalogue rather than the empty mode. A named refusal
+      // (`sku_ceiling`, `operator`, `probe_failed`) stays on demand.
+      if (
+        mode === "on-demand" &&
+        paths.length === 0 &&
+        (typeof reasonRaw !== "string" || reasonRaw.length === 0) &&
+        total !== null &&
+        total <= FACET_PRODUCT_SKU_CEILING
+      ) {
+        return {
+          mode: "all",
+          paths: [],
+          reason: `SKU_CEILING ${total}<=${FACET_PRODUCT_SKU_CEILING}`,
+          total,
+          bulkPrefetch,
+        };
+      }
       return {
         mode,
         paths,
@@ -206,11 +237,21 @@ export async function readFacetCataloguePlan(
   if (!products) return ALL_WITHOUT_STATUS;
   const bulkStatus = bulkStatusOf(products);
   if (!bulkStatus) return ALL_WITHOUT_STATUS;
-  try {
-    return facetPlanFromStatus(await bulkStatus());
-  } catch {
-    return ON_DEMAND_UNAVAILABLE;
+  // Call with the products client as `this`. Pulling the method off the
+  // class and invoking it bare throws inside the SDK, and that throw used
+  // to become "no facets" with nothing in the build log.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return facetPlanFromStatus(await bulkStatus.call(products));
+    } catch (error) {
+      lastError = error;
+    }
   }
+  const message =
+    lastError instanceof Error ? lastError.message : "unknown";
+  logDuringBuild(`[collection-facets] status read failed (${message})`);
+  return ON_DEMAND_UNAVAILABLE;
 }
 
 /** Product HTML this plan will emit, estimated from the SKU count. */
@@ -254,16 +295,47 @@ export function facetPageRoom(
   );
 }
 
+function logDiscover(
+  plan: FacetCataloguePlan,
+  categoryCount: number,
+  room: number,
+  discover: boolean,
+): void {
+  const roomText = Number.isFinite(room) ? String(room) : "unlimited";
+  logDuringBuild(
+    `[collection-facets] mode=${plan.mode} reason=${plan.reason} bulk=${plan.bulkPrefetch} total=${plan.total ?? "unknown"} categories=${categoryCount} room=${roomText} discover=${discover}`,
+  );
+}
+
 /** False skips `getFilters` and the brand list entirely. */
 export function shouldDiscoverCollectionFacets(
   plan: FacetCataloguePlan,
   categoryCount: number,
 ): boolean {
-  if (categoryCount <= 0) return false;
+  if (categoryCount <= 0) {
+    logDiscover(plan, categoryCount, 0, false);
+    return false;
+  }
   const room = facetPageRoom(plan, categoryCount);
-  if (!Number.isFinite(room)) return true;
-  if (room <= 0) return false;
-  return categoryCount * FACETS_PER_CATEGORY_DISCOVERY_CEILING <= room;
+  if (!Number.isFinite(room)) {
+    logDiscover(plan, categoryCount, room, true);
+    return true;
+  }
+  if (room <= 0) {
+    logDiscover(plan, categoryCount, room, false);
+    return false;
+  }
+  // The 8-per-category guess exists to skip `getFilters` when even a dense
+  // matrix cannot fit. On a bulk-prefetched catalogue the room is a facet
+  // budget, and that guess skips the read once a store has more categories
+  // than budget/8 — the indexable set (what actually gets emitted) can
+  // still fit. Pay one filter read per category and let `shouldEmit`
+  // keep or drop the real count.
+  const discover =
+    plan.bulkPrefetch ||
+    categoryCount * FACETS_PER_CATEGORY_DISCOVERY_CEILING <= room;
+  logDiscover(plan, categoryCount, room, discover);
+  return discover;
 }
 
 /**
@@ -274,8 +346,12 @@ export function shouldEmitCollectionFacets(
   categoryCount: number,
   facetCount: number,
 ): boolean {
-  if (facetCount <= 0) return false;
   const room = facetPageRoom(plan, categoryCount);
-  if (!Number.isFinite(room)) return true;
-  return facetCount <= room;
+  const emit =
+    facetCount > 0 && (!Number.isFinite(room) || facetCount <= room);
+  const roomText = Number.isFinite(room) ? String(room) : "unlimited";
+  logDuringBuild(
+    `[collection-facets] emit=${emit} facets=${facetCount} categories=${categoryCount} room=${roomText}`,
+  );
+  return emit;
 }

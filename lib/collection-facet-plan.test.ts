@@ -123,6 +123,37 @@ describe("page room", () => {
     ).toBe(false);
   });
 
+  it("discovers a bulk-prefetched catalogue past the old 8-per-category guess", () => {
+    const status = facetPlanFromStatus({
+      total: 2677,
+      enabled: true,
+      reason: "ENABLED",
+    });
+    // 300 * 8 = 2,400, which is past the 2,000 facet budget. The guess
+    // must not skip the filter read; the real indexable set still emits.
+    expect(shouldDiscoverCollectionFacets(status, 300)).toBe(true);
+    expect(shouldEmitCollectionFacets(status, 300, 687)).toBe(true);
+    expect(shouldEmitCollectionFacets(status, 300, 2_001)).toBe(false);
+  });
+
+  it("treats reason ENABLED as bulk prefetch when the boolean was omitted", () => {
+    const status = facetPlanFromStatus({ total: 2677, reason: "ENABLED" });
+    expect(status.bulkPrefetch).toBe(true);
+    expect(status.mode).toBe("all");
+    expect(shouldDiscoverCollectionFacets(status, 154)).toBe(true);
+  });
+
+  it("keeps facets when prerender is an empty on-demand mode under the ceiling", () => {
+    const status = facetPlanFromStatus({
+      total: 2677,
+      enabled: true,
+      prerender: { mode: "ON_DEMAND", paths: [] },
+    });
+    expect(status.mode).toBe("all");
+    expect(status.bulkPrefetch).toBe(true);
+    expect(shouldDiscoverCollectionFacets(status, 154)).toBe(true);
+  });
+
   it("does not treat bulk prefetch as facet room once the catalogue is over the SKU ceiling", () => {
     const large = facetPlanFromStatus({ total: 20_000, enabled: true });
     expect(large.mode).toBe("on-demand");
