@@ -42,12 +42,14 @@ vi.mock("next/link", () => ({
     children,
     href,
     prefetch: _prefetch,
+    replace: _replace,
     onClick,
     ...rest
   }: {
     children: React.ReactNode;
     href: string;
     prefetch?: boolean;
+    replace?: boolean;
     onClick?: React.MouseEventHandler<HTMLAnchorElement>;
   } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
     <a
@@ -104,6 +106,9 @@ beforeEach(() => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   navigated.mockClear();
+  // A previous example may have committed an optimistic URL. Every example
+  // starts from the page the shopper is leaving.
+  window.history.replaceState(null, "", "/");
   // Both switches declared, never inherited: a suite that reads the process's
   // value passes or fails on how it was launched.
   vi.stubEnv("NEXT_PUBLIC_NAVIGATION_SKELETON", undefined);
@@ -113,6 +118,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 describe("InstantLink with NEXT_PUBLIC_NAV_MOUSEDOWN off (the platform default)", () => {
@@ -263,5 +269,124 @@ describe("InstantLink with NEXT_PUBLIC_NAV_MOUSEDOWN on", () => {
       navigated,
       "Non-app hrefs never reach next/link at all; they must keep pure browser default behaviour.",
     ).not.toHaveBeenCalled();
+  });
+});
+
+describe("optimistic address bar", () => {
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_NAV_MOUSEDOWN", undefined);
+  });
+
+  it("pushStates the destination on click and still lets next/link navigate", () => {
+    const prior = { __NA: true, tree: "current-page" };
+    window.history.replaceState(prior, "", "/collections/road");
+    const pushState = vi.spyOn(window.history, "pushState");
+    const anchor = mount(
+      <InstantLink href="/products/bike?color=red">Bike</InstantLink>,
+    );
+
+    fire(anchor, "click");
+
+    expect(navigated).toHaveBeenCalledTimes(1);
+    expect(pushState).toHaveBeenCalledTimes(1);
+    expect(pushState.mock.calls[0]?.[0]).toBe(prior);
+    expect(pushState.mock.calls[0]?.[2]).toBe("/products/bike?color=red");
+    expect(window.location.pathname + window.location.search).toBe(
+      "/products/bike?color=red",
+    );
+  });
+
+  it("replaceStates when the link asks to replace", () => {
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    const pushState = vi.spyOn(window.history, "pushState");
+    const anchor = mount(
+      <InstantLink href="/products/bike" replace>
+        Bike
+      </InstantLink>,
+    );
+
+    fire(anchor, "click");
+
+    expect(replaceState).toHaveBeenCalled();
+    expect(pushState).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/products/bike");
+  });
+
+  it.each([
+    ["cmd-click", { metaKey: true }],
+    ["ctrl-click", { ctrlKey: true }],
+    ["shift-click", { shiftKey: true }],
+    ["alt-click", { altKey: true }],
+  ] as const)("does not move this tab on %s", (_label, init) => {
+    const pushState = vi.spyOn(window.history, "pushState");
+    const anchor = mount(<InstantLink href="/products/bike">Bike</InstantLink>);
+
+    fire(anchor, "click", init);
+
+    expect(pushState).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("does not move this tab when the link opens elsewhere or downloads", () => {
+    const pushState = vi.spyOn(window.history, "pushState");
+    const blank = mount(
+      <InstantLink href="/products/bike" target="_blank">
+        Bike
+      </InstantLink>,
+    );
+    fire(blank, "click");
+    act(() => root.unmount());
+    blank.remove();
+
+    const download = mount(
+      <InstantLink href="/products/bike" download>
+        Bike
+      </InstantLink>,
+    );
+    fire(download, "click");
+
+    expect(pushState).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("does not move this tab when the caller already handled the click", () => {
+    const pushState = vi.spyOn(window.history, "pushState");
+    const anchor = mount(
+      <InstantLink
+        href="/products/bike"
+        onClick={(event) => event.preventDefault()}
+      >
+        Bike
+      </InstantLink>,
+    );
+
+    fire(anchor, "click");
+
+    expect(navigated).not.toHaveBeenCalled();
+    expect(pushState).not.toHaveBeenCalled();
+  });
+
+  it("does not add a history entry when the click is already this address", () => {
+    window.history.replaceState(null, "", "/products/bike");
+    const pushState = vi.spyOn(window.history, "pushState");
+    const anchor = mount(<InstantLink href="/products/bike">Bike</InstantLink>);
+
+    fire(anchor, "click");
+
+    expect(navigated).toHaveBeenCalledTimes(1);
+    expect(pushState).not.toHaveBeenCalled();
+  });
+
+  it("commits the address once when mouse-down navigation dispatches the click", () => {
+    vi.stubEnv("NEXT_PUBLIC_NAV_MOUSEDOWN", "true");
+    const pushState = vi.spyOn(window.history, "pushState");
+    const anchor = mount(<InstantLink href="/products/bike">Bike</InstantLink>);
+
+    fire(anchor, "mousedown");
+    fire(anchor, "click");
+
+    expect(navigated).toHaveBeenCalledTimes(1);
+    expect(pushState).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe("/products/bike");
   });
 });

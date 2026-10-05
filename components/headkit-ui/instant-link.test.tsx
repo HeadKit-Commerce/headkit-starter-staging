@@ -9,6 +9,7 @@ import {
 import {
   InstantLink,
   mouseDownNavigationRefusal,
+  optimisticHistoryUrl,
 } from "@/components/headkit-ui/instant-link";
 
 const { observedPrefetch } = vi.hoisted(() => ({
@@ -340,5 +341,41 @@ describe("mouseDownNavigationRefusal", () => {
     expect(
       mouseDownNavigationRefusal({ ...plainLeftClick, anchorDownload: true }),
     ).toBe("download");
+  });
+});
+
+const here = {
+  origin: "https://shop.example",
+  pathname: "/collections/road",
+  search: "",
+  hash: "",
+};
+
+describe("optimisticHistoryUrl", () => {
+  it("returns the destination path, search, and hash for an in-app href", () => {
+    expect(
+      optimisticHistoryUrl("/products/bike?color=red#gallery", here),
+    ).toBe("/products/bike?color=red#gallery");
+  });
+
+  it("resolves a relative href against the current page", () => {
+    expect(optimisticHistoryUrl("bike", here)).toBe("/collections/bike");
+  });
+
+  it("returns null when the address is already showing that href", () => {
+    expect(optimisticHistoryUrl("/collections/road", here)).toBeNull();
+    expect(
+      optimisticHistoryUrl("/collections/road?page=2", {
+        ...here,
+        search: "?page=2",
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for another origin, a bad href, and a non-url", () => {
+    expect(
+      optimisticHistoryUrl("https://other.example/products/bike", here),
+    ).toBeNull();
+    expect(optimisticHistoryUrl("http://[bad", here)).toBeNull();
   });
 });
