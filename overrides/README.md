@@ -147,6 +147,7 @@ The starter ships **hook classes** on key layout regions so you can target them 
 | `headkit-collection`          | PLP / collection grid shell                      | Filters, grid, load-more           |
 | `headkit-product-card`        | Individual product card                          | Card image, title, price, swatches |
 | `headkit-product-detail`      | PDP (product detail)                             | Gallery + buy box layout           |
+| `headkit-pdp-gallery`         | PDP image gallery (`data-pdp-gallery`, `[data-gallery-tile]`, `[data-gallery-lead]`) | Tile aspect and lead image fit. Arrangement comes from dashboard branding. |
 | `headkit-badge-new`           | “New” product badge                              | Colour, hide, typography           |
 | `headkit-badge-sale`          | “Sale” product badge                             | Colour, hide, typography           |
 | `headkit-badge-cart`          | Cart quantity badge on icon                      | Badge colour / size                |
