@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+
+vi.mock("react-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-dom")>("react-dom");
+  return { ...actual, preload: () => {} };
+});
 import { ProductImageGallery } from "./product-image-gallery";
 
 vi.mock("next/image", () => ({
@@ -12,6 +17,13 @@ vi.mock("next/image", () => ({
       className={props.className}
     />
   ),
+  getImageProps: ({ src }: { src: string }) => ({
+    props: {
+      src: typeof src === "string" ? src : "",
+      srcSet: typeof src === "string" ? `${src} 800w` : "",
+      sizes: "100vw",
+    },
+  }),
 }));
 
 vi.mock("@/components/icon", () => ({

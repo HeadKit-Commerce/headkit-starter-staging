@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import Image, { getImageProps } from "next/image";
+import { preload } from "react-dom";
 import { cn } from "@/lib/utils";
 import { BadgeList } from "@/components/headkit-ui/badge-list";
 import type { CustomProductBadge } from "@/lib/product-badges";
@@ -48,6 +49,47 @@ const FALLBACK_ITEM: GalleryImage = {
   alt: "No product image available",
 };
 const SWIPE_THRESHOLD_PX = 40;
+const MOBILE_GALLERY_MEDIA = "(max-width: 767px)";
+const DESKTOP_GALLERY_MEDIA = "(min-width: 768px)";
+
+/**
+ * The gallery renders a phone carousel and a desktop layout from the same
+ * photo. `priority` on both would preload both encodes on every device.
+ * Each preload is scoped with `media`, and the `<img>` copies stay lazy so a
+ * `display: none` layout is not fetched.
+ */
+function preloadGalleryLcp(src: string): void {
+  const mobile = getImageProps({
+    alt: "",
+    src,
+    fill: true,
+    sizes: "100vw",
+  });
+  const desktop = getImageProps({
+    alt: "",
+    src,
+    fill: true,
+    sizes: "(min-width: 768px) 50vw, 100vw",
+  });
+  if (mobile.props.srcSet) {
+    preload(mobile.props.src, {
+      as: "image",
+      imageSrcSet: mobile.props.srcSet,
+      imageSizes: "100vw",
+      media: MOBILE_GALLERY_MEDIA,
+      fetchPriority: "high",
+    });
+  }
+  if (desktop.props.srcSet) {
+    preload(desktop.props.src, {
+      as: "image",
+      imageSrcSet: desktop.props.srcSet,
+      imageSizes: "(min-width: 768px) 50vw, 100vw",
+      media: DESKTOP_GALLERY_MEDIA,
+      fetchPriority: "high",
+    });
+  }
+}
 
 interface GalleryTileProps {
   item: GalleryImage;
@@ -146,6 +188,11 @@ export function ProductImageGallery({
       ]
     : baseImages;
 
+  const lcpSrc = galleryImages[0]?.src;
+  if (lcpSrc && lcpSrc !== FALLBACK_IMAGE_SRC && !galleryImages[0]?.videoId) {
+    preloadGalleryLcp(lcpSrc);
+  }
+
   // Reset selection when the image set changes (e.g. colourway swap).
   const galleryKey = galleryImages.map((img) => img.src).join("|");
   useEffect(() => {
@@ -214,11 +261,8 @@ export function ProductImageGallery({
                   ? "object-cover object-center"
                   : "object-cover object-top"
               }
-              sizes={
-                selectedIndex === 0 ? "(min-width: 768px) 50vw, 100vw" : "100vw"
-              }
-              priority={selectedIndex === 0}
-              fetchPriority={selectedIndex === 0 ? "high" : "auto"}
+              sizes="100vw"
+              loading="lazy"
               draggable={false}
             />
           </div>
@@ -270,8 +314,7 @@ export function ProductImageGallery({
                     item={galleryImages[selectedIndex] ?? FALLBACK_ITEM}
                     className="object-cover object-center"
                     sizes="(min-width: 768px) 50vw, 100vw"
-                    priority
-                    fetchPriority="high"
+                    loading="lazy"
                     draggable={false}
                   />
                 </div>
@@ -411,9 +454,7 @@ export function ProductImageGallery({
                         : "object-cover object-top"
                     }
                     sizes="(min-width: 768px) 50vw, 100vw"
-                    priority={index === 0}
-                    fetchPriority={index === 0 ? "high" : "auto"}
-                    loading={index === 0 ? undefined : "lazy"}
+                    loading="lazy"
                   />
                 </div>
               </DialogTrigger>
@@ -465,9 +506,7 @@ export function ProductImageGallery({
                       ? "(min-width: 768px) 50vw, 100vw"
                       : "(min-width: 768px) 25vw, 100vw"
                   }
-                  priority={index === 0}
-                  fetchPriority={index === 0 ? "high" : "auto"}
-                  loading={index === 0 ? undefined : "lazy"}
+                  loading="lazy"
                 />
               </div>
             </DialogTrigger>

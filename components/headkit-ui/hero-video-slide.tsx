@@ -1,7 +1,7 @@
 "use client";
 
-import { getImageProps } from "next/image";
 import { useEffect, useState } from "react";
+import { ArtDirectedImage } from "@/components/headkit-ui/art-directed-image";
 import { AutoplayVideo } from "@/components/headkit-ui/autoplay-video";
 
 /**
@@ -80,54 +80,17 @@ export function HeroVideoSlide({
 
   const mobilePoster = posterSrc || desktopPosterSrc || "";
   const widePoster = desktopPosterSrc || posterSrc || "";
-  const poster = mobilePoster
-    ? getImageProps({
-        alt: posterAlt,
-        src: mobilePoster,
-        sizes: "100vw",
-        width: 768,
-        height: 768,
-        quality: 50,
-        priority: isLcp,
-      })
-    : null;
-  const wide =
-    widePoster && widePoster !== mobilePoster
-      ? getImageProps({
-          alt: posterAlt,
-          src: widePoster,
-          sizes: "100vw",
-          width: 1920,
-          height: 1080,
-          quality: 65,
-          // Do not preload the desktop encode on a phone.
-          priority: false,
-        })
-      : null;
 
   return (
     <>
-      {poster ? (
-        <picture>
-          {wide ? (
-            <source
-              media="(min-width: 768px)"
-              srcSet={wide.props.srcSet}
-              sizes={wide.props.sizes}
-            />
-          ) : null}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            {...poster.props}
-            alt={posterAlt}
-            className="h-full w-full object-cover"
-            width={768}
-            height={768}
-            fetchPriority={isLcp ? "high" : "low"}
-            decoding={isLcp ? "sync" : "async"}
-            loading={isLcp ? "eager" : "lazy"}
-          />
-        </picture>
+      {mobilePoster ? (
+        <ArtDirectedImage
+          mobileSrc={mobilePoster}
+          desktopSrc={widePoster}
+          alt={posterAlt}
+          isLcp={isLcp}
+          className="h-full w-full object-cover"
+        />
       ) : null}
       {src ? (
         <AutoplayVideo

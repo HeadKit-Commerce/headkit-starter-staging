@@ -92,6 +92,12 @@ const Carousel = <T,>({
   const [canScrollNext, setCanScrollNext] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // The first paint is already the active slide. Adding the 1s cross-fade
+  // only after mount keeps that paint from waiting out the transition.
+  const [fadeReady, setFadeReady] = useState(false);
+  useEffect(() => {
+    setFadeReady(true);
+  }, []);
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   /** True only after measure shows items fit — never center before that (mobile overflow). */
@@ -323,7 +329,9 @@ const Carousel = <T,>({
                     "w-full",
                     // Opacity crossfade only when there is another slide to
                     // blend with — a single slide must stay fully opaque.
-                    multi && "transition-opacity duration-1000 ease-in-out",
+                    multi &&
+                      fadeReady &&
+                      "transition-opacity duration-1000 ease-in-out",
                     active
                       ? "z-10 opacity-100"
                       : "pointer-events-none z-0 opacity-0",

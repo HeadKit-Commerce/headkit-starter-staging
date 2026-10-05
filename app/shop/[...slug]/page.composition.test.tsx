@@ -137,8 +137,7 @@ describe("shop/[...slug] — cached content renders in the page segment", () => 
       searchParams: searchParams.promise,
     }) as ReactElement<{ children: ReactElement }>;
 
-    expect(element.type).toBe(Suspense);
-    expect(element.props.children.type).toBe(ShopRoute);
+    expect(element.type).toBe(ShopRoute);
     expect(searchParams.awaited()).toBe(false);
   });
 
@@ -211,9 +210,8 @@ describe("shop/[...slug] — the category branch renders in the static shell", (
     }) as ReactElement<{ children: ReactElement }>;
     expect(
       pageElement.type,
-      "the page returns the Instant Navigation shell without awaiting the category",
-    ).toBe(Suspense);
-    expect(pageElement.props.children.type).toBe(ShopRoute);
+      "the cached category renders in the segment, not behind a skeleton boundary",
+    ).toBe(ShopRoute);
 
     const element = (await ShopRoute({
       params: Promise.resolve({ slug: ["clothing", "hoodies"] }),

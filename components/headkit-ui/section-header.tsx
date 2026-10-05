@@ -47,6 +47,7 @@ export function SectionHeader({
         <div className="shrink-0 font-semibold md:pb-0.5">
           <InstantLink
             href={allButtonPath || "/"}
+            prefetch={true}
             pendingVariant="text"
             target={allButtonTarget ?? ""}
             className="underline"
