@@ -5,6 +5,7 @@ import {
   BUILD_PAGE_CEILING,
   FACET_PRODUCT_SKU_CEILING,
   FACETS_PER_CATEGORY_DISCOVERY_CEILING,
+  MEDIUM_FACET_PAGE_BUDGET,
   facetPageRoom,
   facetPlanFromStatus,
   productPagesForPlan,
@@ -20,6 +21,7 @@ function plan(
     paths: [],
     reason: "test",
     total: null,
+    bulkPrefetch: false,
     ...partial,
   };
 }
@@ -33,9 +35,9 @@ describe("facet catalogue plan", () => {
     expect(facetPlanFromStatus({ total: 2677, reason: "enabled" }).mode).toBe(
       "all",
     );
-    expect(facetPlanFromStatus({ total: FACET_PRODUCT_SKU_CEILING }).mode).toBe(
-      "all",
-    );
+    expect(
+      facetPlanFromStatus({ total: FACET_PRODUCT_SKU_CEILING }).mode,
+    ).toBe("all");
   });
 
   it("does not discover facets for a catalogue over the ceiling", () => {
@@ -88,10 +90,44 @@ describe("page room", () => {
 
   it("emits none of a discovered set that is larger than the room", () => {
     const bike = plan({ mode: "all", total: 2677, reason: "enabled" });
-    // Room is 346. 687 is the measured indexable set. Not a prefix of it.
+    // Room is 346 when each product page pays an origin read. 687 is the
+    // measured indexable set. Not a prefix of it.
     expect(shouldEmitCollectionFacets(bike, 154, 687)).toBe(false);
     expect(shouldEmitCollectionFacets(bike, 154, 346)).toBe(true);
     expect(shouldEmitCollectionFacets(bike, 154, 347)).toBe(false);
+  });
+
+  it("gives a bulk-prefetched catalogue its own facet budget, outside the known collection pages", () => {
+    const status = facetPlanFromStatus({
+      total: 2677,
+      enabled: true,
+      reason: "enabled",
+    });
+    expect(status.bulkPrefetch).toBe(true);
+    expect(status.mode).toBe("all");
+    const categories = 154;
+    expect(facetPageRoom(status, categories)).toBe(MEDIUM_FACET_PAGE_BUDGET);
+    expect(shouldDiscoverCollectionFacets(status, categories)).toBe(true);
+    // 687 is the measured indexable set. It is emitted whole. A set past
+    // the facet budget is not sliced down to the budget.
+    expect(shouldEmitCollectionFacets(status, categories, 687)).toBe(true);
+    expect(
+      shouldEmitCollectionFacets(status, categories, MEDIUM_FACET_PAGE_BUDGET),
+    ).toBe(true);
+    expect(
+      shouldEmitCollectionFacets(
+        status,
+        categories,
+        MEDIUM_FACET_PAGE_BUDGET + 1,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not treat bulk prefetch as facet room once the catalogue is over the SKU ceiling", () => {
+    const large = facetPlanFromStatus({ total: 20_000, enabled: true });
+    expect(large.mode).toBe("on-demand");
+    expect(large.bulkPrefetch).toBe(true);
+    expect(shouldDiscoverCollectionFacets(large, 400)).toBe(false);
   });
 
   it("obeys an explicit commerce mode", () => {
