@@ -1,0 +1,3 @@
+{
+  "installCommand": "echo $HEADKIT_NPM_TOKEN | base64 -d > /tmp/gcp-sa.json && GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-sa.json npx --yes google-artifactregistry-auth && bun install"
+}
