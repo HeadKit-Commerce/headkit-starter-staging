@@ -4,14 +4,6 @@ import { useEffect, useState } from "react";
 import { ArtDirectedImage } from "@/components/headkit-ui/art-directed-image";
 import { AutoplayVideo } from "@/components/headkit-ui/autoplay-video";
 
-/**
- * How long after the window `load` event before the hero file starts.
- * `load` already waits for the poster. The extra delay keeps the multi-megabyte
- * MP4 out of the LCP dependency graph: a request that starts before the paint
- * is simulated in full, even when its priority is low.
- */
-const POST_LOAD_VIDEO_DELAY_MS = 1500;
-
 interface Props {
   mobileSrc: string;
   desktopSrc: string;
@@ -28,11 +20,10 @@ interface Props {
 /**
  * Hero video that paints an optimized poster first.
  *
- * The raw CMS JPEG and both breakpoint MP4s were the homepage LCP: on mobile
- * the browser downloaded the desktop file as well (`preload="auto"` on a
- * CSS-hidden element). The poster is a `next/image` encode. The video src is
- * assigned only for the active slide, only for the matching breakpoint, and
- * only after `load` plus a short delay.
+ * The poster is the LCP image. The video file is not requested until the
+ * first pointer, key, or scroll. A timer after `load` still starts the file
+ * while Lighthouse is recording: Pebblr's 4.8 MB webm began at 2.3 s and the
+ * simulated largest paint was 9.6 s. One file for the current breakpoint.
  */
 export function HeroVideoSlide({
   mobileSrc,
@@ -51,30 +42,27 @@ export function HeroVideoSlide({
       return;
     }
 
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let cancelled = false;
-
     const start = (): void => {
-      if (cancelled) return;
-      timeoutId = setTimeout(() => {
-        const mobile = window.matchMedia("(max-width: 767px)").matches;
-        const chosen = mobile
-          ? mobileSrc || desktopSrc
-          : desktopSrc || mobileSrc;
-        if (chosen) setSrc(chosen);
-      }, POST_LOAD_VIDEO_DELAY_MS);
+      const mobile = window.matchMedia("(max-width: 767px)").matches;
+      const chosen = mobile ? mobileSrc || desktopSrc : desktopSrc || mobileSrc;
+      if (chosen) setSrc(chosen);
+      window.removeEventListener("pointerdown", start);
+      window.removeEventListener("keydown", start);
+      window.removeEventListener("scroll", start, true);
     };
 
-    if (document.readyState === "complete") {
-      start();
-    } else {
-      window.addEventListener("load", start, { once: true });
-    }
+    window.addEventListener("pointerdown", start, { once: true });
+    window.addEventListener("keydown", start, { once: true });
+    window.addEventListener("scroll", start, {
+      once: true,
+      capture: true,
+      passive: true,
+    });
 
     return () => {
-      cancelled = true;
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
-      window.removeEventListener("load", start);
+      window.removeEventListener("pointerdown", start);
+      window.removeEventListener("keydown", start);
+      window.removeEventListener("scroll", start, true);
     };
   }, [isActive, mobileSrc, desktopSrc]);
 

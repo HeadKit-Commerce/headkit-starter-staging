@@ -96,8 +96,17 @@ afterEach(() => {
 });
 
 describe("GoogleTagManager from @next/third-parties", () => {
-  it("mounts gtm.js after hydration when the consent gate is off", () => {
+  it("does not mount gtm.js before a gesture", () => {
     render(false);
+    expect(gtmScripts()).toHaveLength(0);
+    expect(consentCommands()).toHaveLength(0);
+  });
+
+  it("mounts gtm.js on the first gesture when the consent gate is off", () => {
+    render(false);
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
     expect(gtmScripts()).toHaveLength(1);
     expect(gtmScripts()[0]?.async).toBe(true);
     expect(consentCommands()).toHaveLength(0);
@@ -105,6 +114,9 @@ describe("GoogleTagManager from @next/third-parties", () => {
 
   it("pushes the consent default before gtm.start when the gate is on", () => {
     render(true);
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
     expect(gtmScripts()).toHaveLength(1);
     expect(consentCommands()).toHaveLength(1);
     expect(indexOfConsentCommand()).toBeGreaterThanOrEqual(0);
