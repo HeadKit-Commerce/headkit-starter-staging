@@ -263,8 +263,7 @@ export default async function RootLayout({
         not next/font body classNames (those fought the layered body rule).
       */}
       <body className="antialiased font-sans">
-        {/* Marketing tags (GTM / Klaviyo / HubSpot) — idle + gesture deferred so
-            they stay off the LCP / TBT critical path (mobile CWV). */}
+        {/* Marketing tags. GTM is GoogleTagManager from @next/third-parties. */}
         <DeferredThirdPartyScripts
           gtmId={gtmId}
           klaviyoPublicKey={klaviyoPublicKey}
