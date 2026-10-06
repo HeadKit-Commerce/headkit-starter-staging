@@ -27,12 +27,15 @@
  * the catalogues that already finish inside the kill (a measured store at
  * 2,677 products and about 4,000 shop URLs) and below a 20,000-SKU catalogue,
  * whose bulk fetch alone is ~22 minutes before any HTML is rendered. A store
- * over the line builds no product HTML. The API field replaces this comparison
- * the moment it is present, including when commerce wants `all` for a catalogue
- * this ceiling would have held back.
+ * over the line builds no product HTML. A directed `all`, or an `on-demand`
+ * that names a reason or a hot set, replaces this comparison. An `on-demand`
+ * with no reason and no paths is a zero mode, not a measured refusal, so a
+ * counted catalogue under the ceiling still builds.
  *
- * Failure is build-safe. A thrown status call answers `on-demand`, so an
- * unknown catalogue cannot walk itself into the 45-minute kill. A client whose
+ * Failure is build-safe, and it is never silent: a thrown status call is
+ * retried once and then answers `on-demand` with the error message in the
+ * build log, so an unknown catalogue cannot walk itself into the 45-minute
+ * kill and a dead product pass cannot hide as a bare reason. A client whose
  * SDK has no `bulkStatus` (older storefronts, and the unit-test doubles) answers
  * `all`: those catalogues are the ones this method predates, and their
  * `generateStaticParams` tests enumerate real products.
@@ -59,7 +62,9 @@ export interface ProductPrerenderPlan {
  * type (TS2559). `object` accepts the class either way; a missing method is
  * the `all` path below.
  */
-function bulkStatusOf(products: object): (() => Promise<unknown>) | undefined {
+function bulkStatusOf(
+  products: object,
+): (() => Promise<unknown>) | undefined {
   if (!("bulkStatus" in products)) return undefined;
   const bulkStatus = products.bulkStatus;
   if (typeof bulkStatus !== "function") return undefined;
@@ -128,6 +133,24 @@ export function planFromStatus(status: unknown): ProductPrerenderPlan {
   const total = readTotal(status);
   const directed = readDirected(status);
   if (directed) {
+    // A zero `prerender.mode` is serialised as on-demand with no reason and
+    // no hot set. That is not a measured refusal: commerce's real refusals
+    // name `probe_failed`, `sku_ceiling`, or `OVER_URL_BUDGET`. A counted
+    // catalogue at or under the ceiling still builds every product URL.
+    if (
+      directed.mode === "on-demand" &&
+      directed.paths.length === 0 &&
+      directed.reason === "API_ON_DEMAND" &&
+      total !== null &&
+      total <= PRODUCT_PRERENDER_SKU_CEILING
+    ) {
+      return {
+        mode: "all",
+        paths: [],
+        reason: `SKU_CEILING ${total}<=${PRODUCT_PRERENDER_SKU_CEILING}`,
+        total,
+      };
+    }
     return {
       mode: directed.mode,
       paths: directed.paths,
@@ -142,12 +165,7 @@ export function planFromStatus(status: unknown): ProductPrerenderPlan {
     return { mode: "on-demand", paths: [], reason: "PROBE_FAILED", total };
   }
   if (total === null) {
-    return {
-      mode: "on-demand",
-      paths: [],
-      reason: "TOTAL_UNKNOWN",
-      total: null,
-    };
+    return { mode: "on-demand", paths: [], reason: "TOTAL_UNKNOWN", total: null };
   }
   if (total > PRODUCT_PRERENDER_SKU_CEILING) {
     return {
@@ -165,11 +183,15 @@ export function planFromStatus(status: unknown): ProductPrerenderPlan {
   };
 }
 
-function logPlan(plan: ProductPrerenderPlan): void {
+function logDuringBuild(message: string): void {
   // Proof is the build log, the same way bulk prefetch is. Unit tests and
   // runtime requests do not run inside `next build`.
   if (process.env.NEXT_PHASE !== "phase-production-build") return;
-  console.log(`[product-prerender] ${plan.mode} (${plan.reason})`);
+  console.log(message);
+}
+
+function logPlan(plan: ProductPrerenderPlan): void {
+  logDuringBuild(`[product-prerender] ${plan.mode} (${plan.reason})`);
 }
 
 /** Ask commerce, then {@link planFromStatus}. Never throws. */
@@ -181,14 +203,31 @@ export async function readProductPrerenderPlan(
     logPlan(ALL_WITHOUT_STATUS);
     return ALL_WITHOUT_STATUS;
   }
-  try {
-    const plan = planFromStatus(await bulkStatus());
-    logPlan(plan);
-    return plan;
-  } catch {
-    logPlan(ON_DEMAND_UNAVAILABLE);
-    return ON_DEMAND_UNAVAILABLE;
+  // Call with the products client as `this`. Pulling the method off the class
+  // and invoking it bare throws inside the SDK (`this.opts` is undefined), and
+  // that throw used to become "no product HTML" with nothing in the build log
+  // but a bare PLAN_UNAVAILABLE. `lib/collection-facet-plan.ts` reads the same
+  // endpoint and was fixed the same way; keep the two explainable side by side.
+  //
+  // Retry once, as the facet module does, and for the same reason: the two
+  // modules ask the same endpoint in the same build, so a single flaky read
+  // must not be able to leave one answering `all` and the other refusing.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const plan = planFromStatus(await bulkStatus.call(products));
+      logPlan(plan);
+      return plan;
+    } catch (error) {
+      lastError = error;
+    }
   }
+  // Carry the cause. A silent catch here hid a dead product pass for four days.
+  const message = lastError instanceof Error ? lastError.message : "unknown";
+  logDuringBuild(
+    `[product-prerender] ${ON_DEMAND_UNAVAILABLE.mode} (${ON_DEMAND_UNAVAILABLE.reason}) status read failed (${message})`,
+  );
+  return ON_DEMAND_UNAVAILABLE;
 }
 
 /**
