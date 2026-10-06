@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/headkit-ui/auth-context";
 import { useCartContext } from "@/components/headkit-ui/cart-context";
-import { SearchDrawer } from "@/components/headkit-ui/search-drawer";
+import { SearchDrawer } from "@/components/headkit-ui/lazy-search-drawer";
 import { useChromeIcons } from "@/components/branding/branding-icons-provider";
 import { useIsQuoteMode } from "@/components/checkout/checkout-mode-provider";
 import { PlusIcon } from "@/components/icon";

@@ -29,7 +29,7 @@ import { isAppNavigationHref } from "@/lib/convert-uri";
 import { normalizeMenuTree, toMegaMenuColumns } from "@/lib/menu-columns";
 import { cn, decodeHtmlEntities } from "@/lib/utils";
 import { HeaderActions } from "@/components/headkit-ui/header-actions";
-import { CartTriggerButton } from "@/components/headkit-ui/cart-drawer";
+import { CartTriggerButton } from "@/components/headkit-ui/cart-trigger-button";
 import {
   HEADER_REGION_ATTRIBUTE,
   publishHeaderBottom,
