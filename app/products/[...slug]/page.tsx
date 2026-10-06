@@ -44,6 +44,7 @@ import {
   collectionPathFromSegments,
   productCategorySegments,
   productPath,
+  productShopSegments,
 } from "@/lib/canonical-path";
 import {
   productRedirectTarget,
@@ -169,9 +170,15 @@ export async function generateStaticParams(): Promise<{ slug: string[] }[]> {
     while (hasMore) {
       const result = await headkit.products.list({}, page, 100);
       for (const product of result.products) {
+        // A permalink under /shop 308s off this route. Building it anyway
+        // is a second page per product that only redirects. On Bike Society
+        // that was 2,678 flat pages on top of about 4,056 shop URLs (7,834
+        // total), which does not finish. The shop route emits the canonical
+        // URL, including colourways. A product with no /shop permalink stays
+        // here: this path is its canonical page.
+        if (productShopSegments(product)) continue;
+        if (!product.slug) continue;
         params.push({ slug: [product.slug] });
-        // Colourway URLs belong to the nested route. This flat route 308s
-        // them, and prerendering a redirect spends the build on the redirect.
       }
       hasMore = page < result.totalPages;
       page++;
