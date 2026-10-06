@@ -83,7 +83,7 @@ vi.mock("@/components/headkit-ui/header-actions", () => ({
   MobileHeaderActions: () => <div data-stub="mobile-header-actions" />,
 }));
 
-vi.mock("@/components/headkit-ui/cart-drawer", () => ({
+vi.mock("@/components/headkit-ui/cart-trigger-button", () => ({
   CartTriggerButton: () => <button type="button" data-stub="cart" />,
 }));
 

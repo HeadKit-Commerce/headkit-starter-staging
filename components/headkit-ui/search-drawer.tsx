@@ -23,6 +23,8 @@ import { searchProducts } from "@/lib/search-actions";
 interface SearchDrawerProps {
   /** Custom trigger element. If not provided, uses default search icon button. */
   trigger?: ReactNode;
+  /** Open on mount, after the header has loaded this chunk. */
+  defaultOpen?: boolean;
 }
 
 function debounce<T extends unknown[]>(
@@ -36,11 +38,11 @@ function debounce<T extends unknown[]>(
   };
 }
 
-export function SearchDrawer({ trigger }: SearchDrawerProps) {
+export function SearchDrawer({ trigger, defaultOpen = false }: SearchDrawerProps) {
   const router = useRouter();
   const { Search } = useChromeIcons();
   const { showVariants } = useCatalogDisplay();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [products, setProducts] = useState<ProductSummaryFieldsFragment[]>([]);
