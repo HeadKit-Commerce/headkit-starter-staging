@@ -26,6 +26,7 @@ import {
   PageWithOptionalForm,
   shopifyFormUsesSideColumn,
 } from "@/overrides/page-form-layout";
+import { decodeHtmlEntities } from "@/lib/utils";
 
 /** Satisfies Cache Components: `generateStaticParams` must not return []. */
 const STATIC_GEN_PLACEHOLDER_SLUG = "__hk_static_placeholder";
@@ -302,7 +303,7 @@ async function CmsRoute({ params }: Props) {
   // BreadcrumbList JSON-LD (D-04 core type) built from the page slug/title.
   const breadcrumbItems = [
     { name: "Home", href: "/" },
-    { name: page.title, href: `/${slug.join("/")}` },
+    { name: decodeHtmlEntities(page.title), href: `/${slug.join("/")}` },
   ];
 
   const html = page.content ?? "";

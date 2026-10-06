@@ -5,6 +5,7 @@ import {
   processHomepageContent,
   type RawEditorBlock,
 } from "@/lib/process-editor-blocks";
+import { decodeHtmlEntities } from "@/lib/utils";
 import {
   preparePageHtml,
   renderPageMediaSegment,
@@ -96,6 +97,10 @@ export async function CmsPageBody({
   formFallback,
   splitMedia = true,
 }: Props): Promise<React.JSX.Element> {
+  // WordPress `title.rendered` is already entity-encoded. The document
+  // title is decoded in makeSeoMetadata. This heading is a text node, so
+  // it needs the same decode or React escapes the ampersand again.
+  const heading = decodeHtmlEntities(title);
   const rawBlocks = editorBlocks ?? [];
   html = preparePageHtml(html);
   const { segments, blocks } = processHomepageContent(html, rawBlocks);
@@ -107,7 +112,7 @@ export async function CmsPageBody({
   // No HeadKit section patterns — title + editorial (GF markers in place).
   if (blocks.length === 0) {
     const columns = renderPageMediaSegment({
-      title,
+      title: heading,
       showTitle: true,
       html,
       formFallback,
@@ -118,7 +123,7 @@ export async function CmsPageBody({
     }
     return (
       <div className={CONTENT_PAD}>
-        <h1 className="text-primary">{title}</h1>
+        <h1 className="text-primary">{heading}</h1>
         <div className="mt-5">
           <EditorialContent html={html} formFallback={formFallback} />
         </div>
@@ -146,7 +151,7 @@ export async function CmsPageBody({
               html={seg.html}
               formFallback={formFallback}
               showTitle={showTitle}
-              title={title}
+              title={heading}
               splitMedia={splitMedia}
             />
           </section>
@@ -154,7 +159,7 @@ export async function CmsPageBody({
       })}
       {!suppressPageTitle && !titleShown ? (
         <section className={CONTENT_PAD}>
-          <h1 className="text-primary">{title}</h1>
+          <h1 className="text-primary">{heading}</h1>
         </section>
       ) : null}
     </>

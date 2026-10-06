@@ -13,6 +13,7 @@ import { EditorialContent } from "@/components/headkit-ui/editorial-content";
 import { env } from "@/lib/env";
 import { isShopifyStorefront } from "@/lib/shopify-storefront";
 import { getPageData } from "@/app/[...slug]/page";
+import { decodeHtmlEntities } from "@/lib/utils";
 
 /**
  * Wholesale is a WordPress page (slug `wholesale`), restored from history —
@@ -80,7 +81,7 @@ export default async function WholesalePage(): Promise<React.ReactElement> {
       <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
         {/* Left column — editorial content from WordPress / Shopify page */}
         <div>
-          <h1 className="mb-6 text-3xl font-bold">{page.title}</h1>
+          <h1 className="mb-6 text-3xl font-bold">{decodeHtmlEntities(page.title)}</h1>
           <EditorialContent html={page.content ?? ""} />
         </div>
 
