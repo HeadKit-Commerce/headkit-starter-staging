@@ -1,5 +1,3 @@
-"use client";
-
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { ProjectCard } from "./project-card";
 import type { ProjectSummaryFieldsFragment } from "@headkit/sdk";
@@ -16,12 +14,17 @@ export function ProjectCarousel({
 }: ProjectCarouselProps): React.ReactElement {
   return (
     <Carousel
-      items={projects}
-      renderItem={(project) => (
-        <ProjectCard project={project} imageAspect={imageAspect} />
-      )}
       className="w-full pb-8"
       showPagination={false}
-    />
+    
+    >
+      {projects.map((project, index) => (
+
+        <ProjectCard
+
+          key={index} project={project} imageAspect={imageAspect} />
+      
+      ))}
+    </Carousel>
   );
 }

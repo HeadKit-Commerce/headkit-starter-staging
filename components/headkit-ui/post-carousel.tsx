@@ -1,5 +1,3 @@
-"use client";
-
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { PostCard } from "@/components/headkit-ui/post-card";
 import { DEFAULT_POSTS_BASE_PATH } from "@/lib/posts-path";
@@ -17,18 +15,23 @@ const PostCarousel = ({
 }: Props) => {
   return (
     <Carousel
-      items={posts}
-      renderItem={(post) => (
+      className="w-full pb-8"
+      showPagination={false}
+    
+    >
+      {posts.map((post, index) => (
+
         <PostCard
+
+          key={index}
           title={post.title}
           image={post?.featuredImage?.src ?? ""}
           uri={post.uri ?? post.slug}
           postsBasePath={postsBasePath}
         />
-      )}
-      className="w-full pb-8"
-      showPagination={false}
-    />
+      
+      ))}
+    </Carousel>
   );
 };
 

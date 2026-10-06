@@ -1,8 +1,9 @@
-"use client";
-
 import { CAROUSEL_CARD_IMAGE_SIZES } from "@/components/headkit-ui/catalog-grid";
 import { Carousel } from "@/components/headkit-ui/carousel";
-import { ProductCard } from "@/components/headkit-ui/product-card";
+import { ProductSlide } from "@/components/headkit-ui/product-slide";
+import { getBranding } from "@/lib/branding";
+import { clientThemeSlice } from "@/lib/client-theme";
+import { getStoreTheme } from "@/lib/store-theme";
 import type { ProductSummaryFieldsFragment } from "@headkit/sdk";
 import {
   collapseCatalogProducts,
@@ -21,6 +22,19 @@ interface Props {
    * them; this count no longer withholds the rest.
    */
   prefetchCount?: number;
+  /** Store forks (Bike Society) pass their shared card-carousel track. */
+  gap?: string;
+  itemSizing?: {
+    base: string;
+    sm?: string;
+    lg?: string;
+    xl?: string;
+    "2xl"?: string;
+  };
+  stacked?: boolean;
+  emphasizeTitle?: boolean;
+  badgeClassName?: string;
+  imageClassName?: string;
 }
 
 /**
@@ -31,42 +45,72 @@ interface Props {
 export const CAROUSEL_FIRST_ROW = 4;
 
 /**
- * Deliberately NOT wrapped in a `<Suspense>`. Nothing beneath it suspends —
- * `Carousel` and `ProductCard` are state-and-effects client components — so a
- * boundary here was inert for streaming but not for the static shell: React
- * outlines any completed boundary over `progressiveChunkSize` (12 800 bytes)
- * into a `<div hidden id="S:…">` after the shell, and a carousel of cards is
- * past that budget, so every related / upsell / editorial carousel was hidden
- * with JavaScript off even when fully prerendered. Cached carousels stay in
- * the static shell.
+ * Server Component. Slides are server HTML passed as children, so the card
+ * markup is not part of the carousel client module. Swatch cards are the
+ * exception: they still need the client `ProductCard`, and that module is
+ * imported only when branding has swatches on.
+ *
+ * Not wrapped in Suspense. A completed boundary past the progressive chunk
+ * size is outlined into a hidden segment.
+ * https://nextjs.org/docs/app/getting-started/server-and-client-components
  * https://nextjs.org/docs/app/getting-started/caching#static-cached-and-streaming
  */
-const ProductCarousel = ({
+const ProductCarousel = async ({
   products,
   carouselItemClassName: _carouselItemClassName,
   id = "product-carousel",
   colourwayPins,
   prefetchCount: _prefetchCount = 0,
+  gap,
+  itemSizing,
+  stacked = false,
+  emphasizeTitle = true,
+  badgeClassName,
+  imageClassName,
 }: Props) => {
-  // Carousels always show one colourway per product (never exploded variants).
   const items = collapseCatalogProducts(products, colourwayPins);
+  const branding = (await getBranding()).branding;
+  const theme = clientThemeSlice(getStoreTheme());
+  const track = {
+    id,
+    showPagination: false as const,
+    ...(gap ? { gap } : {}),
+    ...(itemSizing ? { itemSizing } : {}),
+  };
+
+  if (branding.showSwatches) {
+    const { SwatchProductSlide } = await import(
+      "@/components/headkit-ui/product-carousel-swatches"
+    );
+    return (
+      <Carousel {...track}>
+        {items.map((product) => (
+          <SwatchProductSlide
+            key={product.id || product.slug}
+            product={product}
+          />
+        ))}
+      </Carousel>
+    );
+  }
 
   return (
-    <Carousel
-      items={items}
-      renderItem={(product) => (
-        <ProductCard
+    <Carousel {...track}>
+      {items.map((product) => (
+        <ProductSlide
+          key={product.id || product.slug}
           product={product}
-          isNew={product.isNew}
-          prefetch
+          imageRollover={branding.imageRollover}
+          badgeTags={theme.badgeTags}
           imageSizes={CAROUSEL_CARD_IMAGE_SIZES}
           imageQuality={50}
+          stacked={stacked}
+          emphasizeTitle={emphasizeTitle}
+          {...(badgeClassName ? { badgeClassName } : {})}
+          {...(imageClassName ? { imageClassName } : {})}
         />
-      )}
-      itemKey={(product) => product.id || product.slug}
-      id={id}
-      showPagination={false}
-    />
+      ))}
+    </Carousel>
   );
 };
 

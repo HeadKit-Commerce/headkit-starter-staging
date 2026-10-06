@@ -1,5 +1,3 @@
-"use client";
-
 import Image from "next/image";
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
@@ -25,7 +23,6 @@ const BrandCarousel = ({ brands }: Props) => {
 
   return (
     <Carousel
-      items={logos}
       // Original 160px logo slots; 100px gap between logos (not wide columns).
       gap="gap-[100px]"
       padding="px-5 md:px-10"
@@ -37,13 +34,24 @@ const BrandCarousel = ({ brands }: Props) => {
       }}
       showControls={false}
       showScrollbar={false}
-      renderItem={(item) => {
+      className="w-full"
+      autoplay={{
+        enabled: true,
+        delay: 3000,
+        stopOnInteraction: true,
+      }}
+      loop={true}
+      showPagination={false}
+    
+    >
+      {logos.map((item, index) => {
         const href = `/brand/${item?.slug ?? ""}`;
         const src = item.thumbnail.trim();
         const name = decodeHtmlEntities(item?.name ?? "");
 
         return (
           <InstantLink
+            key={index}
             href={href}
             className="relative flex h-[50px] w-[160px] items-center justify-center"
             aria-label={name}
@@ -58,16 +66,9 @@ const BrandCarousel = ({ brands }: Props) => {
             />
           </InstantLink>
         );
-      }}
-      className="w-full"
-      autoplay={{
-        enabled: true,
-        delay: 3000,
-        stopOnInteraction: true,
-      }}
-      loop={true}
-      showPagination={false}
-    />
+      
+      })}
+    </Carousel>
   );
 };
 

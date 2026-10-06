@@ -1,13 +1,19 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useEffect, useState, useRef, ReactNode, useCallback } from "react";
+import { Children, useEffect, useState, useRef, ReactNode, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icon";
 
 interface CarouselProps<T> {
-  items: T[];
-  renderItem: (item: T, index: number) => ReactNode;
+  /**
+   * Server-rendered slides. Pass these instead of `renderItem` so the slide
+   * markup stays a Server Component and is not part of this client module.
+   * https://nextjs.org/docs/app/getting-started/server-and-client-components
+   */
+  children?: ReactNode;
+  items?: T[];
+  renderItem?: (item: T, index: number) => ReactNode;
   carouselItemClassName?: string;
   id?: string;
   className?: string;
@@ -55,6 +61,7 @@ interface CarouselProps<T> {
 const Carousel = <T,>({
   items,
   renderItem,
+  children,
   carouselItemClassName,
   id = "carousel",
   className,
@@ -83,8 +90,10 @@ const Carousel = <T,>({
   onSlideChange,
   itemKey,
 }: CarouselProps<T>) => {
-  const filteredItems =
-    items?.filter((item) => item !== null && item !== undefined) || [];
+  const usingChildren = children != null;
+  const filteredItems = usingChildren
+    ? Children.toArray(children)
+    : items?.filter((item) => item !== null && item !== undefined) || [];
   const isFade = transition === "fade";
   const containerRef = useRef<HTMLDivElement>(null);
   const [canScroll, setCanScroll] = useState(false);
@@ -313,7 +322,7 @@ const Carousel = <T,>({
               const multi = filteredItems.length > 1;
               return (
                 <div
-                  key={itemKey ? itemKey(item, index) : index}
+                  key={usingChildren || !itemKey ? index : itemKey(item as T, index)}
                   id={`${id}-item-${index}`}
                   aria-hidden={!active}
                   // `aria-hidden` alone is a contradiction while the slide's
@@ -338,7 +347,7 @@ const Carousel = <T,>({
                     carouselItemClassName,
                   )}
                 >
-                  {renderItem(item, index)}
+                  {usingChildren ? (item as ReactNode) : renderItem?.(item as T, index)}
                 </div>
               );
             })}
@@ -360,7 +369,7 @@ const Carousel = <T,>({
         >
           {filteredItems.map((item, index) => (
             <div
-              key={itemKey ? itemKey(item, index) : index}
+              key={usingChildren || !itemKey ? index : itemKey(item as T, index)}
               id={`${id}-item-${index}`}
               className={cn(
                 "flex-none",
@@ -369,7 +378,7 @@ const Carousel = <T,>({
                 carouselItemClassName,
               )}
             >
-              {renderItem(item, index)}
+              {usingChildren ? (item as ReactNode) : renderItem?.(item as T, index)}
             </div>
           ))}
         </div>

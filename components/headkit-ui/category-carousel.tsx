@@ -1,5 +1,3 @@
-"use client";
-
 import { CAROUSEL_CARD_IMAGE_SIZES } from "@/components/headkit-ui/catalog-grid";
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { FeaturedImage } from "@/components/headkit-ui/featured-image";
@@ -26,8 +24,11 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
   const cardCta = cardLinkText?.trim() ?? "";
   return (
     <Carousel
-      items={categories}
-      renderItem={(item) => {
+      className="w-full"
+      showPagination={false}
+    
+    >
+      {categories.map((item, index) => {
         // `uri` is PREFERRED because a server caller resolves it to the
         // CANONICAL storefront path via `collectionPathResolver`: a nested
         // category reaches here as `/collections/parent/child`, and synthesising
@@ -57,6 +58,7 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
         const name = decodeHtmlEntities(item?.name ?? "");
         return (
           <InstantLink
+            key={index}
             href={href}
             prefetch={true}
             pendingVariant="card"
@@ -79,10 +81,9 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
             ) : null}
           </InstantLink>
         );
-      }}
-      className="w-full"
-      showPagination={false}
-    />
+      
+      })}
+    </Carousel>
   );
 };
 

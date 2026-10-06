@@ -12,6 +12,11 @@ interface Props {
   hoverSrc?: string | null;
   /** When true and `hoverSrc` differs, cross-fade to the hover layer. */
   showHover?: boolean;
+  /**
+   * Cross-fade on the parent `group` hover. CSS only, so a server-rendered
+   * card does not need a client hover state.
+   */
+  revealOnGroupHover?: boolean;
   alt?: string;
   className?: string;
   /**
@@ -45,6 +50,7 @@ const FeaturedImage = ({
   src,
   hoverSrc,
   showHover = false,
+  revealOnGroupHover = false,
   alt = "",
   className,
   priority = false,
@@ -83,7 +89,14 @@ const FeaturedImage = ({
         priority={priority}
         fetchPriority={priority ? "high" : "auto"}
         quality={imageSrc === FALLBACK_IMAGE_SRC ? 50 : quality}
-        className={cn(objectClass, revealHover ? "opacity-0" : "opacity-100")}
+        className={cn(
+          objectClass,
+          revealOnGroupHover && hasHoverLayer
+            ? "opacity-100 group-hover:opacity-0"
+            : revealHover
+              ? "opacity-0"
+              : "opacity-100",
+        )}
         sizes={sizes}
       />
       {hasHoverLayer ? (
@@ -97,7 +110,14 @@ const FeaturedImage = ({
           fetchPriority="low"
           quality={quality}
           aria-hidden
-          className={cn(objectClass, revealHover ? "opacity-100" : "opacity-0")}
+          className={cn(
+          objectClass,
+          revealOnGroupHover
+            ? "opacity-0 group-hover:opacity-100"
+            : revealHover
+              ? "opacity-100"
+              : "opacity-0",
+        )}
           sizes={sizes}
         />
       ) : null}

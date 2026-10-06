@@ -1,5 +1,3 @@
-"use client";
-
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { PostCard } from "./post-card";
 import { DEFAULT_POSTS_BASE_PATH } from "@/lib/posts-path";
@@ -17,16 +15,21 @@ export function PostCarousel({
 }: PostCarouselProps) {
   return (
     <Carousel
-      items={posts}
-      renderItem={(post) => (
+      className="w-full pb-8"
+      showPagination={false}
+    
+    >
+      {posts.map((post, index) => (
+
         <PostCard
+
+          key={index}
           post={post as PostSummaryFieldsFragment}
           textStyle="dark"
           postsBasePath={postsBasePath}
         />
-      )}
-      className="w-full pb-8"
-      showPagination={false}
-    />
+      
+      ))}
+    </Carousel>
   );
 }
