@@ -94,13 +94,36 @@ describe("readProductPrerenderPlan", () => {
     });
   });
 
-  it("builds nothing when the status call throws", async () => {
+  it("still walks the catalogue when the status call throws", async () => {
     await expect(
       readProductPrerenderPlan({
         bulkStatus: () => Promise.reject(new Error("origin down")),
       }),
-    ).resolves.toMatchObject({ mode: "on-demand", reason: "PLAN_UNAVAILABLE" });
+    ).resolves.toMatchObject({ mode: "all", reason: "STATUS_UNAVAILABLE" });
   });
+
+  it("rebuilds a counted catalogue when on-demand is an empty mode", () => {
+    expect(
+      planFromStatus({
+        total: 2_677,
+        prerender: { mode: "ON_DEMAND", paths: [], reason: "" },
+      }).mode,
+    ).toBe("all");
+    expect(
+      planFromStatus({
+        total: 12,
+        prerender: { mode: "on-demand", reason: "OVER_URL_BUDGET" },
+      }).mode,
+    ).toBe("on-demand");
+    expect(
+      planFromStatus({
+        total: 0,
+        prerender: { mode: "ON_DEMAND", reason: "probe_failed" },
+      }).mode,
+    ).toBe("on-demand");
+  });
+});
+
 });
 
 describe("paramsFromPlanPaths", () => {

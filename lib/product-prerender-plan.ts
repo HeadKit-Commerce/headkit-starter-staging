@@ -31,11 +31,13 @@
  * the moment it is present, including when commerce wants `all` for a catalogue
  * this ceiling would have held back.
  *
- * Failure is build-safe. A thrown status call answers `on-demand`, so an
- * unknown catalogue cannot walk itself into the 45-minute kill. A client whose
- * SDK has no `bulkStatus` (older storefronts, and the unit-test doubles) answers
- * `all`: those catalogues are the ones this method predates, and their
- * `generateStaticParams` tests enumerate real products.
+ * Failure is build-safe in the walk, not by skipping it. A thrown status
+ * call answers `all`: `generateStaticParams` then lists products, and that
+ * list's own catch returns the placeholder when the catalogue cannot be
+ * read. Answering `on-demand` here is what left every store with only the
+ * placeholder param when `bulkStatus` rejected (an older commerce API that
+ * has no `prerender` field does this). A client whose SDK has no
+ * `bulkStatus` also answers `all`.
  */
 
 /** SKU stand-in used only when commerce has not sent `prerender`. */
@@ -128,6 +130,28 @@ export function planFromStatus(status: unknown): ProductPrerenderPlan {
   const total = readTotal(status);
   const directed = readDirected(status);
   if (directed) {
+    // A zero `prerender.mode` is serialised as on-demand with no reason and
+    // no hot set (`API_ON_DEMAND`). Commerce also stamps `sku_ceiling` on
+    // both sides of the cutoff, so that reason with a counted total at or
+    // under the ceiling is the same lost mode, not a measured refusal.
+    // Named refusals (`probe_failed`, `OVER_URL_BUDGET`) and a hot set stay
+    // on demand. A counted catalogue under the ceiling still builds.
+    if (
+      directed.mode === "on-demand" &&
+      directed.paths.length === 0 &&
+      total !== null &&
+      total <= PRODUCT_PRERENDER_SKU_CEILING &&
+      (directed.reason === "API_ON_DEMAND" ||
+        directed.reason === "sku_ceiling" ||
+        directed.reason === "SKU_CEILING")
+    ) {
+      return {
+        mode: "all",
+        paths: [],
+        reason: `SKU_CEILING ${total}<=${PRODUCT_PRERENDER_SKU_CEILING}`,
+        total,
+      };
+    }
     return {
       mode: directed.mode,
       paths: directed.paths,
@@ -186,8 +210,16 @@ export async function readProductPrerenderPlan(
     logPlan(plan);
     return plan;
   } catch {
-    logPlan(ON_DEMAND_UNAVAILABLE);
-    return ON_DEMAND_UNAVAILABLE;
+    // The catalogue walk is what `generateStaticParams` already catches.
+    // Skipping it here is how a rejected status call prerendered no products.
+    const fallback: ProductPrerenderPlan = {
+      mode: "all",
+      paths: [],
+      reason: "STATUS_UNAVAILABLE",
+      total: null,
+    };
+    logPlan(fallback);
+    return fallback;
   }
 }
 
