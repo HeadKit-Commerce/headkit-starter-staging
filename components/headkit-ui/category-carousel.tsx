@@ -1,5 +1,4 @@
-"use client";
-
+import { CAROUSEL_CARD_IMAGE_SIZES } from "@/components/headkit-ui/catalog-grid";
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { FeaturedImage } from "@/components/headkit-ui/featured-image";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
@@ -25,8 +24,11 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
   const cardCta = cardLinkText?.trim() ?? "";
   return (
     <Carousel
-      items={categories}
-      renderItem={(item) => {
+      className="w-full"
+      showPagination={false}
+    
+    >
+      {categories.map((item, index) => {
         // `uri` is PREFERRED because a server caller resolves it to the
         // CANONICAL storefront path via `collectionPathResolver`: a nested
         // category reaches here as `/collections/parent/child`, and synthesising
@@ -56,6 +58,7 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
         const name = decodeHtmlEntities(item?.name ?? "");
         return (
           <InstantLink
+            key={index}
             href={href}
             prefetch={true}
             pendingVariant="card"
@@ -66,6 +69,8 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
               alt={name}
               // Below-fold on home — never compete with the hero LCP image.
               priority={false}
+              quality={50}
+              sizes={CAROUSEL_CARD_IMAGE_SIZES}
               className="aspect-video"
             />
             <h2 className="pt-3 text-[17px] text-primary">{name}</h2>
@@ -76,10 +81,9 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
             ) : null}
           </InstantLink>
         );
-      }}
-      className="w-full"
-      showPagination={false}
-    />
+      
+      })}
+    </Carousel>
   );
 };
 

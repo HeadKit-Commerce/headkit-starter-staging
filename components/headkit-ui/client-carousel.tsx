@@ -1,5 +1,3 @@
-"use client";
-
 import Image from "next/image";
 import { Carousel } from "@/components/headkit-ui/carousel";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
@@ -60,7 +58,6 @@ const ClientCarousel = ({ clients }: Props) => {
 
   return (
     <Carousel
-      items={logos}
       gap="gap-[100px]"
       padding="px-5 md:px-10"
       centerWhenFits
@@ -71,7 +68,17 @@ const ClientCarousel = ({ clients }: Props) => {
       }}
       showControls={false}
       showScrollbar={false}
-      renderItem={(item) => {
+      className="w-full"
+      autoplay={{
+        enabled: true,
+        delay: 3000,
+        stopOnInteraction: true,
+      }}
+      loop={true}
+      showPagination={false}
+    
+    >
+      {logos.map((item, index) => {
         const href = clientHref(item);
         const linkLabel = clientLinkLabel(item);
         const src = item.thumbnail.trim();
@@ -91,7 +98,8 @@ const ClientCarousel = ({ clients }: Props) => {
         );
 
         return (
-          <div className="flex w-[160px] flex-col items-center gap-2">
+          <div
+            key={index} className="flex w-[160px] flex-col items-center gap-2">
             {href ? (
               <InstantLink href={href} aria-label={name}>
                 {logo}
@@ -109,16 +117,9 @@ const ClientCarousel = ({ clients }: Props) => {
             ) : null}
           </div>
         );
-      }}
-      className="w-full"
-      autoplay={{
-        enabled: true,
-        delay: 3000,
-        stopOnInteraction: true,
-      }}
-      loop={true}
-      showPagination={false}
-    />
+      
+      })}
+    </Carousel>
   );
 };
 

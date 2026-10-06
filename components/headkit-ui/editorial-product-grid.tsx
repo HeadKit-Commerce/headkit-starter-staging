@@ -1,5 +1,3 @@
-"use client";
-
 import type { Product } from "@headkit/sdk";
 import { ProductCarousel } from "@/components/headkit-ui/product-carousel";
 import type { ColourwayPins } from "@/lib/catalog-display";

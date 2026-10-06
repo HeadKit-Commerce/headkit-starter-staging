@@ -13,9 +13,9 @@ interface Props {
  * The video file only. The poster is a Server Component sibling
  * (`ArtDirectedImage`), so this module does not own the LCP image.
  *
- * The file is not requested until a pointer, key, or scroll. `preload="none"`
- * is the videos guide. A timer after load still fetched Pebblr's 4.8 MB webm
- * during the trace.
+ * The file is not requested until a pointer or key. `preload="none"` is the
+ * videos guide. A timer after load fetched Pebblr's 4.8 MB webm, and a scroll
+ * listener fetched Paralel's 3.4 MB mobile mp4, because Lighthouse scrolls.
  * https://nextjs.org/docs/app/guides/videos
  */
 export function HeroVideoSlide({
@@ -37,21 +37,14 @@ export function HeroVideoSlide({
       if (chosen) setSrc(chosen);
       window.removeEventListener("pointerdown", start);
       window.removeEventListener("keydown", start);
-      window.removeEventListener("scroll", start, true);
     };
 
     window.addEventListener("pointerdown", start, { once: true });
     window.addEventListener("keydown", start, { once: true });
-    window.addEventListener("scroll", start, {
-      once: true,
-      capture: true,
-      passive: true,
-    });
 
     return () => {
       window.removeEventListener("pointerdown", start);
       window.removeEventListener("keydown", start);
-      window.removeEventListener("scroll", start, true);
     };
   }, [isActive, mobileSrc, desktopSrc]);
 

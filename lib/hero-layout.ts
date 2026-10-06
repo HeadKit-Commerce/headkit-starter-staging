@@ -17,6 +17,19 @@ export function heroLayoutClasses(heroLayout: HeroLayout): string {
   }
 }
 
+/**
+ * `sizes` for the hero image. Inset heroes are `mx-5` (2.5rem), so `100vw`
+ * asks the phone for a wider file than the box. Full-bleed and fixed-height
+ * really are the viewport.
+ * https://nextjs.org/docs/app/api-reference/components/image#sizes
+ */
+export function heroImageSizes(heroLayout: HeroLayout): string {
+  if (heroLayout === "inset") {
+    return "calc(100vw - 2.5rem)";
+  }
+  return "100vw";
+}
+
 /** Inner media box classes for hero height modes. */
 export function heroMediaClasses(heroLayout: HeroLayout): string {
   const base = "relative aspect-square w-full overflow-hidden md:aspect-video";

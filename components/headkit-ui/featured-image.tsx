@@ -12,6 +12,11 @@ interface Props {
   hoverSrc?: string | null;
   /** When true and `hoverSrc` differs, cross-fade to the hover layer. */
   showHover?: boolean;
+  /**
+   * Cross-fade on the parent `group` hover. CSS only, so a server-rendered
+   * card does not need a client hover state.
+   */
+  revealOnGroupHover?: boolean;
   alt?: string;
   className?: string;
   /**
@@ -27,6 +32,11 @@ interface Props {
    * PLP/carousel default 65 balances visual quality vs bytes; heroes can pass 75.
    */
   quality?: 50 | 65 | 75 | 100;
+  /**
+   * Slot width for `next/image`. Defaults to the catalog grid. A carousel
+   * card is narrower than that grid on a phone and must pass its own hint.
+   */
+  sizes?: string;
 }
 
 /**
@@ -40,11 +50,13 @@ const FeaturedImage = ({
   src,
   hoverSrc,
   showHover = false,
+  revealOnGroupHover = false,
   alt = "",
   className,
   priority = false,
   fit = "cover",
   quality = 65,
+  sizes = CATALOG_GRID_IMAGE_SIZES,
 }: Props) => {
   // Empty/whitespace means "no image" — use the storefront fallback asset only.
   const trimmed = src?.trim();
@@ -77,8 +89,15 @@ const FeaturedImage = ({
         priority={priority}
         fetchPriority={priority ? "high" : "auto"}
         quality={imageSrc === FALLBACK_IMAGE_SRC ? 50 : quality}
-        className={cn(objectClass, revealHover ? "opacity-0" : "opacity-100")}
-        sizes={CATALOG_GRID_IMAGE_SIZES}
+        className={cn(
+          objectClass,
+          revealOnGroupHover && hasHoverLayer
+            ? "opacity-100 group-hover:opacity-0"
+            : revealHover
+              ? "opacity-0"
+              : "opacity-100",
+        )}
+        sizes={sizes}
       />
       {hasHoverLayer ? (
         <Image
@@ -91,8 +110,15 @@ const FeaturedImage = ({
           fetchPriority="low"
           quality={quality}
           aria-hidden
-          className={cn(objectClass, revealHover ? "opacity-100" : "opacity-0")}
-          sizes={CATALOG_GRID_IMAGE_SIZES}
+          className={cn(
+          objectClass,
+          revealOnGroupHover
+            ? "opacity-0 group-hover:opacity-100"
+            : revealHover
+              ? "opacity-100"
+              : "opacity-0",
+        )}
+          sizes={sizes}
         />
       ) : null}
     </div>
