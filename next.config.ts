@@ -287,14 +287,7 @@ const nextConfig: NextConfig = {
     // Remind on `next dev` / `next build` when a newer stable Next.js
     // release is available. https://nextjs.org/blog/next-16-4
     agentUpgrade: "latest",
-    optimizePackageImports: [
-      "react-icons",
-      "lucide-react",
-      "@headkit/sdk",
-      "framer-motion",
-      "date-fns",
-      "radix-ui",
-    ],
+    optimizePackageImports: ["react-icons", "@headkit/sdk"],
     cpus: buildCpus,
     staticGenerationMaxConcurrency: staticGenConcurrency,
     // Report EVERY bad page in one build, not just the first one.

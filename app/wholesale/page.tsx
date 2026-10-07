@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { GravityForm } from "@/components/gravity-form";
+import { GravityForm } from "@/components/gravity-form-lazy";
 import { ShopifyContactForm } from "@/components/shopify-contact-form";
 import { shopifyContactSubscribeProps } from "@/lib/shopify-contact-subscribe";
 import {

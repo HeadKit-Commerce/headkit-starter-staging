@@ -2,6 +2,10 @@
   "name": "@headkit/starter",
   "version": "0.1.5",
   "private": true,
+  "sideEffects": [
+    "*.css",
+    "**/*.css"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -19,7 +23,6 @@
   },
   "dependencies": {
     "@headkit/sdk": "staging",
-    "@headlessui/react": "^2.2.9",
     "@hookform/resolvers": "^5.2.2",
     "@next/third-parties": "16.4.0",
     "@radix-ui/react-accordion": "^1.2.12",

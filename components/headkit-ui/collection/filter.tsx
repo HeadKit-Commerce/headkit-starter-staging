@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { cn, decodeHtmlEntities } from "@/lib/utils";
-import { Transition } from "@headlessui/react";
 import { useIsQuoteMode } from "@/components/checkout/checkout-mode-provider";
 import { useCollection } from "./collection-context";
 import { FilterMenuItem } from "./filter-menu-item";
@@ -84,15 +83,12 @@ export function Filter() {
 
   return (
     <>
-      <Transition show={menuOpen}>
+      {menuOpen && (
         <div
-          className={cn(
-            "fixed inset-0 z-9 bg-black/50 backdrop-blur-xs transition-opacity duration-300",
-            menuOpen ? "opacity-100" : "opacity-0 pointer-events-none",
-          )}
+          className="fixed inset-0 z-9 bg-black/50 backdrop-blur-xs"
           aria-hidden
         />
-      </Transition>
+      )}
 
       {/* Desktop / tablet: inline facet nav (sidebar-style dropdowns) */}
       <NavigationMenu
