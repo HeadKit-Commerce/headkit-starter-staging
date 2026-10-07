@@ -44,7 +44,8 @@ function decisionAllowsTags(decision: ConsentDecision | null): boolean {
  * default before this component mounts `GoogleTagManager`.
  *
  * Klaviyo and HubSpot are not in `@next/third-parties`. They use
- * `next/script` with `lazyOnload` on the same schedule as the container.
+ * `next/script` with `lazyOnload`. The container stays on the package
+ * default, `afterInteractive`, because `GoogleTagManager` has no strategy prop.
  */
 export function DeferredThirdPartyScripts({
   gtmId,
@@ -72,7 +73,11 @@ export function DeferredThirdPartyScripts({
         return;
       }
       if (!pushedDefault.current) {
-        pushConsentCommand(dataLayer, "default", consentSignals(decision.choices));
+        pushConsentCommand(
+          dataLayer,
+          "default",
+          consentSignals(decision.choices),
+        );
         pushedDefault.current = true;
         setAccepted(true);
         return;

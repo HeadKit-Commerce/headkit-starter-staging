@@ -20,17 +20,15 @@
 function base64UrlDecode(segment: string): string | null {
   try {
     let b64 = segment.replace(/-/g, "+").replace(/_/g, "/");
-    // Re-pad to a multiple of 4 so atob/Buffer can decode it.
+    // Re-pad to a multiple of 4 so atob can decode it.
     const pad = b64.length % 4;
     if (pad === 2) b64 += "==";
     else if (pad === 3) b64 += "=";
     else if (pad === 1) return null; // never a valid base64 length
 
-    if (typeof atob === "function") {
-      return atob(b64);
-    }
-    // Node / test environment fallback.
-    return Buffer.from(b64, "base64").toString("utf-8");
+    // `atob` is global in browsers and in Node 18+. A Buffer fallback here
+    // pulls Next's Buffer polyfill into the shared auth chunk.
+    return atob(b64);
   } catch {
     return null;
   }

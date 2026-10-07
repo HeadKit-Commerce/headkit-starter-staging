@@ -9,10 +9,25 @@ import {
   ChevronRightIcon,
   PlusIcon,
   ShoppingBagIcon,
-  SpinnerIcon,
 } from "@/components/icon";
 
 import { cn } from "@/lib/utils";
+
+/** FaSpinner, inlined so this shared button does not import `react-icons/fa6`. */
+const SpinnerIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    stroke="currentColor"
+    fill="currentColor"
+    strokeWidth="0"
+    viewBox="0 0 512 512"
+    height="1em"
+    width="1em"
+    xmlns="http://www.w3.org/2000/svg"
+    {...props}
+  >
+    <path d="M304 48a48 48 0 1 0 -96 0 48 48 0 1 0 96 0zm0 416a48 48 0 1 0 -96 0 48 48 0 1 0 96 0zM48 304a48 48 0 1 0 0-96 48 48 0 1 0 0 96zm464-48a48 48 0 1 0 -96 0 48 48 0 1 0 96 0zM142.9 437A48 48 0 1 0 75 369.1 48 48 0 1 0 142.9 437zm0-294.2A48 48 0 1 0 75 75a48 48 0 1 0 67.9 67.9zM369.1 437A48 48 0 1 0 437 369.1 48 48 0 1 0 369.1 437z" />
+  </svg>
+);
 
 const buttonVariants = cva(
   "cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 rounded-[var(--radius-button)]",
@@ -43,11 +58,7 @@ const buttonVariants = cva(
 );
 
 type RightIconType =
-  | "arrowRight"
-  | "chevronLeft"
-  | "chevronRight"
-  | "shoppingBag"
-  | "plus";
+  "arrowRight" | "chevronLeft" | "chevronRight" | "shoppingBag" | "plus";
 
 const RightIconMap: Record<RightIconType, React.ElementType> = {
   arrowRight: ArrowRightIcon,
