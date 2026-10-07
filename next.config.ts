@@ -284,6 +284,9 @@ const nextConfig: NextConfig = {
       }
     : {}),
   experimental: {
+    // Remind on `next dev` / `next build` when a newer stable Next.js
+    // release is available. https://nextjs.org/blog/next-16-4
+    agentUpgrade: "latest",
     optimizePackageImports: [
       "react-icons",
       "lucide-react",
