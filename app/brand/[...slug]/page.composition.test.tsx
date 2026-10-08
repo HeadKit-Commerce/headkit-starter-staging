@@ -51,7 +51,7 @@ vi.mock("@/components/headkit-ui/collection/collection-page", () => ({
   CollectionPage: () => null,
 }));
 
-import Page from "./page";
+import Page, { BrandPageContent } from "./page";
 import { CollectionPage } from "@/components/headkit-ui/collection/collection-page";
 
 const products = [{ id: "one", slug: "one", name: "One" }];
@@ -149,11 +149,13 @@ describe("brand page-one static shell", () => {
     "rejects %s before any grid read",
     async (slug) => {
       brandGet.mockResolvedValue(null);
+      // `Page` is the sync shell. `notFound()` lives in `BrandPageContent`,
+      // above every boundary, which is what sets 404 with no `loading.tsx`.
       await expect(
-        Page({
+        BrandPageContent({
           params: Promise.resolve({ slug: [slug] }),
           searchParams: queryThatMustNotBeRead(),
-        } as Parameters<typeof Page>[0]),
+        } as Parameters<typeof BrandPageContent>[0]),
       ).rejects.toThrow("NEXT_HTTP_ERROR_FALLBACK;404");
       expect(list).not.toHaveBeenCalled();
       expect(filters).not.toHaveBeenCalled();
@@ -166,10 +168,10 @@ describe("brand page-one static shell", () => {
     const failure = new Error("commerce unavailable");
     brandGet.mockRejectedValue(failure);
     await expect(
-      Page({
+      BrandPageContent({
         params: Promise.resolve({ slug: ["acme"] }),
         searchParams: queryThatMustNotBeRead(),
-      } as Parameters<typeof Page>[0]),
+      } as Parameters<typeof BrandPageContent>[0]),
     ).rejects.toBe(failure);
     expect(list).not.toHaveBeenCalled();
   });
