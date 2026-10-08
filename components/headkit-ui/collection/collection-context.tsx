@@ -146,8 +146,29 @@ export function CollectionProvider({
   const isLoadingRef = useRef(false);
   const isLoadingBeforeRef = useRef(false);
   const isLoadingAfterRef = useRef(false);
+  // Mirror of products.length, read by fetchProducts (to clamp the total when
+  // an "after" page comes back empty) and by loadMore's guard. Like the loading
+  // flags above it is maintained at the mutation site, not in the render body:
+  // `commitProducts` is the only writer of `products` and sets the count from
+  // the very list it returns. A render-body write would be redundant, and a
+  // render React discards would write a pre-append count back over it
+  // (react-hooks/refs).
   const productsCountRef = useRef(initialProducts.length);
-  productsCountRef.current = products.length;
+
+  const commitProducts = useCallback(
+    (
+      next: (
+        prev: ProductSummaryFieldsFragment[],
+      ) => ProductSummaryFieldsFragment[],
+    ) => {
+      setProducts((prev) => {
+        const list = next(prev);
+        productsCountRef.current = list.length;
+        return list;
+      });
+    },
+    [],
+  );
 
   // Seeded from PROPS ONLY, with no query string. This provider renders in the
   // static shell (outside every Suspense boundary), so it may not perform a
@@ -269,13 +290,13 @@ export function CollectionProvider({
         setTotalProducts(result.total);
 
         if (position === "middle") {
-          setProducts(result.products);
+          commitProducts(() => result.products);
           setHasFirstPage(page === 1);
         } else if (position === "before") {
-          setProducts((prev) => [...result.products, ...prev]);
+          commitProducts((prev) => [...result.products, ...prev]);
           if (page === 1) setHasFirstPage(true);
         } else {
-          setProducts((prev) => [...prev, ...result.products]);
+          commitProducts((prev) => [...prev, ...result.products]);
         }
 
         syncUrl(page, filterValues);
@@ -305,6 +326,9 @@ export function CollectionProvider({
       itemsPerPage,
       syncUrl,
       defaultCollectionSort,
+      // Stable (empty dep array), so listing it does not widen when
+      // fetchProducts is recreated.
+      commitProducts,
     ],
   );
 

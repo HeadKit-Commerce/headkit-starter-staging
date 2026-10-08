@@ -127,13 +127,15 @@ function CheckoutSteps({
 }) {
   const { cartData, setCartData } = useCartContext();
 
+  const shippingRates = cartData?.shippingRates;
+
   const pickupLocations = useMemo((): PickupLocationItem[] => {
-    if (!cartData?.shippingRates) return [];
+    if (!shippingRates) return [];
     const apiMap = new Map(
       pickupLocationsFromApi.map((l) => [l.shippingMethodId, l]),
     );
     const list: PickupLocationItem[] = [];
-    for (const pkg of cartData.shippingRates) {
+    for (const pkg of shippingRates) {
       for (const rate of pkg.shippingRates) {
         if (
           rate.rateId.includes("local_pickup") ||
@@ -155,7 +157,7 @@ function CheckoutSteps({
       }
     }
     return list;
-  }, [cartData?.shippingRates, pickupLocationsFromApi]);
+  }, [shippingRates, pickupLocationsFromApi]);
 
   const [currentStep, setCurrentStep] = useState<Step>(
     initialStep ?? CheckoutFormStepEnum.CONTACT,
@@ -166,10 +168,26 @@ function CheckoutSteps({
     }
     return new Set();
   });
+  // Synchronous mirrors of the two step states, read by the async
+  // sync-line-items effect and by handleSessionExpired: both can resolve after
+  // a step advance has been queued but before React has committed it, and a
+  // 409 handled against a stale CONTACT remounts at CONTACT and hides the
+  // delivery accordion (ENG-784).
+  //
+  // They are seeded from the initial state and then maintained AT THE MUTATION
+  // SITES — `goToStep` writes currentStepRef before setCurrentStep, and
+  // `markCompleted` writes completedStepsRef with the same Set it returns — so
+  // the mirrors are never behind the state. That is the whole invariant: those
+  // two helpers are the only writers of either state, which
+  // `checkout-step-refs.test.ts` asserts over this file.
+  //
+  // Do NOT re-add `currentStepRef.current = currentStep` in the render body.
+  // It is redundant given the above, and a render that React discards would
+  // write the pre-advance value back over a mirror the handler had already
+  // moved forward — the opposite of what these refs are for
+  // (react-hooks/refs).
   const currentStepRef = useRef(currentStep);
   const completedStepsRef = useRef(completedSteps);
-  currentStepRef.current = currentStep;
-  completedStepsRef.current = completedSteps;
 
   // True only while StripePaymentStep is running checkout.confirm(). It drops
   // the delivery step's `keepMountedWhenInactive` for that window so the

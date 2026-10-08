@@ -965,18 +965,25 @@ export function ProductDetail({
   // `item_id` follows the SELECTED variation's SKU when there is one: that is
   // the identifier a Merchant Center feed keys a colourway on, so a Shopping
   // conversion lands on the variant the shopper actually bought.
-  const ga4Item = useMemo<Ga4Item>(
-    () =>
-      productToGa4Item(product, {
-        price: getFloatVal(displayPrice),
-        quantity: 1,
-        variant: ga4Variant,
-        ...(selectedVariation?.sku?.trim()
-          ? { itemId: selectedVariation.sku.trim() }
-          : {}),
-      }),
-    [product, displayPrice, ga4Variant, selectedVariation],
-  );
+  //
+  // Deliberately NOT memoized. Nothing depends on this object's identity: the
+  // two `{ ...ga4Item, quantity }` spreads above are inside event handlers, the
+  // wishlist push is inside a handler, and the `view_item` effect below is
+  // keyed on `ga4ViewItemKey` — a string — precisely because the reference is
+  // not stable. A `useMemo` here was reported as
+  // `react-hooks/preserve-manual-memoization` ("memoized in source but not in
+  // compilation output"): React Compiler finds no cache slot worth spending on
+  // a value no render output reads, so the hand-written memo cannot be
+  // preserved. `productToGa4Item` is a pure object literal over values this
+  // render already computed, so recomputing it per render is free.
+  const ga4Item: Ga4Item = productToGa4Item(product, {
+    price: getFloatVal(displayPrice),
+    quantity: 1,
+    variant: ga4Variant,
+    ...(selectedVariation?.sku?.trim()
+      ? { itemId: selectedVariation.sku.trim() }
+      : {}),
+  });
 
   const ga4Currency = getStoreCurrency();
 
