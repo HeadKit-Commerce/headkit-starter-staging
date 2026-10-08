@@ -107,6 +107,10 @@ type HarnessResult = Record<string, Payload[]>;
 interface HarnessOutput {
   events: HarnessResult;
   filters: Record<string, FiltersObservation>;
+  /** Scenario name → outbound URLs, in send order. Absent on an older harness. */
+  http?: Record<string, string[]>;
+  /** Scenario name → raw request bodies, parallel to `http`. */
+  httpBodies?: Record<string, string[]>;
   config: HarnessConfig;
 }
 
@@ -153,6 +157,8 @@ const SUITE_TITLE = SKIPPING
 let result: HarnessResult;
 let filters: Record<string, FiltersObservation>;
 let config: HarnessConfig;
+let http: Record<string, string[]> = {};
+let httpBodies: Record<string, string[]> = {};
 
 /**
  * Every send a scenario produced, first sends and repair sends alike.
@@ -229,6 +235,8 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     result = parsed.events;
     filters = parsed.filters;
     config = parsed.config;
+    http = parsed.http ?? {};
+    httpBodies = parsed.httpBodies ?? {};
   });
 
   describe("CONTENT events send the specific tags only", () => {
@@ -1056,6 +1064,76 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
       const seen = observe("rapid_identical_saves");
       expect(firstSends("rapid_identical_saves")).toHaveLength(1);
       expect(seen.generation_after - seen.generation_before).toBe(3);
+    });
+  });
+
+  describe("catalogue events notify commerce when it is configured", () => {
+    function urlsOf(name: string): string[] {
+      const urls = http[name];
+      expect(urls, `${name}: harness recorded no outbound URLs`).toBeDefined();
+      return urls!;
+    }
+
+    function bodyOf(name: string, index: number): Record<string, unknown> {
+      const bodies = httpBodies[name];
+      expect(
+        bodies,
+        `${name}: harness recorded no request bodies`,
+      ).toBeDefined();
+      const raw = bodies![index];
+      expect(raw, `${name}: missing body ${index}`).toBeTypeOf("string");
+      return JSON.parse(raw!) as Record<string, unknown>;
+    }
+
+    it("an unconfigured catalogue event still posts the storefront", () => {
+      const urls = urlsOf("stock_change");
+      expect(urls.length).toBeGreaterThan(0);
+      for (const url of urls) {
+        expect(url).toContain("/api/revalidate");
+        expect(url).not.toContain("/catalog/sync");
+      }
+    });
+
+    it("a configured catalogue event posts commerce only, including the repair", () => {
+      const urls = urlsOf("stock_change_via_commerce");
+      expect(urls).toHaveLength(2);
+      for (const url of urls) {
+        expect(url).toBe("https://commerce.harness.invalid/catalog/sync");
+        expect(url).not.toContain("/api/revalidate");
+        expect(url).not.toContain("/catalog-cache/invalidate");
+      }
+
+      const first = bodyOf("stock_change_via_commerce", 0);
+      expect(first.provider).toBe("woocommerce");
+      expect(first.slug).toBe("e-bike");
+      expect(first.action).toBe("stock_change");
+      expect(first.currency).toBe("AUD");
+      expect(first.currencyMinorUnit).toBe(2);
+      expect(first.currencyMinorUnitKnown).toBe(true);
+      expect(first.revalidateSecret).toBe("harness-secret");
+      expect(first.tags).toEqual(
+        expect.arrayContaining(["headkit:product:e-bike"]),
+      );
+
+      const repair = bodyOf("stock_change_via_commerce", 1);
+      expect(repair.action).toBe(`stock_change${config.repair_suffix}`);
+      expect(repair.slug).toBe("e-bike");
+      expect(repair.paths).toBeUndefined();
+    });
+
+    it("branding still posts the storefront when commerce is configured", () => {
+      const urls = urlsOf("branding_change_via_commerce");
+      expect(urls).toEqual(["https://harness.invalid/api/revalidate"]);
+    });
+
+    it("a catalogue event without the API token stays on the storefront", () => {
+      const urls = urlsOf("stock_change_commerce_unconfigured");
+      expect(urls.length).toBeGreaterThan(0);
+      for (const url of urls) {
+        expect(url).toContain("/api/revalidate");
+        expect(url).not.toContain("/catalog/sync");
+        expect(url).not.toContain("/catalog-cache/invalidate");
+      }
     });
   });
 });
