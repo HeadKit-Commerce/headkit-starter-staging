@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { HeroCarouselItem } from "@headkit/sdk";
@@ -96,6 +97,25 @@ function attribute(tag: string, name: string): string | null {
   return new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? null;
 }
 
+/**
+ * The element the slide's media renders into — the `<video>`'s own parent, so
+ * the negatives below are about the media slot rather than the whole hero
+ * shell. An arrow, badge or logo elsewhere in the slide is not a stacked
+ * poster.
+ */
+function mediaSlot(html: string): HTMLElement {
+  const host = document.createElement("div");
+  host.innerHTML = html;
+  const slot = host.querySelector("video")?.parentElement ?? null;
+
+  expect(
+    slot,
+    "the video slide must render a <video> inside a media slot",
+  ).not.toBeNull();
+
+  return slot as HTMLElement;
+}
+
 /** `{ src, media }` for every `<source>` the markup carries. */
 function sources(html: string): Array<{ src: string; media: string | null }> {
   return (html.match(/<source[^>]*>/g) ?? []).map((tag) => ({
@@ -137,11 +157,12 @@ describe("MainCarousel video slide", () => {
 
   it("stacks no second picture over the poster", () => {
     // The whole point of #633: the still is the poster, so the first video
-    // frame replaces it as it decodes. An <img> here would be painted over.
-    const html = render([videoSlide("Outdoor dining")]);
+    // frame replaces it as it decodes. An <img> in the media slot would be
+    // painted over it.
+    const slot = mediaSlot(render([videoSlide("Outdoor dining")]));
 
-    expect(html).not.toContain("<img");
-    expect(html).not.toContain("srcset");
+    expect(slot.querySelectorAll("img")).toHaveLength(0);
+    expect(slot.innerHTML).not.toContain("srcset");
   });
 
   it("offers both files behind media queries, so the browser fetches one", () => {

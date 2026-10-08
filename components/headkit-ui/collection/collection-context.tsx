@@ -146,13 +146,18 @@ export function CollectionProvider({
   const isLoadingRef = useRef(false);
   const isLoadingBeforeRef = useRef(false);
   const isLoadingAfterRef = useRef(false);
-  // Mirror of products.length, read by fetchProducts (to clamp the total when
-  // an "after" page comes back empty) and by loadMore's guard. Like the loading
-  // flags above it is maintained at the mutation site, not in the render body:
-  // `commitProducts` is the only writer of `products` and sets the count from
-  // the very list it returns. A render-body write would be redundant, and a
-  // render React discards would write a pre-append count back over it
-  // (react-hooks/refs).
+  // Mirrors of the committed product list and its length, read by fetchProducts
+  // (to clamp the total when an "after" page comes back empty) and by
+  // loadMore's guard. Like the loading flags above they are maintained at the
+  // mutation site, not in the render body: `commitProducts` is the only writer
+  // of `products`, and it applies the caller's updater to the LIST MIRROR and
+  // assigns both refs before dispatching the setter, so the refs are current
+  // the moment it returns. Writing them from inside the `setProducts` updater
+  // would defer them to the render pass whenever the fiber already has pending
+  // lanes, and both readers run after an `await`. A render-body write would be
+  // redundant, and a render React discards would write a pre-append count back
+  // over it (react-hooks/refs).
+  const productsRef = useRef(initialProducts);
   const productsCountRef = useRef(initialProducts.length);
 
   const commitProducts = useCallback(
@@ -161,11 +166,10 @@ export function CollectionProvider({
         prev: ProductSummaryFieldsFragment[],
       ) => ProductSummaryFieldsFragment[],
     ) => {
-      setProducts((prev) => {
-        const list = next(prev);
-        productsCountRef.current = list.length;
-        return list;
-      });
+      const list = next(productsRef.current);
+      productsRef.current = list;
+      productsCountRef.current = list.length;
+      setProducts(list);
     },
     [],
   );

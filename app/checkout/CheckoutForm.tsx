@@ -175,11 +175,19 @@ function CheckoutSteps({
   // delivery accordion (ENG-784).
   //
   // They are seeded from the initial state and then maintained AT THE MUTATION
-  // SITES — `goToStep` writes currentStepRef before setCurrentStep, and
-  // `markCompleted` writes completedStepsRef with the same Set it returns — so
-  // the mirrors are never behind the state. That is the whole invariant: those
-  // two helpers are the only writers of either state, which
-  // `checkout-step-refs.test.ts` asserts over this file.
+  // SITES, each helper assigning its mirror SYNCHRONOUSLY and only then calling
+  // its setter: `goToStep` writes currentStepRef, then setCurrentStep;
+  // `markCompleted` builds the next Set from completedStepsRef.current, writes
+  // it, then hands that same Set to setCompletedSteps. Neither write may move
+  // inside a state updater: React defers an updater whose fiber already carries
+  // pending lanes — every caller here dispatches setFormData first — so the ref
+  // would land during the render pass instead of at call time, and both readers
+  // of these mirrors run after an `await`.
+  //
+  // `goToStep` and `markCompleted` are the only writers of either state. That
+  // invariant is upheld by this file, not asserted elsewhere:
+  // `checkout-step-refs.test.ts` guards only the narrower claim that neither
+  // mirror is assigned from the render body.
   //
   // Do NOT re-add `currentStepRef.current = currentStep` in the render body.
   // It is redundant given the above, and a render that React discards would
@@ -431,11 +439,9 @@ function CheckoutSteps({
   }, []);
 
   const markCompleted = (step: Step) => {
-    setCompletedSteps((prev) => {
-      const next = new Set([...prev, step]);
-      completedStepsRef.current = next;
-      return next;
-    });
+    const next = new Set([...completedStepsRef.current, step]);
+    completedStepsRef.current = next;
+    setCompletedSteps(next);
   };
 
   const goToStep = (step: Step) => {
