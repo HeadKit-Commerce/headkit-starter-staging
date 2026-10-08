@@ -131,7 +131,11 @@ describe("attributeIdsNeedingVisuals", () => {
             type: "wc-visual",
             fullOptions: [
               { slug: "black-rattan", swatchImage: BLACK_RATTAN },
-              { slug: "walnut-rattan", swatchColor: "", swatchImage: WALNUT_RATTAN },
+              {
+                slug: "walnut-rattan",
+                swatchColor: "",
+                swatchImage: WALNUT_RATTAN,
+              },
             ],
           },
         ],

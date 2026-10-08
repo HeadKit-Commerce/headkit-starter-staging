@@ -1043,8 +1043,7 @@ export function ProductDetail({
     isSizeAttrSlug(attr.slug),
   );
   const swatchAttribute = findSwatchAttribute(variationAttributes);
-  const swatchCommerceSrc =
-    product.image?.src || product.images[0]?.src || "";
+  const swatchCommerceSrc = product.image?.src || product.images[0]?.src || "";
   const sizeGuidePlacement = themeSizeGuidePlacement({
     sizeGuideHref,
     showMultiAdd,

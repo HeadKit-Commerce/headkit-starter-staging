@@ -79,9 +79,8 @@ const ProductCarousel = async ({
   };
 
   if (branding.showSwatches) {
-    const { SwatchProductSlide } = await import(
-      "@/components/headkit-ui/product-carousel-swatches"
-    );
+    const { SwatchProductSlide } =
+      await import("@/components/headkit-ui/product-carousel-swatches");
     return (
       <Carousel {...track}>
         {items.map((product) => (

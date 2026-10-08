@@ -386,9 +386,7 @@ export async function generateMetadata({
 export const instant = true;
 
 export default function ProductPage(props: Props) {
-  return (
-    <ProductRoute {...props} />
-  );
+  return <ProductRoute {...props} />;
 }
 
 export async function ProductRoute({ params, searchParams }: Props) {
@@ -807,101 +805,104 @@ export async function ProductPageBody({
           }
         : {})}
     >
-    <div>
-      <ProductJsonLD
-        product={product}
-        brandName={brandName}
-        url={storefrontUrl(canonicalBasePath, storeSettings.domain)}
-      />
-      <BreadcrumbJsonLD items={breadcrumbs} />
-
-      <div className="px-5 py-8 md:px-10">
-        <ProductDetail
+      <div>
+        <ProductJsonLD
           product={product}
-          {...(colorSlug !== undefined ? { initialColor: colorSlug } : {})}
-          productBasePath={canonicalBasePath}
-          breadcrumbItems={breadcrumbItems}
-          stockSlot={stockSlot}
-          stripeConfig={stripeConfig}
-          multiAddEnabled={branding.multiAddEnabled}
-          pdpGalleryLayout={branding.pdpGalleryLayout}
-          brand={displayBrand}
-          shopifyContact={
-            isShopifyStorefront(env) && getStoreTheme().layout.productEnquiry
-          }
+          brandName={brandName}
+          url={storefrontUrl(canonicalBasePath, storeSettings.domain)}
         />
-      </div>
+        <BreadcrumbJsonLD items={breadcrumbs} />
 
-      {featuredProjects.length > 0 ? (
-        <section className="overflow-hidden py-10">
-          <SectionHeader
-            title="Featured in projects"
-            description="See this product in real projects."
-            allButton="View All"
-            allButtonPath="/projects"
-            className="px-5 md:px-10"
+        <div className="px-5 py-8 md:px-10">
+          <ProductDetail
+            product={product}
+            {...(colorSlug !== undefined ? { initialColor: colorSlug } : {})}
+            productBasePath={canonicalBasePath}
+            breadcrumbItems={breadcrumbItems}
+            stockSlot={stockSlot}
+            stripeConfig={stripeConfig}
+            multiAddEnabled={branding.multiAddEnabled}
+            pdpGalleryLayout={branding.pdpGalleryLayout}
+            brand={displayBrand}
+            shopifyContact={
+              isShopifyStorefront(env) && getStoreTheme().layout.productEnquiry
+            }
           />
-          <div className="mt-5">
-            <ProjectCarousel projects={featuredProjects} imageAspect="video" />
-          </div>
-        </section>
-      ) : null}
+        </div>
 
-      {upsellsAsProducts.length > 0 && (
-        <section className="overflow-x-clip py-10">
-          <SectionHeader
-            title="You might also like…"
-            description=""
-            className="px-5 md:px-10"
-          />
-          <div className="mt-5">
-            <ProductCarousel
-              products={upsellsAsProducts}
-              id="upsell-products"
+        {featuredProjects.length > 0 ? (
+          <section className="overflow-hidden py-10">
+            <SectionHeader
+              title="Featured in projects"
+              description="See this product in real projects."
+              allButton="View All"
+              allButtonPath="/projects"
+              className="px-5 md:px-10"
             />
-          </div>
-        </section>
-      )}
+            <div className="mt-5">
+              <ProjectCarousel
+                projects={featuredProjects}
+                imageAspect="video"
+              />
+            </div>
+          </section>
+        ) : null}
 
-      <div className="headkit-pdp-beside-bundles">
-        <PdpBesideBundles />
-        {bundlesAsProducts.length > 0 && (
+        {upsellsAsProducts.length > 0 && (
           <section className="overflow-x-clip py-10">
             <SectionHeader
-              title={bundlesCopy.title}
-              description={bundlesCopy.description}
-              allButton={bundlesCopy.allButton}
-              allButtonPath={bundlesCopy.allButtonPath}
+              title="You might also like…"
+              description=""
               className="px-5 md:px-10"
             />
             <div className="mt-5">
               <ProductCarousel
-                products={bundlesAsProducts}
-                id="bundle-products"
+                products={upsellsAsProducts}
+                id="upsell-products"
+              />
+            </div>
+          </section>
+        )}
+
+        <div className="headkit-pdp-beside-bundles">
+          <PdpBesideBundles />
+          {bundlesAsProducts.length > 0 && (
+            <section className="overflow-x-clip py-10">
+              <SectionHeader
+                title={bundlesCopy.title}
+                description={bundlesCopy.description}
+                allButton={bundlesCopy.allButton}
+                allButtonPath={bundlesCopy.allButtonPath}
+                className="px-5 md:px-10"
+              />
+              <div className="mt-5">
+                <ProductCarousel
+                  products={bundlesAsProducts}
+                  id="bundle-products"
+                />
+              </div>
+            </section>
+          )}
+        </div>
+
+        {relatedAsProducts.length > 0 && (
+          <section className="overflow-x-clip py-10">
+            <SectionHeader
+              title={relatedCopy.title}
+              description={relatedCopy.description}
+              allButton={relatedCopy.allButton}
+              allButtonPath={relatedCopy.allButtonPath}
+              className="px-5 md:px-10"
+            />
+            <div className="mt-5">
+              <ProductCarousel
+                products={relatedAsProducts}
+                id="related-products"
               />
             </div>
           </section>
         )}
       </div>
-
-      {relatedAsProducts.length > 0 && (
-        <section className="overflow-x-clip py-10">
-          <SectionHeader
-            title={relatedCopy.title}
-            description={relatedCopy.description}
-            allButton={relatedCopy.allButton}
-            allButtonPath={relatedCopy.allButtonPath}
-            className="px-5 md:px-10"
-          />
-          <div className="mt-5">
-            <ProductCarousel
-              products={relatedAsProducts}
-              id="related-products"
-            />
-          </div>
-        </section>
-      )}
-    </div>
     </SwatchImageProvider>
   );
 }

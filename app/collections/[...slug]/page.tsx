@@ -443,9 +443,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export const instant = true;
 
 export default function Page(props: Props) {
-  return (
-    <CollectionPageContent {...props} />
-  );
+  return <CollectionPageContent {...props} />;
 }
 
 export async function CollectionPageContent({ params }: Props) {

@@ -171,9 +171,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export const instant = true;
 
 export default function Page(props: Props) {
-  return (
-    <BrandPageContent {...props} />
-  );
+  return <BrandPageContent {...props} />;
 }
 
 export async function BrandPageContent({ params }: Props) {

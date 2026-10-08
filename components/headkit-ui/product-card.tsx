@@ -125,8 +125,7 @@ export const ProductCard = ({
 }: Props) => {
   const TitleTag = titleAs;
   const { showSwatches, imageRollover } = useCatalogDisplay();
-  const { badgeTags, maxCardSwatches: themeMaxCardSwatches } =
-    useClientTheme();
+  const { badgeTags, maxCardSwatches: themeMaxCardSwatches } = useClientTheme();
   const lockedColour = product.colorwaySlug ?? null;
 
   const [colourSelected, setColourSelected] = useState<string | null>(() => {
@@ -234,15 +233,13 @@ export const ProductCard = ({
 
   if (!product) return null;
 
-  const maxCardSwatches =
-    themeMaxCardSwatches ?? DEFAULT_MAX_CARD_SWATCHES;
+  const maxCardSwatches = themeMaxCardSwatches ?? DEFAULT_MAX_CARD_SWATCHES;
 
   const isNewIn = isNew || Boolean(product?.isNew);
-  const customBadges = productBadgesFromTags(
-    product.tags,
-    badgeTags,
-    { hideNew: isNewIn, hideSale: product?.onSale ?? false },
-  );
+  const customBadges = productBadgesFromTags(product.tags, badgeTags, {
+    hideNew: isNewIn,
+    hideSale: product?.onSale ?? false,
+  });
   const plainName = stripTitleMarkers(
     decodeHtmlEntities(product?.name ?? "Product"),
   );

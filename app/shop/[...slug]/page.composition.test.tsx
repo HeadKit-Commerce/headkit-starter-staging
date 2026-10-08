@@ -277,7 +277,9 @@ describe("shop/[...slug] — the gate still decides before either branch", () =>
 
   it("404s the build-time placeholder without a lookup", async () => {
     await expect(
-      ShopRoute({ params: Promise.resolve({ slug: ["__hk_static_placeholder"] }) }),
+      ShopRoute({
+        params: Promise.resolve({ slug: ["__hk_static_placeholder"] }),
+      }),
     ).rejects.toThrow(/NEXT_HTTP_ERROR_FALLBACK/);
     expect(getCachedProduct).not.toHaveBeenCalled();
   });

@@ -33,7 +33,9 @@ describe(
   () => {
     beforeAll(() => {
       if (!PHP_AVAILABLE && IS_CI) {
-        throw new Error("php is required in CI to run display-image-harness.php");
+        throw new Error(
+          "php is required in CI to run display-image-harness.php",
+        );
       }
     });
 

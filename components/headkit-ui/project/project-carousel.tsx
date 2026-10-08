@@ -13,17 +13,9 @@ export function ProjectCarousel({
   imageAspect = "square",
 }: ProjectCarouselProps): React.ReactElement {
   return (
-    <Carousel
-      className="w-full pb-8"
-      showPagination={false}
-    
-    >
+    <Carousel className="w-full pb-8" showPagination={false}>
       {projects.map((project, index) => (
-
-        <ProjectCard
-
-          key={index} project={project} imageAspect={imageAspect} />
-      
+        <ProjectCard key={index} project={project} imageAspect={imageAspect} />
       ))}
     </Carousel>
   );

@@ -1,7 +1,14 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Children, useEffect, useState, useRef, ReactNode, useCallback } from "react";
+import {
+  Children,
+  useEffect,
+  useState,
+  useRef,
+  ReactNode,
+  useCallback,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icon";
 
@@ -322,7 +329,11 @@ const Carousel = <T,>({
               const multi = filteredItems.length > 1;
               return (
                 <div
-                  key={usingChildren || !itemKey ? index : itemKey(item as T, index)}
+                  key={
+                    usingChildren || !itemKey
+                      ? index
+                      : itemKey(item as T, index)
+                  }
                   id={`${id}-item-${index}`}
                   aria-hidden={!active}
                   // `aria-hidden` alone is a contradiction while the slide's
@@ -347,7 +358,9 @@ const Carousel = <T,>({
                     carouselItemClassName,
                   )}
                 >
-                  {usingChildren ? (item as ReactNode) : renderItem?.(item as T, index)}
+                  {usingChildren
+                    ? (item as ReactNode)
+                    : renderItem?.(item as T, index)}
                 </div>
               );
             })}
@@ -369,7 +382,9 @@ const Carousel = <T,>({
         >
           {filteredItems.map((item, index) => (
             <div
-              key={usingChildren || !itemKey ? index : itemKey(item as T, index)}
+              key={
+                usingChildren || !itemKey ? index : itemKey(item as T, index)
+              }
               id={`${id}-item-${index}`}
               className={cn(
                 "flex-none",
@@ -378,7 +393,9 @@ const Carousel = <T,>({
                 carouselItemClassName,
               )}
             >
-              {usingChildren ? (item as ReactNode) : renderItem?.(item as T, index)}
+              {usingChildren
+                ? (item as ReactNode)
+                : renderItem?.(item as T, index)}
             </div>
           ))}
         </div>

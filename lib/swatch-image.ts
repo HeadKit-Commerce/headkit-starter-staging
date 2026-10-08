@@ -129,7 +129,10 @@ function optionNeedsImageLookup(option: SwatchOptionLike): boolean {
 }
 
 /** `${attributeId}:${optionSlug}` key for a streamed swatch photo. */
-export function swatchImageKey(attributeId: string, optionSlug: string): string {
+export function swatchImageKey(
+  attributeId: string,
+  optionSlug: string,
+): string {
   return `${attributeId}:${optionSlug}`;
 }
 

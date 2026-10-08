@@ -5,7 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 
 // See deferred-third-party-scripts.load-gate.test.tsx.
 vi.mock("@next/third-parties/google", () => ({
-  GoogleTagManager: function MockGoogleTagManager({ gtmId }: { gtmId: string }) {
+  GoogleTagManager: function MockGoogleTagManager({
+    gtmId,
+  }: {
+    gtmId: string;
+  }) {
     if (typeof document === "undefined") return null;
     const src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(gtmId)}`;
     if ([...document.scripts].some((script) => script.src === src)) return null;

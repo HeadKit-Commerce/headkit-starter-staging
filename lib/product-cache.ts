@@ -46,7 +46,6 @@ export async function getCachedProduct(slug: string) {
   return headkit.products.get(slug);
 }
 
-
 /**
  * Request-time stock read for the PDP availability line.
  *

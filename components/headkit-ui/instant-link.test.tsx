@@ -353,9 +353,9 @@ const here = {
 
 describe("optimisticHistoryUrl", () => {
   it("returns the destination path, search, and hash for an in-app href", () => {
-    expect(
-      optimisticHistoryUrl("/products/bike?color=red#gallery", here),
-    ).toBe("/products/bike?color=red#gallery");
+    expect(optimisticHistoryUrl("/products/bike?color=red#gallery", here)).toBe(
+      "/products/bike?color=red#gallery",
+    );
   });
 
   it("resolves a relative href against the current page", () => {

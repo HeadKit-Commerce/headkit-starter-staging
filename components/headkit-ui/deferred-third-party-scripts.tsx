@@ -72,7 +72,11 @@ export function DeferredThirdPartyScripts({
         return;
       }
       if (!pushedDefault.current) {
-        pushConsentCommand(dataLayer, "default", consentSignals(decision.choices));
+        pushConsentCommand(
+          dataLayer,
+          "default",
+          consentSignals(decision.choices),
+        );
         pushedDefault.current = true;
         setAccepted(true);
         return;

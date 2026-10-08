@@ -14,21 +14,14 @@ export function PostCarousel({
   postsBasePath = DEFAULT_POSTS_BASE_PATH,
 }: PostCarouselProps) {
   return (
-    <Carousel
-      className="w-full pb-8"
-      showPagination={false}
-    
-    >
+    <Carousel className="w-full pb-8" showPagination={false}>
       {posts.map((post, index) => (
-
         <PostCard
-
           key={index}
           post={post as PostSummaryFieldsFragment}
           textStyle="dark"
           postsBasePath={postsBasePath}
         />
-      
       ))}
     </Carousel>
   );

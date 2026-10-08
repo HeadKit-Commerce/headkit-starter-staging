@@ -59,9 +59,9 @@ describe("loadSwatchImageMap", () => {
 
   it("streams an image term when the flag is on without throwing on a 429", async () => {
     vi.stubEnv("HEADKIT_EXPERIMENTAL_SWATCH_IMAGES", "true");
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("nope", { status: 429 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("nope", { status: 429 }));
     await expect(loadSwatchImageMap([product("12")])).resolves.toEqual({
       images: {},
       covered: { "12:black": true },

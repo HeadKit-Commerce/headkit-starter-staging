@@ -312,32 +312,32 @@ export default async function RootLayout({
         */}
         <BrandingIconsProvider library={branding.iconLibrary}>
           <ClientThemeProvider value={clientThemeSlice(storeTheme)}>
-          <CatalogDisplayProvider
-            prefs={{
-              showVariants: branding.showVariants,
-              showSwatches: branding.showSwatches,
-              imageRollover: branding.imageRollover,
-              defaultCollectionSort: branding.defaultCollectionSort,
-            }}
-          >
-            {/* Boolean only. The WordPress term read starts on the collection
+            <CatalogDisplayProvider
+              prefs={{
+                showVariants: branding.showVariants,
+                showSwatches: branding.showSwatches,
+                imageRollover: branding.imageRollover,
+                defaultCollectionSort: branding.defaultCollectionSort,
+              }}
+            >
+              {/* Boolean only. The WordPress term read starts on the collection
                 and product pages, and only when the flag is on. No Suspense:
                 a boundary here would hold every document open. */}
-            <SwatchImageProvider enabled={experimentalSwatchImagesEnabled()}>
-            <CheckoutModeProvider mode={checkoutMode}>
-              {/* WebMCP tools for an in-page agent. Gated on the store
+              <SwatchImageProvider enabled={experimentalSwatchImagesEnabled()}>
+                <CheckoutModeProvider mode={checkoutMode}>
+                  {/* WebMCP tools for an in-page agent. Gated on the store
                   setting (dashboard → In-page agents). DEFAULT OFF, so the
                   component is not mounted and nothing runs. The gate is on
                   the mount, the same shape as NavigationSkeletonHost: the
                   registrar adds no <Suspense> and makes no request-time read. */}
-              {webmcpEnabled ? (
-                <WebMcpRegistrar hostedCheckout={hostedCheckout} />
-              ) : null}
-              <AuthProvider>
-                <CartProvider>
-                  <HostedCartSync />
-                  <LazyCartDrawer />
-                  {/* The ONE renderer of the pending-navigation skeleton. Here,
+                  {webmcpEnabled ? (
+                    <WebMcpRegistrar hostedCheckout={hostedCheckout} />
+                  ) : null}
+                  <AuthProvider>
+                    <CartProvider>
+                      <HostedCartSync />
+                      <LazyCartDrawer />
+                      {/* The ONE renderer of the pending-navigation skeleton. Here,
                       and not inside the link that asked for it, because a link in
                       the mega-menu / mobile sheet / search or cart drawer is
                       unmounted by its own container ~160 ms after the click — long
@@ -352,57 +352,57 @@ export default async function RootLayout({
                       useDelayedFlag, and the switch is meant to leave nothing
                       running at all. DEFAULT OFF, so a store that sets nothing
                       renders exactly what it does today. */}
-                  {navigationSkeletonEnabled() ? (
-                    <NavigationSkeletonHost />
-                  ) : null}
-                  <NavigationWrapper />
-                  <main className="headkit-main pb-10">{children}</main>
-                  <Suspense fallback={null}>
-                    <BelowMain />
-                  </Suspense>
-                  <Footer
-                    siteName={siteName}
-                    description={siteDescription}
-                    menus={footerMenus}
-                    iconUrl={branding.iconUrl}
-                    showSubscribe={showFooterSubscribe}
-                    hidePaymentIcons={checkoutMode === "quote"}
-                    // The footer's "Cookie preferences" link is part of the
-                    // gate, not decoration: it is the only way a visitor who
-                    // declined can change their mind. It renders only when the
-                    // gate is on, so a link that opens nothing is impossible.
-                    showCookiePreferences={cookieConsentEnabled}
-                    // NO `socialLinks` here. This is a TEMPLATE file, shipped
-                    // to every store, so a literal here publishes HeadKit's own
-                    // Instagram/Discord/GitHub/LinkedIn/YouTube in the merchant's
-                    // footer — which is exactly what happened, and it silently
-                    // overwrote a store that had forked these lines to its own
-                    // accounts. `Footer` gates the whole Connect block on
-                    // `hasSocialLinks`, so with the prop absent the block does
-                    // not render at all: no vendor links, no empty section. The
-                    // `SocialLinks` type and icon map stay as they are, so a
-                    // store can pass its own by forking this one line.
-                    //
-                    // Making that per-store DATA rather than a fork is an OPEN
-                    // DECISION, not scheduled work: `store-social-links-platform-field`
-                    // is a name to hold the decision by, NOT a ticket id — no
-                    // ticket exists. What is undecided is whether to build the
-                    // field at all, which would span the Mongo store document,
-                    // the dashboard-api schema and resolver, the dashboard form,
-                    // `packages/sdk` codegen and finally this file reading it —
-                    // not a one-round change. Leaving it open is safe: with the
-                    // prop gone, the worst a future template sync can do is drop
-                    // a store's own links, never republish the vendor's. If the
-                    // decision is ever taken, the repo convention is a
-                    // `docs/tickets/<slug>.md`.
-                    // Asserted by `app/layout-social-links.test.tsx`.
-                  />
-                  <Toaster />
-                </CartProvider>
-              </AuthProvider>
-            </CheckoutModeProvider>
-            </SwatchImageProvider>
-          </CatalogDisplayProvider>
+                      {navigationSkeletonEnabled() ? (
+                        <NavigationSkeletonHost />
+                      ) : null}
+                      <NavigationWrapper />
+                      <main className="headkit-main pb-10">{children}</main>
+                      <Suspense fallback={null}>
+                        <BelowMain />
+                      </Suspense>
+                      <Footer
+                        siteName={siteName}
+                        description={siteDescription}
+                        menus={footerMenus}
+                        iconUrl={branding.iconUrl}
+                        showSubscribe={showFooterSubscribe}
+                        hidePaymentIcons={checkoutMode === "quote"}
+                        // The footer's "Cookie preferences" link is part of the
+                        // gate, not decoration: it is the only way a visitor who
+                        // declined can change their mind. It renders only when the
+                        // gate is on, so a link that opens nothing is impossible.
+                        showCookiePreferences={cookieConsentEnabled}
+                        // NO `socialLinks` here. This is a TEMPLATE file, shipped
+                        // to every store, so a literal here publishes HeadKit's own
+                        // Instagram/Discord/GitHub/LinkedIn/YouTube in the merchant's
+                        // footer — which is exactly what happened, and it silently
+                        // overwrote a store that had forked these lines to its own
+                        // accounts. `Footer` gates the whole Connect block on
+                        // `hasSocialLinks`, so with the prop absent the block does
+                        // not render at all: no vendor links, no empty section. The
+                        // `SocialLinks` type and icon map stay as they are, so a
+                        // store can pass its own by forking this one line.
+                        //
+                        // Making that per-store DATA rather than a fork is an OPEN
+                        // DECISION, not scheduled work: `store-social-links-platform-field`
+                        // is a name to hold the decision by, NOT a ticket id — no
+                        // ticket exists. What is undecided is whether to build the
+                        // field at all, which would span the Mongo store document,
+                        // the dashboard-api schema and resolver, the dashboard form,
+                        // `packages/sdk` codegen and finally this file reading it —
+                        // not a one-round change. Leaving it open is safe: with the
+                        // prop gone, the worst a future template sync can do is drop
+                        // a store's own links, never republish the vendor's. If the
+                        // decision is ever taken, the repo convention is a
+                        // `docs/tickets/<slug>.md`.
+                        // Asserted by `app/layout-social-links.test.tsx`.
+                      />
+                      <Toaster />
+                    </CartProvider>
+                  </AuthProvider>
+                </CheckoutModeProvider>
+              </SwatchImageProvider>
+            </CatalogDisplayProvider>
           </ClientThemeProvider>
         </BrandingIconsProvider>
       </body>

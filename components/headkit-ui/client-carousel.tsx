@@ -76,7 +76,6 @@ const ClientCarousel = ({ clients }: Props) => {
       }}
       loop={true}
       showPagination={false}
-    
     >
       {logos.map((item, index) => {
         const href = clientHref(item);
@@ -99,7 +98,9 @@ const ClientCarousel = ({ clients }: Props) => {
 
         return (
           <div
-            key={index} className="flex w-[160px] flex-col items-center gap-2">
+            key={index}
+            className="flex w-[160px] flex-col items-center gap-2"
+          >
             {href ? (
               <InstantLink href={href} aria-label={name}>
                 {logo}
@@ -117,7 +118,6 @@ const ClientCarousel = ({ clients }: Props) => {
             ) : null}
           </div>
         );
-      
       })}
     </Carousel>
   );

@@ -20,7 +20,6 @@ interface Props {
   priority?: boolean;
 }
 
-
 /**
  * Subcategory image card shared by the SSR LCP slot and the client carousel.
  * Keep markup identical so the server-rendered first card matches the carousel.
