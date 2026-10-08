@@ -114,7 +114,18 @@ export function ProductSlide({
         regularPrice: product.regularPrice ?? "",
       };
   const isNewIn = Boolean(product.isNew);
-  const badges = productBadgesFromTags(product.tags, badgeTags, {
+  // SDK 1.4 product summaries have no `tags`. Newer SDKs do. Read them
+  // only when the field is present so both typecheck. New and Sale still
+  // come from `isNew` and `onSale`.
+  const tags =
+    "tags" in product
+      ? (
+          product as {
+            tags?: Parameters<typeof productBadgesFromTags>[0];
+          }
+        ).tags
+      : undefined;
+  const badges = productBadgesFromTags(tags, badgeTags, {
     hideNew: isNewIn,
     hideSale: product.onSale ?? false,
   });
