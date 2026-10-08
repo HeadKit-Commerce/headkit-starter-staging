@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
-import { ChevronDownIcon, MenuIcon, XIcon } from "@/components/icon";
+import { MenuIcon, XIcon } from "@/components/icon";
 import {
   NavigationMenu,
   NavigationMenuContent,
@@ -20,13 +20,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { isAppNavigationHref } from "@/lib/convert-uri";
-import { normalizeMenuTree, toMegaMenuColumns } from "@/lib/menu-columns";
 import { cn, decodeHtmlEntities } from "@/lib/utils";
 import { HeaderActions } from "@/components/headkit-ui/header-actions";
 import { CartTriggerButton } from "@/components/headkit-ui/cart-trigger-button";
@@ -178,7 +172,7 @@ export function NavigationBar({
         {centeredLogo ? (
           <NavigationMenuLink asChild>
             <InstantLink
-        prefetch={true}
+              prefetch={true}
               href="/"
               aria-label="Home"
               className="headkit-nav-logo absolute left-1/2 z-[1] cursor-pointer hover:opacity-75"
@@ -197,7 +191,7 @@ export function NavigationBar({
             <NavigationMenuItem className="mr-4 hover:opacity-75">
               <NavigationMenuLink asChild>
                 <InstantLink
-        prefetch={true}
+                  prefetch={true}
                   href="/"
                   aria-label="Home"
                   className="cursor-pointer"
@@ -291,14 +285,14 @@ export function NavigationBar({
                 <SheetDescription hidden />
                 <nav className="flex flex-col gap-4 overflow-y-auto max-h-full pb-20 px-7 pt-6">
                   {primaryMenuItems.length > 0 && (
-                    <MobileMenuSection
+                    <DeferredMobileMenuSection
                       items={primaryMenuItems}
                       onSelect={() => setMobileOpen(false)}
                       highlightedLinks={highlightedLinks}
                     />
                   )}
                   {secondaryMenuItems && secondaryMenuItems.length > 0 && (
-                    <MobileMenuSection
+                    <DeferredMobileMenuSection
                       items={secondaryMenuItems}
                       onSelect={() => setMobileOpen(false)}
                       highlightedLinks={highlightedLinks}
@@ -358,7 +352,7 @@ function Preheader({
           ) : null}
           {links?.map(({ label, uri }, i) => (
             <InstantLink
-        prefetch={true}
+              prefetch={true}
               key={i}
               href={uri}
               className="underline text-brand-bg"
@@ -375,6 +369,72 @@ function Preheader({
 
 // ---------------------------------------------------------------------------
 // Desktop – DesktopMenuSection
+
+function DeferredMegaMenu(props: {
+  items: NavMenuItem[];
+  viewAll?: { href: string; label: string };
+}) {
+  const [Panel, setPanel] = useState<React.ComponentType<{
+    items: NavMenuItem[];
+    viewAll?: { href: string; label: string };
+  }> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void import("@/components/headkit-ui/navigation-menu-panels").then(
+      (mod) => {
+        if (!cancelled) {
+          setPanel(
+            () =>
+              mod.MegaMenu as React.ComponentType<{
+                items: NavMenuItem[];
+                viewAll?: { href: string; label: string };
+              }>,
+          );
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (!Panel) return null;
+  return <Panel {...props} />;
+}
+
+function DeferredMobileMenuSection(props: {
+  items: NavMenuItem[];
+  onSelect?: () => void;
+  highlightedLinks: string[];
+}) {
+  const [Panel, setPanel] = useState<React.ComponentType<{
+    items: NavMenuItem[];
+    onSelect?: () => void;
+    highlightedLinks: string[];
+  }> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void import("@/components/headkit-ui/navigation-menu-panels").then(
+      (mod) => {
+        if (!cancelled) {
+          setPanel(
+            () =>
+              mod.MobileMenuSection as React.ComponentType<{
+                items: NavMenuItem[];
+                onSelect?: () => void;
+                highlightedLinks: string[];
+              }>,
+          );
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (!Panel) return null;
+  return <Panel {...props} />;
+}
+
 // ---------------------------------------------------------------------------
 
 function DesktopMenuSection({
@@ -428,7 +488,7 @@ function DesktopMenuSection({
                   {label}
                 </NavigationMenuTrigger>
                 <NavigationMenuContent className="w-screen! rounded-none! bg-brand-bg">
-                  <MegaMenu
+                  <DeferredMegaMenu
                     items={item.children}
                     {...(hasOwnDestination(href)
                       ? { viewAll: { href, label } }
@@ -484,277 +544,3 @@ function hasOwnDestination(href: string): boolean {
  * childless items in a row read as one list rather than a stack of
  * individually-spaced headings with the bold stripped off.
  */
-function groupMegaMenuColumnItems(
-  column: readonly NavMenuItem[],
-): (NavMenuItem | NavMenuItem[])[] {
-  const groups: (NavMenuItem | NavMenuItem[])[] = [];
-  let run: NavMenuItem[] = [];
-  for (const item of column) {
-    if (item.children.length > 0) {
-      if (run.length > 0) {
-        groups.push(run);
-        run = [];
-      }
-      groups.push(item);
-    } else {
-      run.push(item);
-    }
-  }
-  if (run.length > 0) groups.push(run);
-  return groups;
-}
-
-/**
- * The desktop panel.
- *
- * Exported for `navigation-bar.test.tsx`: Radix keeps panel content unmounted
- * until the menu opens, so server markup of the whole bar cannot show what a
- * panel renders.
- *
- * `items` are the parent's raw children, so they may still contain WordPress
- * column containers; `toMegaMenuColumns` turns them into the columns to render
- * and drops any that would be empty (see `lib/menu-columns.ts`).
- */
-export function MegaMenu({
-  items,
-  viewAll,
-}: {
-  items: NavMenuItem[];
-  /** The parent's own destination, moved off the trigger into the panel. */
-  viewAll?: { href: string; label: string };
-}) {
-  const columns = toMegaMenuColumns(items);
-  return (
-    <ul className="grid gap-5 w-full px-5 md:px-10 py-6 grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
-      {viewAll && (
-        <li className="col-span-full">
-          <NavigationMenuLink asChild>
-            <InstantLink
-        prefetch={true}
-              href={viewAll.href}
-              pendingVariant="text"
-              className="font-semibold text-primary hover:opacity-80 underline block"
-            >
-              View all {viewAll.label}
-            </InstantLink>
-          </NavigationMenuLink>
-        </li>
-      )}
-      {columns.map((column, index) => (
-        <li key={column[0]?.id ?? index} className="flex flex-col gap-5">
-          {groupMegaMenuColumnItems(column).map((group, groupIndex) =>
-            Array.isArray(group) ? (
-              // A run of childless items: one `gap-1` list, same rhythm as the
-              // child links under a heading — not a heading each.
-              <ul
-                key={group[0]?.id ?? groupIndex}
-                className="flex flex-col gap-1"
-              >
-                {group.map((item) => (
-                  <MegaMenuChild key={item.id} item={item} depth={0} />
-                ))}
-              </ul>
-            ) : (
-              <div key={group.id}>
-                <NavigationMenuLink asChild>
-                  <InstantLink
-        prefetch={true}
-                    href={removeTrailingSlash(group.uri)}
-                    pendingVariant="text"
-                    className="font-semibold text-primary hover:opacity-80 uppercase block mb-2"
-                  >
-                    {decodeHtmlEntities(group.label)}
-                  </InstantLink>
-                </NavigationMenuLink>
-                <ul className="flex flex-col gap-1">
-                  {group.children.map((child) => (
-                    <MegaMenuChild key={child.id} item={child} depth={0} />
-                  ))}
-                </ul>
-              </div>
-            ),
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/**
- * One link inside a column, under its column heading, plus anything beneath it.
- *
- * Recursive: Bike Society's menu is four levels deep
- * (`EQUIPMENT → column → category → subcategory`), so a category heading in a
- * column carries its own subcategory list. Sub-levels indent and lighten rather
- * than repeating the heading treatment.
- */
-function MegaMenuChild({ item, depth }: { item: NavMenuItem; depth: number }) {
-  return (
-    <li>
-      <NavigationMenuLink asChild>
-        <InstantLink
-        prefetch={true}
-          href={removeTrailingSlash(item.uri)}
-          pendingVariant="text"
-          className={cn(
-            "hover:opacity-80 text-[15px] block py-0.5",
-            depth === 0 ? "text-primary/70" : "text-primary/50",
-          )}
-        >
-          {decodeHtmlEntities(item.label)}
-        </InstantLink>
-      </NavigationMenuLink>
-      {item.children.length > 0 && (
-        <ul className="flex flex-col gap-1 pl-3">
-          {item.children.map((child) => (
-            <MegaMenuChild key={child.id} item={child} depth={depth + 1} />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Mobile – MobileMenuSection
-// ---------------------------------------------------------------------------
-
-/**
- * The mobile sheet's list. Exported for `navigation-bar.test.tsx`: the sheet is
- * a Radix dialog and stays unmounted until it opens.
- */
-export function MobileMenuSection({
-  items,
-  onSelect,
-  highlightedLinks,
-}: {
-  items: NavMenuItem[];
-  onSelect?: (() => void) | undefined;
-  highlightedLinks: string[];
-}) {
-  return (
-    <div className="flex flex-col gap-4">
-      {items.map((item) => (
-        <MobileMenuItem
-          key={item.id}
-          item={item}
-          onSelect={onSelect}
-          highlightedLinks={highlightedLinks}
-        />
-      ))}
-    </div>
-  );
-}
-
-/**
- * One row inside an open mobile section, plus everything under it.
- *
- * Recursive, so the sheet carries however many levels the menu has — Bike
- * Society's is four (`EQUIPMENT → column → category → subcategory`), and the
- * columns are already spliced out by the time this renders. `depth` only drives
- * indentation and weight: the first row under a section stands out, everything
- * below it is a sub-link.
- *
- * Exported for `navigation-bar.test.tsx`: a closed Radix collapsible renders no
- * content, so the sheet's rows are not reachable through `MobileMenuSection`.
- */
-export function MobileMenuBranch({
-  item,
-  depth,
-  onSelect,
-}: {
-  item: NavMenuItem;
-  depth: number;
-  onSelect?: (() => void) | undefined;
-}) {
-  const hasChildren = item.children.length > 0;
-  return (
-    <div>
-      <InstantLink
-        prefetch={true}
-        href={removeTrailingSlash(item.uri)}
-        pendingVariant="text"
-        className={cn(
-          "block text-[15px]",
-          depth === 0 && hasChildren
-            ? "font-medium text-primary hover:opacity-70 py-1"
-            : "text-primary/70 hover:opacity-70",
-          depth === 0 && !hasChildren ? "py-1" : "py-0.5",
-        )}
-        {...(onSelect ? { onClick: onSelect } : {})}
-      >
-        {decodeHtmlEntities(item.label)}
-      </InstantLink>
-      {hasChildren && (
-        <div className="flex flex-col gap-1 pl-3">
-          {item.children.map((child) => (
-            <MobileMenuBranch
-              key={child.id}
-              item={child}
-              depth={depth + 1}
-              {...(onSelect ? { onSelect } : {})}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MobileMenuItem({
-  item,
-  onSelect,
-  highlightedLinks,
-}: {
-  item: NavMenuItem;
-  onSelect?: (() => void) | undefined;
-  highlightedLinks: string[];
-}) {
-  // The sheet is a flat list, so a WordPress column container has no meaning
-  // here at all: splice it away at every depth and show the real links.
-  const children = normalizeMenuTree(item.children);
-
-  if (children.length > 0) {
-    return (
-      <Collapsible>
-        <CollapsibleTrigger className="text-xl font-semibold font-body text-primary flex w-full justify-between items-center group focus-visible:outline-none">
-          <span className="group-data-[state=open]:opacity-70">
-            {decodeHtmlEntities(item.label)}
-          </span>
-          <span className="group-data-[state=open]:hidden text-primary">
-            <ChevronDownIcon size={20} />
-          </span>
-          <span className="hidden group-data-[state=open]:block rotate-180 text-primary">
-            <ChevronDownIcon size={20} />
-          </span>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="flex flex-col gap-2 pt-2">
-          {children.map((child) => (
-            <MobileMenuBranch
-              key={child.id}
-              item={child}
-              depth={0}
-              {...(onSelect ? { onSelect } : {})}
-            />
-          ))}
-        </CollapsibleContent>
-      </Collapsible>
-    );
-  }
-
-  return (
-    <InstantLink
-        prefetch={true}
-      href={removeTrailingSlash(item.uri)}
-      pendingVariant="text"
-      className={cn(
-        "text-xl font-semibold font-body text-primary hover:opacity-70",
-        isHighlightedItem(item, highlightedLinks) &&
-          "text-pink-500 hover:!text-pink-600",
-      )}
-      {...(onSelect ? { onClick: onSelect } : {})}
-    >
-      {decodeHtmlEntities(item.label)}
-    </InstantLink>
-  );
-}

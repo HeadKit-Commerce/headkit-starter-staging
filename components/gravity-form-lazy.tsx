@@ -1,33 +1,58 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+
+export type LazyGravityFormProps = {
+  id?: string;
+  formId: string;
+  initialValues?: { fieldName: string; value: string }[];
+  onSubmit?: (values: Record<string, string>) => Promise<void>;
+  extraFields?: ReactNode;
+  buttonClassName?: string;
+  disabled?: boolean;
+  fallback?: ReactNode;
+};
 
 /**
  * Skeleton mirroring GravityForm's own loading state so the lazy chunk swap is
  * visually seamless. Kept local — importing it from gravity-form.tsx would pull
  * the full chunk back into the static graph and defeat the split.
  */
-const GravityFormSkeleton = () => (
-  <div className="flex w-full flex-col gap-2">
-    <Skeleton className="h-10" />
-    <Skeleton className="h-10" />
-    <Skeleton className="h-10" />
-    <Skeleton className="h-10" />
-    <Skeleton className="h-24" />
-    <Skeleton className="h-10" />
-  </div>
-);
+function GravityFormSkeleton() {
+  return (
+    <div className="flex w-full flex-col gap-2">
+      <Skeleton className="h-10" />
+      <Skeleton className="h-10" />
+      <Skeleton className="h-10" />
+      <Skeleton className="h-10" />
+      <Skeleton className="h-24" />
+      <Skeleton className="h-10" />
+    </div>
+  );
+}
 
 /**
- * Lazy-loaded GravityForm (RC-1 perf fix).
+ * Loads the Gravity Form module when this component mounts.
  *
- * The static form component drags react-hook-form + zod resolver into every
- * route that references it; loading it via next/dynamic keeps that bundle in
- * an async chunk fetched only when a form actually renders (contact page,
- * opened PDP enquiry panel) instead of on the shared catalog-route path.
+ * `next/dynamic` preloads its chunk for every page that imports this file.
+ * Editorial content imports it on the homepage, which does not render a form,
+ * so that preload put the form on the home graph. A mount-time import()
+ * fetches the module only when a form is actually shown.
  */
-export const GravityForm = dynamic(
-  () => import("@/components/gravity-form").then((m) => m.GravityForm),
-  { ssr: false, loading: GravityFormSkeleton },
-);
+export function GravityForm(props: LazyGravityFormProps) {
+  const [Form, setForm] = useState<ComponentType<LazyGravityFormProps> | null>(
+    null,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void import("@/components/gravity-form").then((mod) => {
+      if (!cancelled) setForm(() => mod.GravityForm);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (!Form) return <GravityFormSkeleton />;
+  return <Form {...props} />;
+}
