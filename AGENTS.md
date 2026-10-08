@@ -1112,9 +1112,11 @@ safe, and do not "simplify" this to a per-route `key` at the mount sites.
 the real `CollectionPage` → `CollectionProvider` → `ProductGrid` chain into a DOM and
 re-rendering at the same tree position. It covers the same-route re-render ONLY: no router
 runs in it, so it cannot see Next's segment keying, the live navigation, or the server read
-behind `initialProducts`. It is also this app's only `jsdom` test — the vitest environment
-stays `node` and that file opts in with a `@vitest-environment jsdom` docblock. Reach for
-jsdom only when the claim is literally about state surviving (or not surviving) a re-render.
+behind `initialProducts`. The vitest environment stays `node`, so this file — like every
+other DOM test here — opts in with a `@vitest-environment jsdom` docblock. Reach for jsdom
+only when the claim is literally about state surviving (or not surviving) a re-render:
+`collection-load-more-count.test.tsx` is the sibling that qualifies, driving this provider
+through Load More to pin the synchronous `products` mirrors the clamp reads.
 
 One measurement worth not re-deriving: after a client navigation the PREVIOUS listing's DOM
 is retained beside the new one, `display:none` on its own `.headkit-collection`, so a naive
