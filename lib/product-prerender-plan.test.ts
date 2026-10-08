@@ -68,7 +68,9 @@ describe("planFromStatus", () => {
 
   it("builds every URL at or under the SKU ceiling when commerce has not sent prerender", () => {
     expect(planFromStatus({ total: 2_677, enabled: true }).mode).toBe("all");
-    expect(planFromStatus({ total: PRODUCT_PRERENDER_SKU_CEILING }).mode).toBe("all");
+    expect(planFromStatus({ total: PRODUCT_PRERENDER_SKU_CEILING }).mode).toBe(
+      "all",
+    );
     expect(planFromStatus({ total: 0 }).mode).toBe("all");
   });
 
@@ -93,9 +95,10 @@ describe("planFromStatus", () => {
       }),
     ).toMatchObject({ mode: "on-demand", paths: ["/products/felix"] });
 
-    expect(
-      planFromStatus({ total: 0, reason: "PROBE_FAILED" }),
-    ).toMatchObject({ mode: "on-demand", reason: "PROBE_FAILED" });
+    expect(planFromStatus({ total: 0, reason: "PROBE_FAILED" })).toMatchObject({
+      mode: "on-demand",
+      reason: "PROBE_FAILED",
+    });
   });
 
   it("fails closed when the payload cannot be read", () => {

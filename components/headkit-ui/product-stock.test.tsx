@@ -73,7 +73,9 @@ describe("ProductStock", () => {
 
     const element = (await ProductStock({
       productSlug: "acme-hoodie",
-    })) as ReactElement<{ snapshot: { variations: unknown[]; brandSlug: string } }>;
+    })) as ReactElement<{
+      snapshot: { variations: unknown[]; brandSlug: string };
+    }>;
 
     expect(getLiveProductStock).toHaveBeenCalledWith("acme-hoodie");
     expect(getCachedProduct).not.toHaveBeenCalled();

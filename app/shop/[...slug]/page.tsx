@@ -339,9 +339,7 @@ export async function generateMetadata({
 export const instant = true;
 
 export default function Page(props: Props): ReactNode {
-  return (
-    <ShopRoute params={props.params} />
-  );
+  return <ShopRoute params={props.params} />;
 }
 
 export async function ShopRoute({

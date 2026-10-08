@@ -324,14 +324,19 @@ vi.mock("@/components/headkit-ui/carousel", () => ({
   Carousel: <T,>({
     items,
     renderItem,
+    children,
   }: {
-    items: T[];
-    renderItem: (item: T, index: number) => React.ReactNode;
+    items?: T[];
+    renderItem?: (item: T, index: number) => React.ReactNode;
+    children?: React.ReactNode;
   }): React.JSX.Element => (
     <div>
-      {items.map((item, index) => (
-        <div key={index}>{renderItem(item, index)}</div>
-      ))}
+      {children}
+      {items && renderItem
+        ? items.map((item, index) => (
+            <div key={index}>{renderItem(item, index)}</div>
+          ))
+        : null}
     </div>
   ),
 }));

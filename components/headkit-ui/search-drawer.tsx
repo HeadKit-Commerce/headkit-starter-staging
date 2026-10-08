@@ -38,7 +38,10 @@ function debounce<T extends unknown[]>(
   };
 }
 
-export function SearchDrawer({ trigger, defaultOpen = false }: SearchDrawerProps) {
+export function SearchDrawer({
+  trigger,
+  defaultOpen = false,
+}: SearchDrawerProps) {
   const router = useRouter();
   const { Search } = useChromeIcons();
   const { showVariants } = useCatalogDisplay();

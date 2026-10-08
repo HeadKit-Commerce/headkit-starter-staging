@@ -42,7 +42,6 @@ const BrandCarousel = ({ brands }: Props) => {
       }}
       loop={true}
       showPagination={false}
-    
     >
       {logos.map((item, index) => {
         const href = `/brand/${item?.slug ?? ""}`;
@@ -66,7 +65,6 @@ const BrandCarousel = ({ brands }: Props) => {
             />
           </InstantLink>
         );
-      
       })}
     </Carousel>
   );

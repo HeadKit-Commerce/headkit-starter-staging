@@ -107,44 +107,44 @@ export function CollectionPage({
         ? { promise: loadSwatchImageMap(initialProducts) }
         : {})}
     >
-    <CollectionProvider
-      // See `collectionInstanceKey`: without it a same-route navigation keeps
-      // the previous route's products, total and pagination cursor.
-      key={collectionInstanceKey({
-        initialPage,
-        onSale,
-        isNew,
-        search,
-        brandSlug,
-        categorySlug,
-        categoryBasePath,
-        initialFilterValues,
-        initialBrands,
-      })}
-      initialProducts={initialProducts}
-      initialTotal={initialTotal}
-      productFilter={productFilter}
-      initialPage={initialPage}
-      itemsPerPage={itemsPerPage}
-      onSale={onSale}
-      isNew={isNew}
-      search={search}
-      brandSlug={brandSlug}
-      categorySlug={categorySlug}
-      categoryBasePath={categoryBasePath}
-      initialFilterValues={initialFilterValues}
-      initialBrands={initialBrands}
-    >
-      <div className="headkit-collection flex flex-col gap-4">
+      <CollectionProvider
+        // See `collectionInstanceKey`: without it a same-route navigation keeps
+        // the previous route's products, total and pagination cursor.
+        key={collectionInstanceKey({
+          initialPage,
+          onSale,
+          isNew,
+          search,
+          brandSlug,
+          categorySlug,
+          categoryBasePath,
+          initialFilterValues,
+          initialBrands,
+        })}
+        initialProducts={initialProducts}
+        initialTotal={initialTotal}
+        productFilter={productFilter}
+        initialPage={initialPage}
+        itemsPerPage={itemsPerPage}
+        onSale={onSale}
+        isNew={isNew}
+        search={search}
+        brandSlug={brandSlug}
+        categorySlug={categorySlug}
+        categoryBasePath={categoryBasePath}
+        initialFilterValues={initialFilterValues}
+        initialBrands={initialBrands}
+      >
+        <div className="headkit-collection flex flex-col gap-4">
           <Filter />
-        <LoadPrevious />
-        <ProductGrid preferHeaderLcp={preferHeaderLcp} />
-        <div className="flex flex-col items-center gap-5 pb-10">
-          <LoadMore />
-          <ProductCount />
+          <LoadPrevious />
+          <ProductGrid preferHeaderLcp={preferHeaderLcp} />
+          <div className="flex flex-col items-center gap-5 pb-10">
+            <LoadMore />
+            <ProductCount />
+          </div>
         </div>
-      </div>
-    </CollectionProvider>
+      </CollectionProvider>
     </SwatchImageProvider>
   );
 }

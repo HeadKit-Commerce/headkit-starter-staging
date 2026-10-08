@@ -221,9 +221,7 @@ export function facetPlanFromStatus(status: unknown): FacetCataloguePlan {
   };
 }
 
-function bulkStatusOf(
-  products: object,
-): (() => Promise<unknown>) | undefined {
+function bulkStatusOf(products: object): (() => Promise<unknown>) | undefined {
   if (!("bulkStatus" in products)) return undefined;
   const bulkStatus = products.bulkStatus;
   if (typeof bulkStatus !== "function") return undefined;
@@ -248,8 +246,7 @@ export async function readFacetCataloguePlan(
       lastError = error;
     }
   }
-  const message =
-    lastError instanceof Error ? lastError.message : "unknown";
+  const message = lastError instanceof Error ? lastError.message : "unknown";
   logDuringBuild(`[collection-facets] status read failed (${message})`);
   return ON_DEMAND_UNAVAILABLE;
 }
@@ -289,9 +286,7 @@ export function facetPageRoom(
   if (plan.total === null) return Number.POSITIVE_INFINITY;
   if (plan.bulkPrefetch) return MEDIUM_FACET_PAGE_BUDGET;
   return (
-    BUILD_PAGE_CEILING -
-    productPagesForPlan(plan) -
-    Math.max(0, categoryCount)
+    BUILD_PAGE_CEILING - productPagesForPlan(plan) - Math.max(0, categoryCount)
   );
 }
 
@@ -347,8 +342,7 @@ export function shouldEmitCollectionFacets(
   facetCount: number,
 ): boolean {
   const room = facetPageRoom(plan, categoryCount);
-  const emit =
-    facetCount > 0 && (!Number.isFinite(room) || facetCount <= room);
+  const emit = facetCount > 0 && (!Number.isFinite(room) || facetCount <= room);
   const roomText = Number.isFinite(room) ? String(room) : "unlimited";
   logDuringBuild(
     `[collection-facets] emit=${emit} facets=${facetCount} categories=${categoryCount} room=${roomText}`,

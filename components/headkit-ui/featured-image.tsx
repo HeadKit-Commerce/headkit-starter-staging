@@ -111,13 +111,13 @@ const FeaturedImage = ({
           quality={quality}
           aria-hidden
           className={cn(
-          objectClass,
-          revealOnGroupHover
-            ? "opacity-0 group-hover:opacity-100"
-            : revealHover
-              ? "opacity-100"
-              : "opacity-0",
-        )}
+            objectClass,
+            revealOnGroupHover
+              ? "opacity-0 group-hover:opacity-100"
+              : revealHover
+                ? "opacity-100"
+                : "opacity-0",
+          )}
           sizes={sizes}
         />
       ) : null}

@@ -142,18 +142,18 @@ The starter ships **hook classes** on key layout regions so you can target them 
 
 ### Catalog & commerce
 
-| Hook class                    | Where                                            | Use for                            |
-| ----------------------------- | ------------------------------------------------ | ---------------------------------- |
-| `headkit-collection`          | PLP / collection grid shell                      | Filters, grid, load-more           |
-| `headkit-product-card`        | Individual product card                          | Card image, title, price, swatches |
-| `headkit-product-detail`      | PDP (product detail)                             | Gallery + buy box layout           |
+| Hook class                    | Where                                                                                | Use for                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `headkit-collection`          | PLP / collection grid shell                                                          | Filters, grid, load-more                                                   |
+| `headkit-product-card`        | Individual product card                                                              | Card image, title, price, swatches                                         |
+| `headkit-product-detail`      | PDP (product detail)                                                                 | Gallery + buy box layout                                                   |
 | `headkit-pdp-gallery`         | PDP image gallery (`data-pdp-gallery`, `[data-gallery-tile]`, `[data-gallery-lead]`) | Tile aspect and lead image fit. Arrangement comes from dashboard branding. |
-| `headkit-badge-new`           | “New” product badge                              | Colour, hide, typography           |
-| `headkit-badge-sale`          | “Sale” product badge                             | Colour, hide, typography           |
-| `headkit-badge-cart`          | Cart quantity badge on icon                      | Badge colour / size                |
-| `headkit-recently-viewed`     | Recently viewed products strip                   | Section spacing / heading          |
-| `headkit-product-sticky-bar`  | PDP sticky add-to-cart bar                       | Bar background, height, hide it    |
-| `headkit-availability-status` | PDP stock line (`data-status` carries the state) | Copy colour, hide the pulsing dot  |
+| `headkit-badge-new`           | “New” product badge                                                                  | Colour, hide, typography                                                   |
+| `headkit-badge-sale`          | “Sale” product badge                                                                 | Colour, hide, typography                                                   |
+| `headkit-badge-cart`          | Cart quantity badge on icon                                                          | Badge colour / size                                                        |
+| `headkit-recently-viewed`     | Recently viewed products strip                                                       | Section spacing / heading                                                  |
+| `headkit-product-sticky-bar`  | PDP sticky add-to-cart bar                                                           | Bar background, height, hide it                                            |
+| `headkit-availability-status` | PDP stock line (`data-status` carries the state)                                     | Copy colour, hide the pulsing dot                                          |
 
 ### Key routes
 

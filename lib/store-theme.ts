@@ -432,4 +432,3 @@ export function getThemeHtmlAttributes(
     "data-homepage-nav": theme.layout.homepageNav,
   };
 }
-

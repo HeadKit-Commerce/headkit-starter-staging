@@ -304,89 +304,81 @@ export async function HomeContent() {
 
       {/* Featured Products — skipped when WP already provides a product carousel */}
       {showHardcodedFeatured && (
-          <section className="headkit-product-carousel overflow-x-clip py-10">
-            <SectionHeader
-              title={featuredCopy.title}
-              description={featuredCopy.description}
-              allButton={featuredCopy.allButton}
-              allButtonPath={featuredCopy.allButtonPath}
-              className="px-5 md:px-10"
+        <section className="headkit-product-carousel overflow-x-clip py-10">
+          <SectionHeader
+            title={featuredCopy.title}
+            description={featuredCopy.description}
+            allButton={featuredCopy.allButton}
+            allButtonPath={featuredCopy.allButtonPath}
+            className="px-5 md:px-10"
+          />
+          <div className="mt-8">
+            <ProductCarousel
+              products={featuredProducts.slice(0, 12)}
+              id="featured-products"
+              prefetchCount={
+                warmPlatformFeaturedCarousel ? CAROUSEL_FIRST_ROW : 0
+              }
             />
-            <div className="mt-8">
-              <ProductCarousel
-                products={featuredProducts.slice(0, 12)}
-                id="featured-products"
-                prefetchCount={
-                  warmPlatformFeaturedCarousel ? CAROUSEL_FIRST_ROW : 0
-                }
-              />
-            </div>
-          </section>
-        )}
+          </div>
+        </section>
+      )}
 
       <HomeAfterFeatured />
 
       {/* On Sale — skipped when WP already provides a product-on-sale carousel */}
       {showHardcodedSale && (
-          <section className="headkit-product-carousel overflow-x-clip py-10">
-            <SectionHeader
-              title="On Sale"
-              description=""
-              allButton="View All"
-              allButtonPath="/sale"
-              className="px-5 md:px-10"
+        <section className="headkit-product-carousel overflow-x-clip py-10">
+          <SectionHeader
+            title="On Sale"
+            description=""
+            allButton="View All"
+            allButtonPath="/sale"
+            className="px-5 md:px-10"
+          />
+          <div className="mt-8">
+            <ProductCarousel
+              products={onSaleProducts.products.slice(0, 12) as Product[]}
+              id="on-sale-products"
+              prefetchCount={warmPlatformSaleCarousel ? CAROUSEL_FIRST_ROW : 0}
             />
-            <div className="mt-8">
-              <ProductCarousel
-                products={onSaleProducts.products.slice(0, 12) as Product[]}
-                id="on-sale-products"
-                prefetchCount={
-                  warmPlatformSaleCarousel ? CAROUSEL_FIRST_ROW : 0
-                }
-              />
-            </div>
-          </section>
-        )}
+          </div>
+        </section>
+      )}
 
       {/* Shop by Category — skipped when WP provides headkit-category-carousel */}
       {showHardcodedCategories && (
-          <section className="headkit-category-carousel overflow-hidden py-10">
-            <SectionHeader
-              title="Shop by Category"
-              description=""
-              allButton="View All"
-              allButtonPath="/shop"
-              className="px-5 md:px-10"
+        <section className="headkit-category-carousel overflow-hidden py-10">
+          <SectionHeader
+            title="Shop by Category"
+            description=""
+            allButton="View All"
+            allButtonPath="/shop"
+            className="px-5 md:px-10"
+          />
+          <div className="mt-8">
+            <CategoryCarousel
+              categories={featuredCategories}
+              {...(homepageCardLink ? { cardLinkText: homepageCardLink } : {})}
             />
-            <div className="mt-8">
-              <CategoryCarousel
-                categories={featuredCategories}
-                {...(homepageCardLink
-                  ? { cardLinkText: homepageCardLink }
-                  : {})}
-              />
-            </div>
-          </section>
-        )}
+          </div>
+        </section>
+      )}
 
       {showLatestPosts && postsBasePath ? (
-            <section className="headkit-post-carousel overflow-hidden py-10">
-              <SectionHeader
-                title={latestNewsCopy.title}
-                description={latestNewsCopy.description}
-                allButton={latestNewsCopy.allButton}
-                allButtonPath={latestNewsCopy.allButtonPath}
-                className="px-5 md:px-10"
-              />
-              <div className="mt-8">
-                <PostCarousel
-                  posts={latestPosts}
-                  postsBasePath={postsBasePath}
-                />
-              </div>
-            </section>
-          )
-        : null}
+        <section className="headkit-post-carousel overflow-hidden py-10">
+          <SectionHeader
+            title={latestNewsCopy.title}
+            description={latestNewsCopy.description}
+            allButton={latestNewsCopy.allButton}
+            allButtonPath={latestNewsCopy.allButtonPath}
+            className="px-5 md:px-10"
+          />
+          <div className="mt-8">
+            <PostCarousel posts={latestPosts} postsBasePath={postsBasePath} />
+          </div>
+        </section>
+      ) : null}
     </>
   );
 }

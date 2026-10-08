@@ -73,7 +73,14 @@ const MISSING = [
  */
 
 /** Route prefixes to sample a REAL, live URL for from the sitemap. */
-const LIVE_PREFIXES = ["/products/", "/collections/", "/news/", "/shop/", "/brand/", "/projects/"];
+const LIVE_PREFIXES = [
+  "/products/",
+  "/collections/",
+  "/news/",
+  "/shop/",
+  "/brand/",
+  "/projects/",
+];
 
 /** Every `<loc>` in the sitemap, as site-relative paths. */
 async function sitemapPaths(request: APIRequestContext): Promise<string[]> {

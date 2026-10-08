@@ -67,7 +67,10 @@ export function SwatchDot({
     : undefined;
 
   return (
-    <span className={cn(DOT_CLASS, ring, "relative")} {...(style ? { style } : {})}>
+    <span
+      className={cn(DOT_CLASS, ring, "relative")}
+      {...(style ? { style } : {})}
+    >
       {/* Clip the photo inside the dot. Overflow on the dot itself would crop
           the selection outline. */}
       <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">

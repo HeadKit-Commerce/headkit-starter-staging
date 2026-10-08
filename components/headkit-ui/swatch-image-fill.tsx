@@ -3,10 +3,7 @@
 import { Suspense, use, useEffect, useState } from "react";
 import Image from "next/image";
 import { fetchSwatchImages } from "@/lib/swatch-image-action";
-import {
-  commerceOriginFromImageSrc,
-  swatchImageKey,
-} from "@/lib/swatch-image";
+import { commerceOriginFromImageSrc, swatchImageKey } from "@/lib/swatch-image";
 import { useSwatchImageContext } from "@/components/headkit-ui/swatch-image-provider";
 import type { SwatchImageStream } from "@/lib/swatch-image";
 

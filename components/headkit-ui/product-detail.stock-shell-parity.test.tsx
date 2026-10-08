@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
+// `product-stock.tsx` imports `lib/product-brand`, which imports `lib/sdk`.
+// `createClientSDK()` reads the public key at module load and throws when it
+// is unset. The other two keys are what `lib/env` requires on the server.
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_HEADKIT_PUBLIC_KEY ??= "pk_test";
+  process.env.NEXT_PUBLIC_GRAPHQL_URL ??= "http://localhost:4000/graphql";
+  process.env.HEADKIT_PRIVATE_KEY ??= "sk_test";
+});
+
 /**
  * Taking the size-blind server slot off variable products costs the static
  * shell NOTHING, and that is a property of the seed rather than luck.
@@ -71,6 +80,7 @@ vi.mock("@/lib/ga4-ecommerce", () => ({
   pushGa4Ecommerce: (): void => {},
 }));
 vi.mock("@/lib/product-cache", () => ({
+  getLiveProductStock: async (): Promise<unknown> => PRODUCT,
   getCachedProduct: async (): Promise<unknown> => PRODUCT,
 }));
 

@@ -28,10 +28,9 @@ import {
  *
  * A CLICKED LINK does not paint a skeleton. `InstantLink` accepts `skeleton` and
  * `pendingVariant` so existing call sites keep typechecking, and it does not
- * read them. The destination route's `loading.tsx` is the skeleton, and only
- * when that page is not already ready (`AGENTS.md`, "Card routes navigate
- * instantly"). A press — click or mouse-down, skeleton prop set or not — opens
- * no request and paints no overlay and no pulse.
+ * read them. Catalogue routes have no route-level `loading.tsx` (#601): the
+ * static shell is the first paint. A press — click or mouse-down, skeleton
+ * prop set or not — opens no request and paints no overlay and no pulse.
  *
  * THE OVERLAY HOST is still the full-page cover for a request something else
  * opens. Filter navigations in `collection-context.tsx` are that caller. Those
@@ -234,12 +233,15 @@ describe("a clicked link does not paint a skeleton", () => {
     expect(source).toContain("loading.tsx");
   });
 
-  it.each(CARD_ROUTE_LOADING)("leaves the skeleton to %s", (file) => {
-    expect(
-      existsSync(file),
-      `${file} is the skeleton for that route. Deleting it to restore an overlay on the link brings back the blocked click.`,
-    ).toBe(true);
-  });
+  it.each(CARD_ROUTE_LOADING)(
+    "keeps %s absent so the static shell paints",
+    (file) => {
+      expect(
+        existsSync(file),
+        `${file} would put a Suspense boundary above the page and stream a 200 instead of letting the static shell paint.`,
+      ).toBe(false);
+    },
+  );
 
   it.each([
     ["a product", PRODUCT_HREF, undefined],
@@ -306,7 +308,7 @@ describe("a clicked link does not paint a skeleton", () => {
     advance(NAVIGATION_SKELETON_DELAY_MS);
     expect(
       getNavigationSkeletonRequest(),
-      'The card may still pass skeleton="post". InstantLink does not read it; app/news/[...slug]/loading.tsx is the skeleton.',
+      'The card may still pass skeleton="post". InstantLink does not read it, and the news route has no loading.tsx — the static shell is the first paint.',
     ).toBeNull();
     expect(skeleton()).toBeNull();
   });

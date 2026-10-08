@@ -14,22 +14,15 @@ const PostCarousel = ({
   postsBasePath = DEFAULT_POSTS_BASE_PATH,
 }: Props) => {
   return (
-    <Carousel
-      className="w-full pb-8"
-      showPagination={false}
-    
-    >
+    <Carousel className="w-full pb-8" showPagination={false}>
       {posts.map((post, index) => (
-
         <PostCard
-
           key={index}
           title={post.title}
           image={post?.featuredImage?.src ?? ""}
           uri={post.uri ?? post.slug}
           postsBasePath={postsBasePath}
         />
-      
       ))}
     </Carousel>
   );

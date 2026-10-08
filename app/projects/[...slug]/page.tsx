@@ -26,8 +26,6 @@ interface Props {
   params: Promise<{ slug: string[] }>;
 }
 
-
-
 function mapRelatedToProduct(r: RelatedProduct): Product {
   return {
     id: r.id,

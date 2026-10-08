@@ -37,7 +37,9 @@ export function ProductSelectionProvider({
     [variationId, publish],
   );
   return (
-    <SelectionContext.Provider value={value}>{children}</SelectionContext.Provider>
+    <SelectionContext.Provider value={value}>
+      {children}
+    </SelectionContext.Provider>
   );
 }
 
@@ -77,18 +79,13 @@ export function AvailabilityLineFallback() {
  * is the request-time stock read; the selection comes from context, so a size
  * click moves the line and the button together.
  */
-export function LiveAvailability({
-  snapshot,
-}: {
-  snapshot: StockSnapshot;
-}) {
+export function LiveAvailability({ snapshot }: { snapshot: StockSnapshot }) {
   const selection = useContext(SelectionContext);
   const variationId = selection?.variationId ?? null;
   const variation =
     variationId == null
       ? null
-      : (snapshot.variations.find((v) => String(v.id) === variationId) ??
-        null);
+      : (snapshot.variations.find((v) => String(v.id) === variationId) ?? null);
   const stockStatus = variation?.stockStatus ?? snapshot.stockStatus;
   const stockQuantity = variation?.stockQuantity ?? snapshot.stockQuantity;
 

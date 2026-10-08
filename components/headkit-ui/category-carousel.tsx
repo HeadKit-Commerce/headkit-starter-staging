@@ -23,11 +23,7 @@ interface Props {
 const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
   const cardCta = cardLinkText?.trim() ?? "";
   return (
-    <Carousel
-      className="w-full"
-      showPagination={false}
-    
-    >
+    <Carousel className="w-full" showPagination={false}>
       {categories.map((item, index) => {
         // `uri` is PREFERRED because a server caller resolves it to the
         // CANONICAL storefront path via `collectionPathResolver`: a nested
@@ -81,7 +77,6 @@ const CategoryCarousel = ({ categories, cardLinkText }: Props) => {
             ) : null}
           </InstantLink>
         );
-      
       })}
     </Carousel>
   );
