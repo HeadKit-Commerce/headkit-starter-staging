@@ -239,6 +239,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  */
 export const instant = false;
 
+export const ensureStatic = "navigation";
+
 export default async function Page({ params }: Props) {
   // Pre-commit gate: every branch that can 404 or redirect resolves HERE, while
   // the status line is still ours to set. `CmsRoute` repeats the checks because

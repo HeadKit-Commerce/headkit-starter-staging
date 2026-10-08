@@ -138,6 +138,7 @@ async function ShopHeader() {
  * — this route reads no `searchParams` and has no Suspense boundary.
  */
 export const instant = true;
+export const ensureStatic = "navigation";
 
 export default function Page() {
   return (

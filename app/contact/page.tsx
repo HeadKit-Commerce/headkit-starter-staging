@@ -141,6 +141,7 @@ export async function generateMetadata(): Promise<Metadata> {
  * @see https://nextjs.org/docs/app/guides/instant-navigation
  */
 export const instant = true;
+export const ensureStatic = "navigation";
 
 export default function ContactPage(): React.ReactElement {
   return (

@@ -388,6 +388,7 @@ export async function HomeContent() {
  * @see https://nextjs.org/docs/app/guides/instant-navigation
  */
 export const instant = true;
+export const ensureStatic = "navigation";
 
 export default function Home() {
   // HomeContent is fully cached ('use cache') — rendering it without a

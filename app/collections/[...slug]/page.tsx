@@ -441,6 +441,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * which reads those query params and pushes the `/f/…` path.
  */
 export const instant = true;
+export const ensureStatic = "navigation";
 
 export default function Page(props: Props) {
   return <CollectionPageContent {...props} />;
