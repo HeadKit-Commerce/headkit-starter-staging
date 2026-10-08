@@ -64,6 +64,8 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
+export const ensureStatic = "navigation";
+
 export default async function WholesalePage(): Promise<React.ReactElement> {
   const page = await getPageData(WHOLESALE_SLUG);
 

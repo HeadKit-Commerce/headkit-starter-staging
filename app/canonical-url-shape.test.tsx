@@ -210,13 +210,20 @@ vi.mock("next/navigation", () => ({
 /** Everything the four modules under test read from the catalogue. */
 // The page module under test imports `@/lib/env` (for `isShopifyStorefront`),
 // which parses `process.env` with Zod at import time and throws in a bare test
-// process. A WooCommerce-shaped env: no Shopify domain, so every Shopify branch
-// stays off and the assertions below describe the WooCommerce path.
+// process. WooCommerce is the default. A preview test sets the domain so the
+// same flag contact and checkout use turns the Admin preview read on.
+const commerce = vi.hoisted(() => ({
+  shopifyDomain: undefined as string | undefined,
+}));
+
 vi.mock("@/lib/env", () => ({
   env: {
     NEXT_PUBLIC_HEADKIT_PUBLIC_KEY: "pk_store",
     NEXT_PUBLIC_GRAPHQL_URL: "https://graph.example.test/graphql",
     HEADKIT_PRIVATE_KEY: "sk_store",
+    get SHOPIFY_STORE_DOMAIN() {
+      return commerce.shopifyDomain;
+    },
   },
 }));
 
@@ -1190,11 +1197,13 @@ describe("the flat route's 308 and Shopify Admin preview", () => {
   };
 
   afterEach(() => {
+    commerce.shopifyDomain = undefined;
     vi.doUnmock("@/lib/product-cache");
     vi.resetModules();
   });
 
   it("does not 308 a draft, so the preview key survives to the render", async () => {
+    commerce.shopifyDomain = "preview.myshopify.com";
     const previewLoads = vi.fn<(slug: string, opts?: unknown) => unknown>();
 
     vi.doMock("@/lib/product-cache", () => ({
@@ -1202,7 +1211,8 @@ describe("the flat route's 308 and Shopify Admin preview", () => {
       // redirect is behind.
       getCachedProduct: (): Promise<unknown> => Promise.resolve(null),
       getProductForPage: (slug: string, opts?: unknown): Promise<unknown> => {
-        previewLoads(slug, opts);
+        if (opts === undefined) previewLoads(slug);
+        else previewLoads(slug, opts);
         return Promise.resolve(DRAFT);
       },
     }));
@@ -1245,6 +1255,31 @@ describe("the flat route's 308 and Shopify Admin preview", () => {
    * two reads below the boundary — `ProductPageContent` and `generateMetadata`
    * carry their own guards and their own tests (#332).
    */
+  it("does not forward a Shopify preview key on WooCommerce", async () => {
+    commerce.shopifyDomain = undefined;
+    const previewLoads = vi.fn<(slug: string, opts?: unknown) => unknown>();
+
+    vi.doMock("@/lib/product-cache", () => ({
+      getCachedProduct: (): Promise<unknown> => Promise.resolve(null),
+      getProductForPage: (slug: string, opts?: unknown): Promise<unknown> => {
+        if (opts === undefined) previewLoads(slug);
+        else previewLoads(slug, opts);
+        return Promise.resolve(DRAFT);
+      },
+    }));
+    vi.resetModules();
+    const { ProductPageContent: Content } = await import(
+      "./products/[...slug]/page"
+    );
+
+    await Content({
+      params: Promise.resolve({ slug: [DRAFT.slug] }),
+      searchParams: Promise.resolve({ preview_key: "shpat-preview" }),
+    });
+
+    expect(previewLoads).toHaveBeenCalledWith(DRAFT.slug);
+  });
+
   it("serves instead of aborting when the provider fails at the redirect gate", async () => {
     vi.doMock("@/lib/product-cache", () => ({
       getCachedProduct: (): Promise<unknown> =>

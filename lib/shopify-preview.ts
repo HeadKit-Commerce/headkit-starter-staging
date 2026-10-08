@@ -1,4 +1,6 @@
 import { getProductForPage } from "@/lib/product-cache";
+import { env } from "@/lib/env";
+import { isShopifyStorefront } from "@/lib/shopify-storefront";
 
 /**
  * Shopify Admin preview entry points, and why both are blocking routes.
@@ -46,6 +48,24 @@ export function shopifyProductIdFromSearchParams(
     return raw.trim();
   }
   return undefined;
+}
+
+/**
+ * Shopify Admin `preview_key`, or nothing when this store is not Shopify.
+ *
+ * Contact, checkout, and the CMS already branch on `isShopifyStorefront`.
+ * Preview uses that same flag. WooCommerce returns before the query string
+ * is read, so a Woo prerender never waits on Shopify Admin.
+ */
+export async function shopifyPreviewKeyWhenConnected(
+  searchParams:
+    | Promise<Record<string, string | string[] | undefined>>
+    | undefined,
+): Promise<string | undefined> {
+  if (!isShopifyStorefront(env)) return undefined;
+  return shopifyPreviewKeyFromSearchParams(
+    searchParams ? await searchParams : undefined,
+  );
 }
 
 /**

@@ -253,6 +253,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * @see https://nextjs.org/docs/app/getting-started/caching
  */
 export const instant = true;
+export const ensureStatic = "navigation";
 
 export default async function Page(props: Props): Promise<ReactNode> {
   // Pre-commit gate — an unknown post slug must answer 404. The post it reads

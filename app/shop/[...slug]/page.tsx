@@ -337,6 +337,7 @@ export async function generateMetadata({
  * not read. Product cards still pass `prefetch={true}`.
  */
 export const instant = true;
+export const ensureStatic = "navigation";
 
 export default function Page(props: Props): ReactNode {
   return <ShopRoute params={props.params} />;

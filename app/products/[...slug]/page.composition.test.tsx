@@ -44,11 +44,18 @@ import { DynamicMetadataMarker } from "@/components/seo/dynamic-metadata-marker"
 
 vi.mock("server-only", () => ({}));
 
+const commerce = vi.hoisted(() => ({
+  shopifyDomain: undefined as string | undefined,
+}));
+
 vi.mock("@/lib/env", () => ({
   env: {
     NEXT_PUBLIC_HEADKIT_PUBLIC_KEY: "pk_store",
     NEXT_PUBLIC_GRAPHQL_URL: "https://graph.example.test/graphql",
     HEADKIT_PRIVATE_KEY: "sk_store",
+    get SHOPIFY_STORE_DOMAIN() {
+      return commerce.shopifyDomain;
+    },
   },
 }));
 
@@ -83,7 +90,9 @@ const { getCachedProduct, getProductForPage } = vi.hoisted(() => ({
 vi.mock("@/lib/product-cache", () => ({
   getCachedProduct: (slug: string): Promise<unknown> => getCachedProduct(slug),
   getProductForPage: (slug: string, options?: unknown): Promise<unknown> =>
-    getProductForPage(slug, options),
+    options === undefined
+      ? getProductForPage(slug)
+      : getProductForPage(slug, options),
 }));
 
 vi.mock("@/lib/sdk", () => ({
@@ -154,7 +163,11 @@ vi.mock("@/components/headkit-ui/skeletons/product-card-skeleton", () => ({
   ProductCardSkeleton: (): null => null,
 }));
 
-import { ProductPageBody, ProductPageContent, ProductRoute } from "./page";
+import ProductPage, {
+  ProductPageBody,
+  ProductPageContent,
+  ProductRoute,
+} from "./page";
 import { ProductPageShell } from "./product-page-shell";
 import { ProductStock } from "@/components/headkit-ui/product-stock";
 import { ProductDetail } from "@/components/headkit-ui/product-detail";
@@ -269,6 +282,7 @@ function isMarkerBoundary(element: ReactElement): boolean {
 }
 
 beforeEach(() => {
+  commerce.shopifyDomain = "preview.myshopify.com";
   getCachedProduct.mockReset();
   getProductForPage.mockReset();
 });
@@ -427,6 +441,36 @@ describe("products/[...slug] — a NULL public read is the only path into the bo
       shopifyPreviewKey: "draft-key",
     });
     expect(rendered, "and it renders the draft it resolved").toBeTruthy();
+  });
+
+  it("does not read a Shopify preview key when the store is WooCommerce", async () => {
+    commerce.shopifyDomain = undefined;
+    getCachedProduct.mockResolvedValue(null);
+    getProductForPage.mockResolvedValue(FLAT_PRODUCT);
+    const searchParams = trackedSearchParams({ preview_key: "draft-key" });
+
+    const page = ProductPage({
+      params: Promise.resolve({ slug: [SLUG] }),
+      searchParams: searchParams.promise,
+    }) as ReactElement;
+    expect(routeChildren(page).filter(isMarkerBoundary)).toHaveLength(0);
+
+    const route = (await ProductRoute({
+      params: Promise.resolve({ slug: [SLUG] }),
+      searchParams: searchParams.promise,
+    })) as ReactElement;
+    expect(
+      routeChildren(route).filter(isMarkerBoundary),
+      "WooCommerce does not mount connection() for a Shopify preview key",
+    ).toHaveLength(0);
+    const boundary = (
+      route.type === Suspense ? route : pageContent(route)
+    ) as ReactElement<{
+      children: ReactElement<Parameters<typeof ProductPageContent>[0]>;
+    }>;
+    await ProductPageContent(boundary.props.children.props);
+    expect(searchParams.awaited()).toBe(false);
+    expect(getProductForPage).toHaveBeenCalledWith(SLUG);
   });
 
   it("answers the build-time placeholder from the boundary without touching the cache", async () => {

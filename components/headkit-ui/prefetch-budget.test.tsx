@@ -1,4 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/env", () => ({
+  env: {
+    NEXT_PUBLIC_HEADKIT_PUBLIC_KEY: "pk_store",
+    NEXT_PUBLIC_GRAPHQL_URL: "https://graph.example.test/graphql",
+    HEADKIT_PRIVATE_KEY: "sk_store",
+  },
+}));
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Product } from "@headkit/sdk";
 
@@ -21,7 +29,7 @@ import {
 
 /**
  * The two surfaces that keep an explicit `prefetch={true}` when a store runs the
- * prefetch budget (`NEXT_PUBLIC_NAV_PREFETCH_BUDGET`). `InstantLink`'s own default
+ * prefetch budget (`Partial Prefetching`). `InstantLink`'s own default
  * — `true` without the budget, unset with it — is `instant-link.test.tsx`'s.
  *
  * The point of this file is that the budget and its two exemptions are ONE
@@ -148,7 +156,6 @@ function renderNav(): void {
 
 describe("the top-level desktop nav keeps its head start under the budget", () => {
   it("passes prefetch={true} to the childless top-level links of BOTH menus", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedLinks.mockClear();
 
     renderNav();
@@ -165,7 +172,6 @@ describe("the top-level desktop nav keeps its head start under the budget", () =
   });
 
   it("warms the home logo explicitly under the budget", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedLinks.mockClear();
 
     renderNav();
@@ -178,18 +184,6 @@ describe("the top-level desktop nav keeps its head start under the budget", () =
     expect(prefetchFor("/")).toContain(true);
   });
 
-  it("warms every nav link with the budget OFF, which is the platform default", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", undefined);
-    observedLinks.mockClear();
-
-    renderNav();
-
-    // The explicit nav flag is unchanged, and the links that do NOT carry it fall
-    // back to `true` — so a store that sets nothing sees exactly what it sees
-    // today. The logo is one of those explicit links.
-    expect(prefetchFor("/")).toContain(true);
-    expect(prefetchFor("/sale")).toContain(true);
-  });
 });
 
 function product(slug: string): Product {
@@ -214,7 +208,6 @@ const PRODUCTS = Array.from({ length: 8 }, (_, i) => product(`p${i}`));
 
 describe("ProductCarousel puts every product in Next's prefetch queue", () => {
   it("passes prefetch={true} for every card with the budget on", async () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedLinks.mockClear();
 
     renderToStaticMarkup(
@@ -237,7 +230,6 @@ describe("ProductCarousel puts every product in Next's prefetch queue", () => {
   });
 
   it("passes prefetch={true} when prefetchCount is omitted", async () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedLinks.mockClear();
 
     renderToStaticMarkup(await ProductCarousel({ products: PRODUCTS }));
@@ -248,16 +240,4 @@ describe("ProductCarousel puts every product in Next's prefetch queue", () => {
     ).toBe(true);
   });
 
-  it("warms every card with the budget OFF, including past the first row", async () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", undefined);
-    observedLinks.mockClear();
-
-    renderToStaticMarkup(await ProductCarousel({ products: PRODUCTS }));
-
-    expect(
-      observedLinks.mock.calls.every(([, prefetch]) => prefetch === true),
-      "with the budget off every card link must still full-prefetch; that is the behaviour this port must not change for existing stores",
-    ).toBe(true);
-    expect(observedLinks.mock.calls.length).toBeGreaterThan(0);
-  });
 });

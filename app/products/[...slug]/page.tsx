@@ -52,6 +52,7 @@ import {
 } from "@/lib/product-canonical";
 import { ProductPageShell } from "./product-page-shell";
 import { DynamicMetadataMarker } from "@/components/seo/dynamic-metadata-marker";
+import { shopifyPreviewKeyWhenConnected } from "@/lib/shopify-preview";
 import { PdpBesideBundles } from "@/overrides/pdp-beside-bundles";
 import { stripTitleMarkers } from "@/lib/title-emphasis";
 import { env } from "@/lib/env";
@@ -71,16 +72,6 @@ type Props = {
     | Promise<Record<string, string | string[] | undefined>>
     | undefined;
 };
-
-function shopifyPreviewKeyFromSearchParams(
-  searchParams: Record<string, string | string[] | undefined> | undefined,
-): string | undefined {
-  const raw = searchParams?.preview_key;
-  if (typeof raw === "string" && raw.trim() !== "") {
-    return raw;
-  }
-  return undefined;
-}
 
 /** Re-export for PDP tag/life guard tests (ENG-853). */
 export const getProduct = getCachedProduct;
@@ -198,9 +189,7 @@ export async function generateMetadata({
   const { slug } = await params;
   const productSlug = slug[0]!;
   const colorSlug = slug[1]; // undefined for simple/base; a color slug for a colorway URL
-  const previewKey = shopifyPreviewKeyFromSearchParams(
-    searchParams ? await searchParams : undefined,
-  );
+  const previewKey = await shopifyPreviewKeyWhenConnected(searchParams);
 
   // Build-time placeholder param (API was unreachable during SSG): never a real
   // product, so emit empty metadata rather than hitting the backend.
@@ -209,7 +198,9 @@ export async function generateMetadata({
   try {
     const [product, { seoSettings, storeSettings }, { iconUrl }] =
       await Promise.all([
-        getProductForPage(productSlug, { shopifyPreviewKey: previewKey }),
+        (previewKey
+          ? getProductForPage(productSlug, { shopifyPreviewKey: previewKey })
+          : getProductForPage(productSlug)),
         getBranding(),
         getBrandingAssets(),
       ]);
@@ -444,9 +435,11 @@ export async function ProductRoute({ params, searchParams }: Props) {
         `app/layout.tsx`, where it cost every route in the app its static shell;
         see components/seo/dynamic-metadata-marker.tsx for the measurement.
       */}
-      <Suspense fallback={null}>
-        <DynamicMetadataMarker />
-      </Suspense>
+      {isShopifyStorefront(env) ? (
+        <Suspense fallback={null}>
+          <DynamicMetadataMarker />
+        </Suspense>
+      ) : null}
     </>
   );
 }
@@ -494,9 +487,7 @@ export async function ProductPageContent({ params, searchParams }: Props) {
   const { slug } = await params;
   const productSlug = slug[0]!;
   const colorSlug = slug[1]; // undefined for simple products or base variable URL
-  const previewKey = shopifyPreviewKeyFromSearchParams(
-    searchParams ? await searchParams : undefined,
-  );
+  const previewKey = await shopifyPreviewKeyWhenConnected(searchParams);
 
   // Build-time placeholder param (see generateStaticParams) is never served.
   if (productSlug === STATIC_GEN_PLACEHOLDER_SLUG) {
@@ -547,9 +538,9 @@ export async function ProductPageContent({ params, searchParams }: Props) {
   // Next control flow is re-raised first and never absorbed.
   let product: Awaited<ReturnType<typeof getProductForPage>>;
   try {
-    product = await getProductForPage(productSlug, {
-      shopifyPreviewKey: previewKey,
-    });
+    product = previewKey
+      ? await getProductForPage(productSlug, { shopifyPreviewKey: previewKey })
+      : await getProductForPage(productSlug);
   } catch (error) {
     unstable_rethrow(error);
     logger.error("pdp.degraded_render", {
