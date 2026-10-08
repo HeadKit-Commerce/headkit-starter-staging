@@ -256,7 +256,9 @@ export interface Ga4LineLike {
 /** `"Carbon Black / 54"` from a line's variation pairs; `undefined` when none. */
 export function ga4LineVariant(
   variation:
-    ReadonlyArray<{ attribute: string; value: string }> | null | undefined,
+    | ReadonlyArray<{ attribute: string; value: string }>
+    | null
+    | undefined,
 ): string | undefined {
   const parts = (variation ?? [])
     .map((pair) => pair.value)
