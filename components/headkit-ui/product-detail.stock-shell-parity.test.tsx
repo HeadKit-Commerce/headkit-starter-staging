@@ -80,8 +80,13 @@ vi.mock("@/lib/ga4-ecommerce", () => ({
   pushGa4Ecommerce: (): void => {},
 }));
 vi.mock("@/lib/product-cache", () => ({
-  getLiveProductStock: async (): Promise<unknown> => PRODUCT,
+  getProductStock: async (): Promise<unknown> => PRODUCT,
   getCachedProduct: async (): Promise<unknown> => PRODUCT,
+}));
+vi.mock("@/lib/branding", () => ({
+  getBranding: async (): Promise<{ storeSettings: { checkoutType: string } }> => ({
+    storeSettings: { checkoutType: "custom" },
+  }),
 }));
 
 import { ProductDetail } from "@/components/headkit-ui/product-detail";

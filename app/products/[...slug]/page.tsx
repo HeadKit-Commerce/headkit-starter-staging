@@ -23,7 +23,6 @@ import { SwatchImageProvider } from "@/components/headkit-ui/swatch-image-provid
 import { experimentalSwatchImagesEnabled } from "@/lib/experimental-swatch-images";
 import { loadSwatchImageMap } from "@/lib/swatch-visual";
 import { ProductStock } from "@/components/headkit-ui/product-stock";
-import { AvailabilityLineFallback } from "@/components/headkit-ui/live-availability";
 import { ProductCarousel } from "@/components/headkit-ui/product-carousel";
 import { ProjectCarousel } from "@/components/headkit-ui/project/project-carousel";
 import { SectionHeader } from "@/components/headkit-ui/section-header";
@@ -575,8 +574,10 @@ type ProductPageBodyProps = {
  * brand — so this renders OUTSIDE any Suspense boundary and is baked into the
  * prerendered static shell; see the altitude note on `ProductPage` above.
  * Both PDP routes render it (D-15-04): they serve two valid URL shapes for one
- * product, and only their canonicals differ. Only `ProductStock` beneath it
- * reads on its own, and it reads the same cached product entry.
+ * product, and only their canonicals differ. `ProductStock` reads
+ * `getProductStock` (five minutes, still inside this prerender). Quote
+ * checkout returns before that read, so a quote store's page stays on the
+ * catalogue lifetime.
  *
  * The branding and Stripe reads never throw by contract (each degrades to its
  * defaults), but the catch stays: this runs above every boundary at BUILD for
@@ -759,18 +760,16 @@ export async function ProductPageBody({
     current: i === breadcrumbs.length - 1,
   }));
 
-  // No boundary: `ProductStock` reads the same cached product entry this page
-  // rendered from, so it is prerendered inline with the price beside it.
-  // Inventory is the dynamic hole. cacheLife("seconds") is excluded from the
-  // prerender, so this fallback is in the static shell and the line streams
-  // at request time. The boundary is the stock line, not the product.
+  // The availability line is `getProductStock`: expire 300 seconds, the
+  // shortest lifetime Next.js 16.4 still stores in the prerender. Quote
+  // checkout returns before that read, so the five-minute entry is not part
+  // of a quote store's document. A shorter expire inside `<Suspense>` would
+  // drop the route out of `ensureStatic = "navigation"`.
   const stockSlot = (
-    <Suspense fallback={<AvailabilityLineFallback />}>
-      <ProductStock
-        productSlug={productSlug}
-        {...(colorSlug !== undefined ? { colorSlug } : {})}
-      />
-    </Suspense>
+    <ProductStock
+      productSlug={productSlug}
+      {...(colorSlug !== undefined ? { colorSlug } : {})}
+    />
   );
 
   const themeCopy = getStoreTheme().copy;
