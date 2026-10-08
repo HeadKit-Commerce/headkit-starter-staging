@@ -47,8 +47,11 @@ import { getFloatVal } from "@/lib/utils";
 
 declare global {
   interface Window {
-    // Same type `@next/third-parties` declares. A second declaration has to
-    // match exactly or tsc rejects the merge (TS2717).
+    // Same type `@next/third-parties` declares (`Object[]` in
+    // dist/types/google.d.ts). A second declaration has to match exactly or
+    // tsc rejects the merge (TS2717), so this cannot be the primitive
+    // `object` the lint rule wants.
+    // eslint-disable-next-line @typescript-eslint/no-wrapper-object-types -- must match @next/third-parties Window.dataLayer
     dataLayer?: Object[];
   }
 }
