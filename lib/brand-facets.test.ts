@@ -13,6 +13,11 @@ function filters(...slugs: string[]): CategoryBrandSource {
       slug,
       name: slug,
       count: i + 1,
+      // Brands share ProductFilterOption with attribute choices, which carry
+      // swatch colours. A brand never does, so commerce sends "" for both —
+      // this is the production value, not a fixture convenience.
+      swatchColor: "",
+      swatchColor2: "",
     })),
   };
 }
