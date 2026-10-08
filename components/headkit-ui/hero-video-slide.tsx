@@ -1,61 +1,68 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { AutoplayVideo } from "@/components/headkit-ui/autoplay-video";
+import {
+  AutoplayVideo,
+  type VideoSource,
+} from "@/components/headkit-ui/autoplay-video";
 
 interface Props {
   mobileSrc: string;
   desktopSrc: string;
+  /** Slide still used as the video `poster` on small screens. */
+  mobilePoster?: string;
+  /** Slide still used as the video `poster` from the `md` breakpoint up. */
+  desktopPoster?: string;
   isActive: boolean;
 }
 
+function videoType(src: string): string {
+  const path = src.split("?")[0]?.toLowerCase() ?? "";
+  if (path.endsWith(".webm")) return "video/webm";
+  if (path.endsWith(".ogv") || path.endsWith(".ogg")) return "video/ogg";
+  return "video/mp4";
+}
+
 /**
- * The video file only. The poster is a Server Component sibling
- * (`ArtDirectedImage`), so this module does not own the LCP image.
+ * Hero background video.
  *
- * The file is not requested until a pointer or key. `preload="none"` is the
- * videos guide. A timer after load fetched Pebblr's 4.8 MB webm, and a scroll
- * listener fetched Paralel's 3.4 MB mobile mp4, because Lighthouse scrolls.
+ * The Next.js video guide uses a native `<video>` with `poster`, `autoPlay`,
+ * `muted`, and `playsInline`. The slide image is that poster, not a second
+ * picture stacked on top, so the first frame replaces it as soon as it
+ * decodes. `source media` picks the phone or desktop file without fetching both.
  * https://nextjs.org/docs/app/guides/videos
  */
 export function HeroVideoSlide({
   mobileSrc,
   desktopSrc,
+  mobilePoster,
+  desktopPoster,
   isActive,
 }: Props): React.JSX.Element | null {
-  const [src, setSrc] = useState<string | null>(null);
+  const sources: VideoSource[] = [];
+  if (mobileSrc && desktopSrc && mobileSrc !== desktopSrc) {
+    sources.push({
+      src: mobileSrc,
+      type: videoType(mobileSrc),
+      media: "(max-width: 767px)",
+    });
+    sources.push({
+      src: desktopSrc,
+      type: videoType(desktopSrc),
+      media: "(min-width: 768px)",
+    });
+  } else {
+    const only = desktopSrc || mobileSrc;
+    if (only) sources.push({ src: only, type: videoType(only) });
+  }
+  if (sources.length === 0) return null;
 
-  useEffect(() => {
-    if (!isActive) {
-      setSrc(null);
-      return;
-    }
-
-    const start = (): void => {
-      const mobile = window.matchMedia("(max-width: 767px)").matches;
-      const chosen = mobile ? mobileSrc || desktopSrc : desktopSrc || mobileSrc;
-      if (chosen) setSrc(chosen);
-      window.removeEventListener("pointerdown", start);
-      window.removeEventListener("keydown", start);
-    };
-
-    window.addEventListener("pointerdown", start, { once: true });
-    window.addEventListener("keydown", start, { once: true });
-
-    return () => {
-      window.removeEventListener("pointerdown", start);
-      window.removeEventListener("keydown", start);
-    };
-  }, [isActive, mobileSrc, desktopSrc]);
-
-  if (!src) return null;
+  const poster = desktopPoster || mobilePoster;
 
   return (
     <AutoplayVideo
       className="absolute inset-0 h-full w-full object-cover"
-      src={src}
+      sources={sources}
+      {...(poster ? { poster } : {})}
       isActive={isActive}
-      preload="none"
+      preload={isActive ? "auto" : "none"}
     />
   );
 }

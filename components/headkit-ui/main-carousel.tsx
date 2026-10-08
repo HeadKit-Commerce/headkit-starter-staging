@@ -87,7 +87,15 @@ function HeroSlideView({
           </div>
         </div>
         <div className={mediaClass}>
-          {slide.image || slide.mobileImage ? (
+          {hasVideo ? (
+            <HeroVideoSlide
+              mobileSrc={mobileVideo}
+              desktopSrc={desktopVideo}
+              mobilePoster={slide.mobileImage || slide.image || ""}
+              desktopPoster={slide.image || slide.mobileImage || ""}
+              isActive={active}
+            />
+          ) : slide.image || slide.mobileImage ? (
             <ArtDirectedImage
               mobileSrc={slide.mobileImage || slide.image}
               desktopSrc={slide.image || slide.mobileImage || ""}
@@ -95,13 +103,6 @@ function HeroSlideView({
               isLcp={index === 0}
               sizes={heroImageSizes(heroLayout)}
               className="h-full w-full object-cover"
-            />
-          ) : null}
-          {hasVideo ? (
-            <HeroVideoSlide
-              mobileSrc={mobileVideo}
-              desktopSrc={desktopVideo}
-              isActive={active}
             />
           ) : null}
           <div
