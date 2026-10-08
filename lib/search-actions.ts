@@ -8,6 +8,12 @@ export async function searchProducts(
   limit = 4,
 ): Promise<ProductSummaryFieldsFragment[]> {
   if (!q.trim()) return [];
-  const result = await headkit.collections.list({ search: q }, 1, limit);
+  // Same closest-match order as `/search` with no sort chosen, so the four
+  // preview cards are the products "View more results" opens on.
+  const result = await headkit.collections.list(
+    { search: q, orderby: "relevance", order: "desc" },
+    1,
+    limit,
+  );
   return result.products as ProductSummaryFieldsFragment[];
 }
