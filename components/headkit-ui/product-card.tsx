@@ -66,6 +66,25 @@ function colourAttribute(product: ProductSummaryFieldsFragment) {
   return findSwatchAttribute(product.attributes);
 }
 
+function resolveCardImage(
+  product: ProductSummaryFieldsFragment,
+  colourSlug: string | null,
+): string {
+  if (!product) return "";
+  const parentSrc = product.image?.src ?? "";
+  if (!isVariableProduct(product)) return parentSrc;
+
+  const colourAttr = colourAttribute(product);
+  if (!colourAttr && product.attributes.length === 1) {
+    return product.variations?.[0]?.image?.src || parentSrc;
+  }
+
+  const variation = product.variations?.find((item) =>
+    item.attributes.some((attr) => attr.value === colourSlug),
+  );
+  return variation?.image?.src || parentSrc;
+}
+
 interface Props {
   product: CatalogProduct;
   className?: string;
@@ -133,15 +152,10 @@ export const ProductCard = ({
     if (!product || !isVariableProduct(product)) return null;
     return colourAttribute(product)?.fullOptions?.[0]?.slug ?? null;
   });
-  const [imageSelected, setImageSelected] = useState<string>(() => {
-    if (!product) return "";
-    if (!isVariableProduct(product)) return product.image?.src ?? "";
-    const colourAttr = colourAttribute(product);
-    if (product.attributes.length === 1 && !colourAttr) {
-      return product.variations?.[0]?.image?.src ?? "";
-    }
-    return product.image?.src ?? "";
-  });
+  // Derived, so the first paint matches the highlighted dot. A stored image
+  // seeded from the parent photo disagreed with the first swatch, then an
+  // effect replaced it — or cleared it when the variation had no photo.
+  const imageSelected = resolveCardImage(product, colourSelected);
   const swatchCommerceSrc =
     product?.image?.src || product?.variations?.[0]?.image?.src || "";
   const [isHovering, setIsHovering] = useState(false);
@@ -190,29 +204,13 @@ export const ProductCard = ({
       const colourAttr = colourAttribute(product);
       if (product.attributes.length === 1 && !colourAttr) {
         setColourSelected(null);
-        setImageSelected(product.variations?.[0]?.image?.src ?? "");
       } else {
         setColourSelected(colourAttr?.fullOptions?.[0]?.slug ?? null);
       }
     } else {
       setColourSelected(null);
-      setImageSelected(product.image?.src ?? "");
     }
   }, [product, lockedColour]);
-
-  useEffect(() => {
-    if (!product || !isVariableProduct(product)) return;
-
-    const selectedVariation = product.variations.find((variation) =>
-      variation.attributes.some((attr) => colourSelected === attr.value),
-    );
-
-    if (selectedVariation) {
-      setImageSelected(selectedVariation.image?.src ?? "");
-    } else if (product.image?.src) {
-      setImageSelected(product.image.src);
-    }
-  }, [colourSelected, product]);
 
   const getDisplayPrice = () => {
     if (!isVariableProduct(product)) {
