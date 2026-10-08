@@ -5,11 +5,23 @@ vi.mock("next/cache", () => ({
   cacheTag: vi.fn(),
 }));
 
+vi.mock("next/navigation", () => ({
+  unstable_rethrow: (): void => {},
+}));
+
 vi.mock("@/lib/env", () => ({
   env: {
     DASHBOARD_API_URL: "https://dashboard.example/graphql/subgraph/headkit",
     DASHBOARD_API_TOKEN: "test-token",
   },
+}));
+
+// Dashboard branding is a plain fetch. The module still imports the commerce
+// SDK for the icon fallback; this VM has no built `dist`, and these cases
+// never call it.
+vi.mock("@headkit/sdk", () => ({
+  executeRequest: vi.fn(),
+  GetBrandingDocument: {},
 }));
 
 import { getBranding } from "@/lib/branding";

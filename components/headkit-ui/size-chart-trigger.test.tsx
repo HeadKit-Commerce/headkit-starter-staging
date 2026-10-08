@@ -1,10 +1,15 @@
-import type { ReactNode } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const { dialogContentProps } = vi.hoisted(() => ({
   dialogContentProps: {
-    onOpenAutoFocus: undefined as ((event: Event) => void) | undefined,
+    initialFocus: undefined as boolean | undefined,
   },
 }));
 
@@ -18,16 +23,27 @@ vi.mock("@/components/ui/dialog", () => ({
   ),
   DialogContent: ({
     children,
-    onOpenAutoFocus,
+    initialFocus,
   }: {
     children: ReactNode;
-    onOpenAutoFocus?: (event: Event) => void;
+    initialFocus?: boolean;
   }) => {
-    dialogContentProps.onOpenAutoFocus = onOpenAutoFocus;
+    dialogContentProps.initialFocus = initialFocus;
     return <div>{children}</div>;
   },
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
-  DialogTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
+  DialogTrigger: ({
+    children,
+    render,
+  }: {
+    children?: ReactNode;
+    render?: ReactElement<{ children?: ReactNode }>;
+  }) =>
+    isValidElement(render) ? (
+      cloneElement(render, undefined, children)
+    ) : (
+      <>{children}</>
+    ),
 }));
 
 import { SizeChartTrigger } from "./size-chart-trigger";
@@ -66,11 +82,6 @@ describe("SizeChartTrigger", () => {
       <SizeChartTrigger html="<table><tr><td>M</td></tr></table>" />,
     );
 
-    expect(typeof dialogContentProps.onOpenAutoFocus).toBe("function");
-    const preventDefault = vi.fn();
-    dialogContentProps.onOpenAutoFocus?.({
-      preventDefault,
-    } as unknown as Event);
-    expect(preventDefault).toHaveBeenCalled();
+    expect(dialogContentProps.initialFocus).toBe(false);
   });
 });

@@ -5,6 +5,7 @@
 import type { ProductSummaryFieldsFragment } from "@headkit/sdk";
 import { CATALOG_ROW_QUANTUM } from "@/components/headkit-ui/catalog-grid";
 import { findSwatchAttribute } from "@/lib/swatch-attribute";
+import { isColorAttrSlug } from "@/lib/color-attr-slug";
 import { decodeHtmlEntities } from "@/lib/utils";
 import { stripTitleMarkers } from "@/lib/title-emphasis";
 
@@ -44,10 +45,6 @@ type VariationLike = NonNullable<
   dateModified?: string | null;
 };
 
-type ProductWithDefaults = ProductSummaryFieldsFragment & {
-  defaultAttributes?: ReadonlyArray<{ key: string; value: string }> | null;
-};
-
 function colourAttrSlug(product: ProductSummaryFieldsFragment): string | null {
   return findSwatchAttribute(product.attributes ?? [])?.slug ?? null;
 }
@@ -65,47 +62,18 @@ function variationColourValue(
   return "";
 }
 
-function defaultColourway(
-  product: ProductWithDefaults,
-  colourSlug: string,
-): string {
-  for (const attr of product.defaultAttributes ?? []) {
-    if (!attr) continue;
-    if (attr.key === colourSlug || attr.key === `attribute_${colourSlug}`) {
-      return attr.value ?? "";
-    }
-  }
-  return "";
-}
-
-function latestModifiedColourway(
-  product: ProductSummaryFieldsFragment,
-  colourSlug: string,
-): string {
-  let bestSlug = "";
-  let bestTs = Number.NEGATIVE_INFINITY;
-  for (const variation of (product.variations ?? []) as VariationLike[]) {
-    if (!variation) continue;
-    const colour = variationColourValue(variation, colourSlug);
-    if (!colour) continue;
-    const raw = variation.dateModified ?? "";
-    const ts = raw ? Date.parse(raw) : Number.NEGATIVE_INFINITY;
-    if (ts > bestTs || (ts === bestTs && !bestSlug)) {
-      bestTs = ts;
-      bestSlug = colour;
-    }
-  }
-  return bestSlug;
-}
-
 function firstColourway(product: ProductSummaryFieldsFragment): string {
   const colourAttr = findSwatchAttribute(product.attributes ?? []);
   return colourAttr?.fullOptions?.[0]?.slug ?? "";
 }
 
 /**
- * Resolve which colourway a carousel/editorial card should show.
- * Order: admin pin → WooCommerce default → latest-updated variation → first option.
+ * Resolve which colourway a collapsed card shows: an explicit admin pin, else
+ * the first swatch option.
+ *
+ * WooCommerce `defaultAttributes` is the PDP dropdown pre-selection, not the
+ * photo a listing card should lead with. A variation's `dateModified` moved
+ * that photo whenever a colourway was edited. Neither is read here.
  */
 export function resolveCarouselColourway(
   product: ProductSummaryFieldsFragment,
@@ -116,15 +84,6 @@ export function resolveCarouselColourway(
 
   const pin = pins?.[product.id]?.trim();
   if (pin) return pin;
-
-  const fromDefault = defaultColourway(
-    product as ProductWithDefaults,
-    colourSlug,
-  );
-  if (fromDefault) return fromDefault;
-
-  const fromLatest = latestModifiedColourway(product, colourSlug);
-  if (fromLatest) return fromLatest;
 
   const first = firstColourway(product);
   return first || null;
@@ -206,7 +165,7 @@ function cardForColourway(
 
 /**
  * One card per product for carousels / handpicked editorial grids.
- * Avoids repeating exploded colourways; prefers default or admin-pinned colour.
+ * Avoids repeating exploded colourways; an admin pin wins, otherwise the first swatch.
  */
 export function collapseCatalogProducts(
   products: ReadonlyArray<ProductSummaryFieldsFragment | null | undefined>,
@@ -222,20 +181,73 @@ export function collapseCatalogProducts(
 }
 
 /**
+ * Colour-facet slugs currently selected on a listing, in the order the
+ * shopper picked them. Size and other attributes are ignored. Keys may be
+ * `pa_colour` or `colour`; both are colour facets.
+ */
+export function selectedColourFacetSlugs(
+  attributes: Record<string, readonly string[] | undefined> | undefined,
+): string[] {
+  const slugs: string[] = [];
+  if (!attributes) return slugs;
+  for (const [key, values] of Object.entries(attributes)) {
+    if (!isColorAttrSlug(key)) continue;
+    for (const value of values ?? []) {
+      const slug = value.trim();
+      if (slug && !slugs.includes(slug)) slugs.push(slug);
+    }
+  }
+  return slugs;
+}
+
+function colourwayOptionSlugs(product: ProductSummaryFieldsFragment): string[] {
+  const colourAttr = findSwatchAttribute(product.attributes ?? []);
+  return (colourAttr?.fullOptions ?? [])
+    .map((option) => option?.slug ?? "")
+    .filter((slug) => slug.length > 0);
+}
+
+/** First selected colour this product actually sells, or null. */
+function matchingFacetColour(
+  product: ProductSummaryFieldsFragment,
+  colourSlugs: readonly string[],
+): string | null {
+  const options = new Set(colourwayOptionSlugs(product));
+  for (const slug of colourSlugs) {
+    if (options.has(slug)) return slug;
+  }
+  return null;
+}
+
+/**
  * Expand variable products into one card per colourway when showVariants is on.
  * Colour/swatch attributes only — size-only products stay as a single card.
+ *
+ * `colourSlugs` is the active colour facet. With variants off, the single card
+ * leads with that colour. With variants on, only the matching colourway cards
+ * remain, so a white filter is a page of white products.
  */
 export function expandCatalogProducts(
   products: ReadonlyArray<ProductSummaryFieldsFragment | null | undefined>,
   showVariants: boolean,
+  colourSlugs?: readonly string[],
 ): CatalogProduct[] {
   const list = products.filter((p): p is ProductSummaryFieldsFragment =>
     Boolean(p?.slug),
   );
+  const selected = (colourSlugs ?? [])
+    .map((slug) => slug.trim())
+    .filter((slug) => slug.length > 0);
 
   if (!showVariants) {
-    // Collection/search “variants off”: still surface the default colourway image.
-    return collapseCatalogProducts(list);
+    if (selected.length === 0) return collapseCatalogProducts(list);
+    return list.map((product) =>
+      cardForColourway(
+        product,
+        matchingFacetColour(product, selected) ??
+          resolveCarouselColourway(product),
+      ),
+    );
   }
 
   const out: CatalogProduct[] = [];
@@ -250,6 +262,7 @@ export function expandCatalogProducts(
     for (const option of options) {
       const colourSlug = option?.slug ?? "";
       if (!colourSlug) continue;
+      if (selected.length > 0 && !selected.includes(colourSlug)) continue;
       out.push(cardForColourway(product, colourSlug));
     }
   }

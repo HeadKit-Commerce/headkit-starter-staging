@@ -1,7 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
-
 import {
   useMemo,
   useState,
@@ -61,6 +59,7 @@ import {
   getFloatVal,
   getStoreCurrency,
 } from "@/lib/utils";
+import dynamic from "next/dynamic";
 import { isInWishlist, toggleWishlist } from "@/lib/wishlist";
 import {
   buildAddToCart,
@@ -100,6 +99,17 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+
+// Stripe.js stays out of the gallery's module graph. `next/dynamic` from this
+// client module code-splits it (a server-component dynamic import does not).
+// https://nextjs.org/docs/app/guides/lazy-loading
+const PaymentMethodMessaging = dynamic(
+  () =>
+    import("@/components/stripe/payment-messaging").then(
+      (m) => m.PaymentMethodMessaging,
+    ),
+  { loading: () => null },
+);
 
 // Lazy: gift-card-form drags react-hook-form + zod (~63 KB transfer) into the
 // PDP bundle, but only gift-card products render it (RC-1 perf fix).
@@ -218,14 +228,6 @@ function readImageFullSrc(img: object): string | undefined {
   const value = (img as { fullSrc?: unknown }).fullSrc;
   return typeof value === "string" && value !== "" ? value : undefined;
 }
-
-const PaymentMethodMessaging = dynamic(
-  () =>
-    import("@/components/stripe/payment-messaging").then(
-      (m) => m.PaymentMethodMessaging,
-    ),
-  { loading: () => null },
-);
 
 export function ProductDetail({
   product,
@@ -1002,29 +1004,11 @@ export function ProductDetail({
 
   const colorKey = findSwatchAttribute(variationAttributes)?.slug;
   const selectedColor = colorKey ? selectedAttributes[colorKey] : undefined;
-  // The server `stockSlot` (`components/headkit-ui/product-stock.tsx`) resolves
-  // stock from the COLOURWAY IN THE URL alone: it takes the first variation in
-  // payload order carrying that colour, of whatever size that happens to be,
-  // and it cannot see the size the shopper selected. The Add to Bag button and
-  // every other stock-bearing element on this page read `selectedVariation` —
-  // the FULL attribute match. Two different objects, so for any product with a
-  // second variation axis the page could render both answers ~40px apart: a
-  // green "In Stock" line above an "Out Of Stock" button, on one size click.
-  // Measured at 36.3% of colourway PDPs on one store
-  // (`260925-bs-variable-stock-out-of-stock`).
-  //
-  // So the server slot is used for SIMPLE products only. They structurally
-  // cannot disagree: `variations` is empty, so both resolvers read
-  // `product.stockStatus` off the same object. A variable product renders
-  // `<AvailabilityStatus>` from `stockStatus` / `stockQuantity` below, which are
-  // the selected variation's — ONE source of truth, shared with the button.
-  //
-  // This costs the static shell nothing, and that is a property of the seed
-  // rather than luck: `selectedAttributes` is seeded on the server from the
-  // first variation matching `initialColor` (see its initialiser above) — the
-  // same variation `ProductStock` picks — so the prerendered line is unchanged.
-  // Do not "restore" the slot for variable products by widening this condition;
-  // add the size axis to the slot instead, or delete the slot.
+  // The stock slot is the five-minute availability read, prerendered with
+  // the page. `LiveAvailability` matches `selectedVariation` and publishes
+  // that stock, so the line and the button stay on the same variation —
+  // including after a size click. A variable product uses the slot for that
+  // reason.
   const showStreamedStock = Boolean(stockSlot);
 
   const sizeChartHtml = shopifyRichTextToHtml(product.sizeChart ?? "");

@@ -28,6 +28,13 @@ vi.mock("next/cache", () => ({
   cacheTag: vi.fn(),
 }));
 
+vi.mock("next/navigation", () => ({
+  // Real `unstable_rethrow` only rethrows Next control-flow errors. A branding
+  // rejection is an ordinary Error and must stay in robots()'s catch so the
+  // store switch fails closed.
+  unstable_rethrow: (): void => {},
+}));
+
 const SITE_URL = "https://shop.example";
 
 vi.mock("@/lib/env", () => ({

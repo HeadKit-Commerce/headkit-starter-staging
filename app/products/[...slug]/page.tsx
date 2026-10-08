@@ -23,7 +23,6 @@ import { SwatchImageProvider } from "@/components/headkit-ui/swatch-image-provid
 import { experimentalSwatchImagesEnabled } from "@/lib/experimental-swatch-images";
 import { loadSwatchImageMap } from "@/lib/swatch-visual";
 import { ProductStock } from "@/components/headkit-ui/product-stock";
-import { AvailabilityLineFallback } from "@/components/headkit-ui/live-availability";
 import { ProductCarousel } from "@/components/headkit-ui/product-carousel";
 import { ProjectCarousel } from "@/components/headkit-ui/project/project-carousel";
 import { SectionHeader } from "@/components/headkit-ui/section-header";
@@ -52,6 +51,7 @@ import {
 } from "@/lib/product-canonical";
 import { ProductPageShell } from "./product-page-shell";
 import { DynamicMetadataMarker } from "@/components/seo/dynamic-metadata-marker";
+import { shopifyPreviewKeyWhenConnected } from "@/lib/shopify-preview";
 import { PdpBesideBundles } from "@/overrides/pdp-beside-bundles";
 import { stripTitleMarkers } from "@/lib/title-emphasis";
 import { env } from "@/lib/env";
@@ -71,16 +71,6 @@ type Props = {
     | Promise<Record<string, string | string[] | undefined>>
     | undefined;
 };
-
-function shopifyPreviewKeyFromSearchParams(
-  searchParams: Record<string, string | string[] | undefined> | undefined,
-): string | undefined {
-  const raw = searchParams?.preview_key;
-  if (typeof raw === "string" && raw.trim() !== "") {
-    return raw;
-  }
-  return undefined;
-}
 
 /** Re-export for PDP tag/life guard tests (ENG-853). */
 export const getProduct = getCachedProduct;
@@ -198,9 +188,7 @@ export async function generateMetadata({
   const { slug } = await params;
   const productSlug = slug[0]!;
   const colorSlug = slug[1]; // undefined for simple/base; a color slug for a colorway URL
-  const previewKey = shopifyPreviewKeyFromSearchParams(
-    searchParams ? await searchParams : undefined,
-  );
+  const previewKey = await shopifyPreviewKeyWhenConnected(searchParams);
 
   // Build-time placeholder param (API was unreachable during SSG): never a real
   // product, so emit empty metadata rather than hitting the backend.
@@ -209,7 +197,9 @@ export async function generateMetadata({
   try {
     const [product, { seoSettings, storeSettings }, { iconUrl }] =
       await Promise.all([
-        getProductForPage(productSlug, { shopifyPreviewKey: previewKey }),
+        previewKey
+          ? getProductForPage(productSlug, { shopifyPreviewKey: previewKey })
+          : getProductForPage(productSlug),
         getBranding(),
         getBrandingAssets(),
       ]);
@@ -322,15 +312,10 @@ export async function generateMetadata({
  * function throws `NEXT_REDIRECT` under all of them — so
  * `e2e/canonical-url-308.spec.ts` is what fails, on the status code itself.
  *
- * The deletion is not free, and the cost is worth stating plainly rather than
- * claiming nothing is lost. The default export awaits `getCachedProduct` before
- * returning anything, so on a cache miss — a product past the
- * build's static params, or after the `cacheLife` window — a
- * soft navigation paints nothing until the backend responds, where
- * `loading.tsx` supplied a route-level skeleton instantly. `instant = true`
- * stays on this route but can no longer produce a static App Shell for the same
- * reason (the collections route documents the same forfeit). Both are accepted:
- * a 200 duplicate on every flat product URL is the larger cost.
+ * The page component itself does not await. {@link ProductRoute} performs the
+ * cached read under the page `<Suspense>`, so a click paints
+ * {@link ProductPageShell} immediately and the prefetched product replaces it.
+ * `instant = true` stays on.
  *
  * ### No redirect loop
  *
@@ -385,8 +370,28 @@ export async function generateMetadata({
  */
 export const instant = true;
 
+/**
+ * Sync segment. The cached product is {@link ProductRoute}, with no page-level
+ * `<Suspense>` around it. A completed boundary outlines the gallery and the
+ * heading into a hidden segment, and the skeleton fallback is what flashes on
+ * a cold catalogue click. Inventory stays in its own boundary inside the body.
+ * The Shopify preview key is still awaited only on the null branch, inside
+ * that branch's own boundary. `prefetch={true}` on product cards and menu
+ * links resolves the cached read before the click.
+ *
+ * @see https://nextjs.org/docs/app/guides/instant-navigation
+ */
 export default function ProductPage(props: Props) {
-  return <ProductRoute {...props} />;
+  return (
+    <>
+      <ProductRoute {...props} />
+      {isShopifyStorefront(env) ? (
+        <Suspense fallback={null}>
+          <DynamicMetadataMarker />
+        </Suspense>
+      ) : null}
+    </>
+  );
 }
 
 export async function ProductRoute({ params, searchParams }: Props) {
@@ -420,34 +425,23 @@ export async function ProductRoute({ params, searchParams }: Props) {
     }
   }
 
+  if (product) {
+    return (
+      <ProductPageBody
+        product={product}
+        productSlug={productSlug}
+        colorSlug={colorSlug}
+      />
+    );
+  }
+
+  // A null public read: a draft, a missing product, the build placeholder, or
+  // a provider failure. The preview key is a request-time read, so it stays
+  // in this nested boundary and the public path above never awaits it.
   return (
-    <>
-      {product ? (
-        <ProductPageBody
-          product={product}
-          productSlug={productSlug}
-          colorSlug={colorSlug}
-        />
-      ) : (
-        <Suspense fallback={<ProductPageShell />}>
-          <ProductPageContent params={params} searchParams={searchParams} />
-        </Suspense>
-      )}
-      {/*
-        Request-time metadata opt-in, and the ONLY route in the app that mounts
-        one. `generateMetadata` above awaits `searchParams` for the Shopify
-        Admin preview key; the prerendered branch renders `ProductPageBody`
-        outside any boundary, so without this marker that read is a build error
-        ("uncached or runtime data in generateMetadata()"). It is a SIBLING of
-        the page content, never a wrapper — a boundary around the body would
-        hide the product from a client with JavaScript off. It used to live in
-        `app/layout.tsx`, where it cost every route in the app its static shell;
-        see components/seo/dynamic-metadata-marker.tsx for the measurement.
-      */}
-      <Suspense fallback={null}>
-        <DynamicMetadataMarker />
-      </Suspense>
-    </>
+    <Suspense fallback={<ProductPageShell />}>
+      <ProductPageContent params={params} searchParams={searchParams} />
+    </Suspense>
   );
 }
 
@@ -494,9 +488,7 @@ export async function ProductPageContent({ params, searchParams }: Props) {
   const { slug } = await params;
   const productSlug = slug[0]!;
   const colorSlug = slug[1]; // undefined for simple products or base variable URL
-  const previewKey = shopifyPreviewKeyFromSearchParams(
-    searchParams ? await searchParams : undefined,
-  );
+  const previewKey = await shopifyPreviewKeyWhenConnected(searchParams);
 
   // Build-time placeholder param (see generateStaticParams) is never served.
   if (productSlug === STATIC_GEN_PLACEHOLDER_SLUG) {
@@ -547,9 +539,9 @@ export async function ProductPageContent({ params, searchParams }: Props) {
   // Next control flow is re-raised first and never absorbed.
   let product: Awaited<ReturnType<typeof getProductForPage>>;
   try {
-    product = await getProductForPage(productSlug, {
-      shopifyPreviewKey: previewKey,
-    });
+    product = previewKey
+      ? await getProductForPage(productSlug, { shopifyPreviewKey: previewKey })
+      : await getProductForPage(productSlug);
   } catch (error) {
     unstable_rethrow(error);
     logger.error("pdp.degraded_render", {
@@ -584,8 +576,10 @@ type ProductPageBodyProps = {
  * brand — so this renders OUTSIDE any Suspense boundary and is baked into the
  * prerendered static shell; see the altitude note on `ProductPage` above.
  * Both PDP routes render it (D-15-04): they serve two valid URL shapes for one
- * product, and only their canonicals differ. Only `ProductStock` beneath it
- * reads on its own, and it reads the same cached product entry.
+ * product, and only their canonicals differ. `ProductStock` reads
+ * `getProductStock` (five minutes, still inside this prerender). Quote
+ * checkout returns before that read, so a quote store's page stays on the
+ * catalogue lifetime.
  *
  * The branding and Stripe reads never throw by contract (each degrades to its
  * defaults), but the catch stays: this runs above every boundary at BUILD for
@@ -768,18 +762,16 @@ export async function ProductPageBody({
     current: i === breadcrumbs.length - 1,
   }));
 
-  // No boundary: `ProductStock` reads the same cached product entry this page
-  // rendered from, so it is prerendered inline with the price beside it.
-  // Inventory is the dynamic hole. cacheLife("seconds") is excluded from the
-  // prerender, so this fallback is in the static shell and the line streams
-  // at request time. The boundary is the stock line, not the product.
+  // The availability line is `getProductStock`: expire 300 seconds, the
+  // shortest lifetime Next.js 16.4 still stores in the prerender. Quote
+  // checkout returns before that read, so the five-minute entry is not part
+  // of a quote store's document. A shorter expire inside `<Suspense>` would
+  // drop the route out of `ensureStatic = "navigation"`.
   const stockSlot = (
-    <Suspense fallback={<AvailabilityLineFallback />}>
-      <ProductStock
-        productSlug={productSlug}
-        {...(colorSlug !== undefined ? { colorSlug } : {})}
-      />
-    </Suspense>
+    <ProductStock
+      productSlug={productSlug}
+      {...(colorSlug !== undefined ? { colorSlug } : {})}
+    />
   );
 
   const themeCopy = getStoreTheme().copy;

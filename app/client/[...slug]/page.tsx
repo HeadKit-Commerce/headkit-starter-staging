@@ -98,6 +98,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  */
 export const instant = false;
 
+export const ensureStatic = "navigation";
+
 export default async function Page(props: Props): Promise<ReactNode> {
   // Pre-commit gate — an unknown client slug must answer 404. The `"use cache"`
   // client read dedupes with `ClientPageContent`'s own read below.

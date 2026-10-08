@@ -50,13 +50,15 @@ function CheckoutTestModeBannerInner(): ReactElement {
 function TestCardsPopover(): ReactElement {
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="rounded-md bg-white/15 px-3 py-1 text-sm font-medium underline-offset-2 hover:bg-white/25"
-        >
-          Test cards
-        </button>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className="rounded-md bg-white/15 px-3 py-1 text-sm font-medium underline-offset-2 hover:bg-white/25"
+          />
+        }
+      >
+        Test cards
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-4" sideOffset={8}>
         <p className="text-sm font-semibold text-neutral-950">Test cards</p>

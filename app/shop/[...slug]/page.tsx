@@ -337,7 +337,19 @@ export async function generateMetadata({
  * not read. Product cards still pass `prefetch={true}`.
  */
 export const instant = true;
+// The finished document is prerendered. This fails the build if the
+// route, or a layout above it, starts reading cookies, headers,
+// searchParams, or connection(). The root layout stays unset.
+export const ensureStatic = "navigation";
 
+/**
+ * Sync segment. {@link ShopRoute} is the cached product or category, rendered
+ * in this segment with no page-level `<Suspense>`. The boundary outlined a
+ * finished product into a hidden segment and flashed {@link ProductPageShell}
+ * on click. `prefetch={true}` on the links that point here has the page ready.
+ *
+ * @see https://nextjs.org/docs/app/guides/instant-navigation
+ */
 export default function Page(props: Props): ReactNode {
   return <ShopRoute params={props.params} />;
 }

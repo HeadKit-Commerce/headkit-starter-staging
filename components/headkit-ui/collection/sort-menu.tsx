@@ -40,7 +40,7 @@ export function SortMenu() {
       <NavigationMenuTrigger className="cursor-pointer">
         Sort
       </NavigationMenuTrigger>
-      <NavigationMenuContent className="w-screen! rounded-none!">
+      <NavigationMenuContent className="rounded-none!">
         <div className="p-4 flex flex-col gap-2 items-end">
           {(Object.keys(SortKey) as SortKeyType[]).map((key) => (
             <div
@@ -73,10 +73,12 @@ export function MobileSortMenu() {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button type="button" className={navigationMenuTriggerStyle()}>
-          Sort
-        </button>
+      <PopoverTrigger
+        render={
+          <button type="button" className={navigationMenuTriggerStyle()} />
+        }
+      >
+        Sort
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 p-2">
         <div className="flex flex-col">

@@ -33,11 +33,17 @@
 
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { cacheLifeForProfile } from "@/lib/cache-profile";
 import { TAG } from "@/lib/cache-tags";
 import { executeRequest, GetBrandingDocument } from "@headkit/sdk";
 import { env } from "@/lib/env";
 import { headkitTransportOpts } from "@/lib/headkit-transport";
+import { logger } from "@/lib/logger";
+import {
+  BrandingUnavailableError,
+  brandingCacheOnDashboardMiss,
+} from "@/lib/branding-cache-policy";
 import { resolveBrandingAssets, type BrandingAssets } from "./branding-assets";
 import {
   DEFAULT_PDP_GALLERY_LAYOUT,
@@ -804,16 +810,37 @@ async function fetchBrandingQuery(
 }
 
 /**
+ * The empty branding bundle, for a caller that caught
+ * {@link BrandingUnavailableError} outside `"use cache"`.
+ *
+ * Returning this from inside `getBranding` would store “no logo” and later
+ * replace an uploaded mark with the HeadKit Demo wordmark. Callers that need
+ * a one-request stand-in use this instead.
+ */
+export function fallbackBrandingBundle(): BrandingBundle {
+  return DEFAULT_BUNDLE;
+}
+
+/**
  * Fetch per-tenant branding / store-settings / SEO from dashboard-api.
  *
- * Degrades gracefully to {@link DEFAULT_BUNDLE} when:
- *  - `DASHBOARD_API_URL` or `DASHBOARD_API_TOKEN` is unset (local default), or
- *  - the request fails / times out / the endpoint is unreachable, or
- *  - both the full and compat queries return no usable data.
+ * Returns {@link DEFAULT_BUNDLE} when `DASHBOARD_API_URL` or
+ * `DASHBOARD_API_TOKEN` is unset (local / CI). A successful payload whose
+ * `logoUrl` is null is a real empty logo and is cached — the Demo wordmark
+ * stays for a store that uploaded neither a logo nor an icon.
+ *
+ * A failed read (non-200, timeout, unreachable, no usable payload) throws
+ * {@link BrandingUnavailableError} at runtime. A return inside `"use cache"`
+ * is a successful fill, and a background revalidation that returned the empty
+ * bundle was overwriting a good logo. A throw is not saved, so the previous
+ * entry stays. During `next build` the same failure still returns
+ * {@link DEFAULT_BUNDLE}: a throw inside `"use cache"` fails the build even
+ * when the page later catches it.
  *
  * Resilience: if the full query fails because dashboard-api does not yet
  * expose `enableSitemap` / `allowIndexing`, retries {@link BRANDING_QUERY_COMPAT}
- * so colors, logo, and store name still resolve. Never throws (T-03-B4).
+ * so colors, logo, and store name still resolve. The isolated cookie-consent
+ * query keeps its own catch and stays off on failure.
  *
  * Cached (Cache Components, `'use cache'`): branding is a per-tenant-per-DEPLOY
  * read — the tenant resolves from build/deploy env (`DASHBOARD_API_URL` +
@@ -832,6 +859,7 @@ export async function getBranding(): Promise<BrandingBundle> {
   const endpoint = env.DASHBOARD_API_URL;
   const token = env.DASHBOARD_API_TOKEN;
   // Both required — URL alone gets 401 from APITokenAuthMiddleware.
+  // Missing env is the local/CI default and is cached on purpose.
   if (!endpoint || !token) return DEFAULT_BUNDLE;
 
   try {
@@ -851,7 +879,7 @@ export async function getBranding(): Promise<BrandingBundle> {
       fetchWebmcp(endpoint, token),
     ]);
 
-    if (!bundle) return DEFAULT_BUNDLE;
+    if (!bundle) throw new BrandingUnavailableError();
 
     const branding = {
       ...(productFeatures
@@ -868,9 +896,16 @@ export async function getBranding(): Promise<BrandingBundle> {
     };
 
     return { ...bundle, branding, storeSettings };
-  } catch {
-    // Unreachable / timeout / parse error — degrade silently.
-    return DEFAULT_BUNDLE;
+  } catch (error) {
+    unstable_rethrow(error);
+    if (brandingCacheOnDashboardMiss(env.NEXT_PHASE) === "default") {
+      logger.error("branding.degraded_render", {
+        phase: env.NEXT_PHASE ?? "",
+      });
+      return DEFAULT_BUNDLE;
+    }
+    if (error instanceof BrandingUnavailableError) throw error;
+    throw new BrandingUnavailableError();
   }
 }
 
@@ -1135,7 +1170,10 @@ export type { BrandingAssets } from "./branding-assets";
  * Commerce remains the fallback, so stores that only ever set a WordPress site
  * icon are unaffected.
  *
- * Both branches degrade to `null` (never throw), leaving the built-in defaults.
+ * The commerce icon still degrades to `null` (never throws). A failed
+ * dashboard read throws out of {@link getBranding} and therefore out of this
+ * function — catching it here would store `{ logoUrl: null }` and replace an
+ * uploaded logo with the Demo wordmark. Do not add that catch.
  *
  * Cached (Cache Components): a per-tenant-per-deploy read (tenant resolves from
  * the SDK key / dashboard-api env, not a per-request runtime API), so it is

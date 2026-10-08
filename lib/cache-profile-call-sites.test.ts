@@ -91,8 +91,8 @@ const FINITE_IN_BOTH_PROFILES: { file: string; fn: string; why: string }[] = [
   },
   {
     file: "lib/product-cache.ts",
-    fn: "getLiveProductStock",
-    why: "is the PDP inventory hole; raising it to max bakes stock into the static shell",
+    fn: "getProductStock",
+    why: "is the five-minute availability read; pinning it at max would hold stock until the next deploy",
   },
 ];
 

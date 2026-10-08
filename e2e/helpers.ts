@@ -685,7 +685,7 @@ export async function fillShippingOptionsStep(
     const radios = page.locator('[role="radiogroup"] [role="radio"]');
     if ((await radios.count()) > 0) {
       const checked = await page
-        .locator('[role="radiogroup"] [role="radio"][data-state="checked"]')
+        .locator('[role="radiogroup"] [role="radio"][data-checked]')
         .count();
       if (checked === 0) await radios.first().click();
     }

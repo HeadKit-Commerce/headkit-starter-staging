@@ -4,9 +4,10 @@
  * A migration rehearsal serves the store's REAL catalogue from a temporary
  * host. If that host is crawlable it competes with the customer's live site in
  * search, and the damage outlives the rehearsal. Both existing gates default
- * OPEN — `lib/branding.ts` DEFAULT_BUNDLE ships `allowIndexing`/`enableSitemap`
- * true and is returned when the branding env is unset AND on any thrown read —
- * so the closed state has to come from something that cannot fail open.
+ * OPEN when branding env is unset (`lib/branding.ts` DEFAULT_BUNDLE ships
+ * `allowIndexing` / `enableSitemap` true). A thrown dashboard read is
+ * fail-closed in `app/robots.ts`. The host predicate is what closes a
+ * rehearsal host either way, so the closed state does not depend on branding.
  *
  * This module is deliberately pure and dependency-free: no env read, no
  * network, no framework import. The caller supplies both inputs, so every

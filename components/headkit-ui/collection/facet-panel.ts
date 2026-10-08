@@ -4,18 +4,18 @@
  * Two independent defects are closed here.
  *
  * 1. **The panel had no height cap and no scroller.** `NavigationMenuContent`
- *    renders inside the Radix viewport, which is `absolute` under the STICKY
+ *    renders inside the navigation viewport, which is positioned under the STICKY
  *    facet bar — so the panel is pinned to the bar and scrolling the page does
  *    not move it. On a catalogue with a long category list the panel simply
  *    runs off the bottom of the window: measured at 1440x900 with 154
  *    categories, the option grid ran y=176 to y=2932 and `window.scrollBy`
  *    left both numbers unchanged, leaving 2,032 px of categories unreachable
- *    by any gesture. The clipper is the BROWSER viewport edge, not the Radix
+ *    by any gesture. The clipper is the BROWSER viewport edge, not the shared
  *    viewport's own `overflow-hidden`: that element's height is
- *    `--radix-navigation-menu-viewport-height`, which Radix measures FROM the
+ *    `--popup-height`, which Base UI measures FROM the
  *    content, so it was exactly as tall as the content and clipped nothing.
  *    Capping the CONTENT is therefore what fixes both layers at once — the
- *    measured height clamps, so the Radix viewport shrinks to match.
+ *    measured height clamps, so the shared viewport shrinks to match.
  *
  * 2. **The option grid was a fixed two columns.** That is also what made (1)
  *    as bad as it was: at two columns a long facet list is twice as tall as it

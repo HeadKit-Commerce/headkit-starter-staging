@@ -99,18 +99,18 @@ export async function generateStaticParams(): Promise<{ slug: string[] }[]> {
     const nodes = walkCategoryPaths(categories, { includeExcluded: true });
     const paths: { slug: string[] }[] = [];
 
-    // Base category params (all categories incl. nested). Never budgeted:
-    // these are the route's primary URL class.
+    // Known collection pages: one unfiltered URL per category, including
+    // nested paths. Always emitted. Facet URLs are a separate family below
+    // and never take one of these params' place.
     for (const node of nodes) {
       paths.push({ slug: node.segments });
     }
 
-    // Facet params: the whole indexable set, or none. The decision is the
-    // pages left under the 45-minute ceiling after product HTML and the base
-    // categories (`lib/collection-facet-plan.ts`). It is made before
-    // `getFilters`. A set that does not fit is not sliced to a walk-order
-    // prefix. Unbuilt facet URLs still route. The first request fills the
-    // cache; there is no `loading.tsx` skeleton in front of them.
+    // Facet params, appended after the known collection pages: the whole
+    // indexable set, or none. The room is `lib/collection-facet-plan.ts`.
+    // A bulk-prefetched catalogue spends that room on facets only. A set
+    // that does not fit is not sliced to a walk-order prefix. Unbuilt
+    // facet URLs still route. The first request fills the cache.
     const facetPlan = await readFacetCataloguePlan(
       "products" in sdk ? sdk.products : undefined,
     );
@@ -441,9 +441,26 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * which reads those query params and pushes the `/f/…` path.
  */
 export const instant = true;
+// The finished document is prerendered. This fails the build if the
+// route, or a layout above it, starts reading cookies, headers,
+// searchParams, or connection(). The root layout stays unset.
+export const ensureStatic = "navigation";
 
-export default function Page(props: Props) {
-  return <CollectionPageContent {...props} />;
+/**
+ * Sync segment. The cached category, header and page-1 grid are the static
+ * shell — they are not wrapped in `<Suspense>`. A completed boundary here is
+ * outlined into a hidden segment, so the first HTML is only the nav, and a
+ * client navigation paints {@link CollectionPageSkeleton} until the grid
+ * arrives (the hang and flicker on collection links). `prefetch={true}` on
+ * home and menu links has that cached page ready before the click. Query
+ * facets stay in `CollectionProvider`. `notFound()` and `permanentRedirect()`
+ * in {@link CollectionPageContent} set a real status because nothing here
+ * has committed a 200.
+ *
+ * @see https://nextjs.org/docs/app/guides/instant-navigation
+ */
+export default function Page({ params }: Props) {
+  return <CollectionPageContent params={params} />;
 }
 
 export async function CollectionPageContent({ params }: Props) {

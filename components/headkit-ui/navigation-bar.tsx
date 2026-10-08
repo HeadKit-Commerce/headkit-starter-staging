@@ -27,6 +27,11 @@ import {
 } from "@/components/ui/collapsible";
 import { isAppNavigationHref } from "@/lib/convert-uri";
 import { normalizeMenuTree, toMegaMenuColumns } from "@/lib/menu-columns";
+import {
+  headerMenuHoverTarget,
+  readHeaderMenuPanel,
+  readHeaderMenuTriggers,
+} from "@/lib/nav-hover-switch";
 import { cn, decodeHtmlEntities } from "@/lib/utils";
 import { HeaderActions } from "@/components/headkit-ui/header-actions";
 import { CartTriggerButton } from "@/components/headkit-ui/cart-trigger-button";
@@ -104,7 +109,47 @@ export function NavigationBar({
   );
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuValue, setMenuValue] = useState<string | null>(null);
   const navRef = useRef<React.ElementRef<typeof NavigationMenu>>(null);
+
+  const closeHeaderMenu = (): void => {
+    setMenuValue((current) => (current == null ? current : null));
+    setMenuOpen((open) => (open ? false : open));
+  };
+
+  // The open value is set from these rects, so Base UI's hover close never
+  // runs. A point on a trigger switches, a point on the panel keeps the
+  // menu, and leaving both closes it. The panel is inside the nav, so
+  // pointerleave waits until the pointer has left the bar and the dropdown.
+
+  const syncHeaderMenuAtPointer = (
+    event: React.PointerEvent<HTMLElement>,
+  ): void => {
+    if (event.pointerType === "touch") return;
+    const target = headerMenuHoverTarget(
+      readHeaderMenuTriggers(event.currentTarget),
+      readHeaderMenuPanel(event.currentTarget),
+      event.clientX,
+      event.clientY,
+      menuValue,
+    );
+    if (target.kind === "trigger") {
+      setMenuValue((current) =>
+        current === target.value ? current : target.value,
+      );
+      setMenuOpen(true);
+      return;
+    }
+    if (target.kind === "panel") return;
+    closeHeaderMenu();
+  };
+
+  const closeHeaderMenuOnLeave = (
+    event: React.PointerEvent<HTMLElement>,
+  ): void => {
+    if (event.pointerType === "touch") return;
+    closeHeaderMenu();
+  };
   const [mobileMenuTop, setMobileMenuTop] = useState(80);
 
   // Keep the mobile drawer/overlay flush under the sticky logo bar (and any
@@ -162,7 +207,14 @@ export function NavigationBar({
       <NavigationMenu
         ref={navRef}
         {...{ [HEADER_REGION_ATTRIBUTE]: "" }}
-        onValueChange={(val) => setMenuOpen(!!val)}
+        value={menuValue}
+        onValueChange={(next) => {
+          const value = typeof next === "string" ? next : null;
+          setMenuValue(value);
+          setMenuOpen(value != null);
+        }}
+        onPointerMove={syncHeaderMenuAtPointer}
+        onPointerLeave={closeHeaderMenuOnLeave}
         className={cn(
           "headkit-nav sticky top-0 flex items-center justify-between h-20 w-full max-w-full px-5 md:px-10 font-body text-primary backdrop-blur-xs transition-colors",
           centeredLogo && "headkit-nav--centered relative",
@@ -175,39 +227,37 @@ export function NavigationBar({
             : "bg-brand-bg/75 hover:bg-brand-bg",
         )}
       >
-        {centeredLogo ? (
-          <NavigationMenuLink asChild>
-            <InstantLink
-              prefetch={true}
-              href="/"
-              aria-label="Home"
-              className="headkit-nav-logo absolute left-1/2 z-[1] cursor-pointer hover:opacity-75"
+        {/* Left: logo + primary menu.
+            The centered logo is an item of this list, not a sibling of it:
+            NavigationMenu.Link is a composite item and throws unless it sits
+            inside a list's CompositeRoot. `contents` drops the <li> box so
+            the absolute link still positions against the relative nav. */}
+        <NavigationMenuList
+          className={cn(
+            "space-x-0 flex-none justify-start",
+            centeredLogo && "flex-1 justify-start",
+          )}
+        >
+          <NavigationMenuItem
+            className={cn(centeredLogo ? "contents" : "mr-4 hover:opacity-75")}
+          >
+            <NavigationMenuLink
+              render={
+                <InstantLink
+                  href="/"
+                  aria-label="Home"
+                  className={
+                    centeredLogo
+                      ? "headkit-nav-logo absolute left-1/2 z-[1] cursor-pointer hover:opacity-75"
+                      : "cursor-pointer"
+                  }
+                />
+              }
             >
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               {logo as any}
-            </InstantLink>
-          </NavigationMenuLink>
-        ) : null}
-
-        {/* Left: logo + primary menu */}
-        <NavigationMenuList
-          className={cn("space-x-0", centeredLogo && "flex-1 justify-start")}
-        >
-          {!centeredLogo ? (
-            <NavigationMenuItem className="mr-4 hover:opacity-75">
-              <NavigationMenuLink asChild>
-                <InstantLink
-                  prefetch={true}
-                  href="/"
-                  aria-label="Home"
-                  className="cursor-pointer"
-                >
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {logo as any}
-                </InstantLink>
-              </NavigationMenuLink>
-            </NavigationMenuItem>
-          ) : null}
+            </NavigationMenuLink>
+          </NavigationMenuItem>
 
           {/* No wrapper element: <ul> children must be <li> (a11y list/listitem).
               Desktop-only visibility lives on each NavigationMenuItem. */}
@@ -226,7 +276,7 @@ export function NavigationBar({
         {/* Right: secondary menu + actions + mobile toggle */}
         <NavigationMenuList
           className={cn(
-            "headkit-nav-secondary space-x-0",
+            "headkit-nav-secondary space-x-0 flex-none justify-end",
             centeredLogo && "flex-1 justify-end",
           )}
         >
@@ -264,19 +314,21 @@ export function NavigationBar({
               }}
               modal={false}
             >
-              <SheetTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={mobileOpen ? "Close menu" : "Open menu"}
-                  className="pr-0"
-                >
-                  {mobileOpen ? (
-                    <XIcon className="h-6 w-6 text-primary transition-opacity hover:opacity-70" />
-                  ) : (
-                    <MenuIcon className="h-6 w-6 text-primary transition-opacity hover:opacity-70" />
-                  )}
-                </Button>
+              <SheetTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={mobileOpen ? "Close menu" : "Open menu"}
+                    className="pr-0"
+                  />
+                }
+              >
+                {mobileOpen ? (
+                  <XIcon className="h-6 w-6 text-primary transition-opacity hover:opacity-70" />
+                ) : (
+                  <MenuIcon className="h-6 w-6 text-primary transition-opacity hover:opacity-70" />
+                )}
               </SheetTrigger>
               <SheetContent
                 side="left"
@@ -388,12 +440,10 @@ function DesktopMenuSection({
   /** Visibility classes for each top-level item (responsive collapse). */
   itemClassName?: string;
   /**
-   * Forwarded to each top-level link's `InstantLink`. Under the prefetch budget
-   * (`NEXT_PUBLIC_NAV_PREFETCH_BUDGET`, off by default) the top-level nav is one of
-   * the two surfaces that keeps an explicit `prefetch={true}`, because it is a
-   * handful of links and the most likely next click. Mega-menu CHILD links
-   * deliberately do NOT get it — a WordPress menu can carry dozens of them, which
-   * is the storm the budget exists to stop.
+   * Forwarded to each top-level link's `InstantLink`. The top-level nav passes
+   * `prefetch={true}` because it is a handful of links and the most likely next
+   * click. Mega-menu child links do not, so a large WordPress menu does not
+   * prefetch every child.
    */
   prefetch?: boolean | undefined;
 }) {
@@ -408,12 +458,16 @@ function DesktopMenuSection({
             "text-pink-500 hover:!text-pink-600",
         );
         return (
-          <NavigationMenuItem key={item.id} className={itemClassName}>
+          <NavigationMenuItem
+            key={item.id}
+            value={item.id}
+            className={itemClassName}
+          >
             {item.children.length > 0 ? (
               <>
                 {/*
-                  A parent that HAS a panel only opens the panel. Radix renders
-                  its own <button> here (no `asChild`), so there is no href for
+                  A parent that HAS a panel only opens the panel. Base UI renders
+                  its own <button> here (no `render` override), so there is no href for
                   a click, Enter or a tap to follow — which is what the v1 site
                   did, and what stopped a WordPress mega-menu parent whose
                   Custom Link URI is `/` from throwing the shopper back to the
@@ -424,7 +478,10 @@ function DesktopMenuSection({
                   (see `viewAll`), where it is clickable, focusable and read out
                   in the panel's own list.
                 */}
-                <NavigationMenuTrigger className={triggerClassName}>
+                <NavigationMenuTrigger
+                  data-headkit-menu={item.id}
+                  className={cn(triggerClassName, "pointer-events-auto!")}
+                >
                   {label}
                 </NavigationMenuTrigger>
                 <NavigationMenuContent className="w-screen! rounded-none! bg-brand-bg">
@@ -437,20 +494,22 @@ function DesktopMenuSection({
                 </NavigationMenuContent>
               </>
             ) : (
-              <NavigationMenuLink asChild>
-                <InstantLink
-                  href={href}
-                  prefetch={prefetch}
-                  pendingVariant="text"
-                  className={cn(
-                    navigationMenuTriggerStyle(),
-                    "font-body font-semibold text-primary hover:text-primary",
-                    isHighlightedItem(item, highlightedLinks) &&
-                      "text-pink-500 hover:!text-pink-600",
-                  )}
-                >
-                  {label}
-                </InstantLink>
+              <NavigationMenuLink
+                render={
+                  <InstantLink
+                    href={href}
+                    prefetch={prefetch}
+                    pendingVariant="text"
+                    className={cn(
+                      navigationMenuTriggerStyle(),
+                      "font-body font-semibold text-primary hover:text-primary",
+                      isHighlightedItem(item, highlightedLinks) &&
+                        "text-pink-500 hover:!text-pink-600",
+                    )}
+                  />
+                }
+              >
+                {label}
               </NavigationMenuLink>
             )}
           </NavigationMenuItem>
@@ -507,7 +566,7 @@ function groupMegaMenuColumnItems(
 /**
  * The desktop panel.
  *
- * Exported for `navigation-bar.test.tsx`: Radix keeps panel content unmounted
+ * Exported for `navigation-bar.test.tsx`: Base UI keeps panel content unmounted
  * until the menu opens, so server markup of the whole bar cannot show what a
  * panel renders.
  *
@@ -528,15 +587,17 @@ export function MegaMenu({
     <ul className="grid gap-5 w-full px-5 md:px-10 py-6 grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
       {viewAll && (
         <li className="col-span-full">
-          <NavigationMenuLink asChild>
-            <InstantLink
-              prefetch={true}
-              href={viewAll.href}
-              pendingVariant="text"
-              className="font-semibold text-primary hover:opacity-80 underline block"
-            >
-              View all {viewAll.label}
-            </InstantLink>
+          <NavigationMenuLink
+            render={
+              <InstantLink
+                href={viewAll.href}
+                prefetch={true}
+                pendingVariant="text"
+                className="font-semibold text-primary hover:opacity-80 underline block"
+              />
+            }
+          >
+            View all {viewAll.label}
           </NavigationMenuLink>
         </li>
       )}
@@ -556,15 +617,17 @@ export function MegaMenu({
               </ul>
             ) : (
               <div key={group.id}>
-                <NavigationMenuLink asChild>
-                  <InstantLink
-                    prefetch={true}
-                    href={removeTrailingSlash(group.uri)}
-                    pendingVariant="text"
-                    className="font-semibold text-primary hover:opacity-80 uppercase block mb-2"
-                  >
-                    {decodeHtmlEntities(group.label)}
-                  </InstantLink>
+                <NavigationMenuLink
+                  render={
+                    <InstantLink
+                      href={removeTrailingSlash(group.uri)}
+                      prefetch={true}
+                      pendingVariant="text"
+                      className="font-semibold text-primary hover:opacity-80 uppercase block mb-2"
+                    />
+                  }
+                >
+                  {decodeHtmlEntities(group.label)}
                 </NavigationMenuLink>
                 <ul className="flex flex-col gap-1">
                   {group.children.map((child) => (
@@ -591,18 +654,20 @@ export function MegaMenu({
 function MegaMenuChild({ item, depth }: { item: NavMenuItem; depth: number }) {
   return (
     <li>
-      <NavigationMenuLink asChild>
-        <InstantLink
-          prefetch={true}
-          href={removeTrailingSlash(item.uri)}
-          pendingVariant="text"
-          className={cn(
-            "hover:opacity-80 text-[15px] block py-0.5",
-            depth === 0 ? "text-primary/70" : "text-primary/50",
-          )}
-        >
-          {decodeHtmlEntities(item.label)}
-        </InstantLink>
+      <NavigationMenuLink
+        render={
+          <InstantLink
+            href={removeTrailingSlash(item.uri)}
+            prefetch={true}
+            pendingVariant="text"
+            className={cn(
+              "hover:opacity-80 text-[15px] block py-0.5",
+              depth === 0 ? "text-primary/70" : "text-primary/50",
+            )}
+          />
+        }
+      >
+        {decodeHtmlEntities(item.label)}
       </NavigationMenuLink>
       {item.children.length > 0 && (
         <ul className="flex flex-col gap-1 pl-3">
@@ -621,7 +686,7 @@ function MegaMenuChild({ item, depth }: { item: NavMenuItem; depth: number }) {
 
 /**
  * The mobile sheet's list. Exported for `navigation-bar.test.tsx`: the sheet is
- * a Radix dialog and stays unmounted until it opens.
+ * a Base UI dialog and stays unmounted until it opens.
  */
 export function MobileMenuSection({
   items,
@@ -655,7 +720,7 @@ export function MobileMenuSection({
  * indentation and weight: the first row under a section stands out, everything
  * below it is a sub-link.
  *
- * Exported for `navigation-bar.test.tsx`: a closed Radix collapsible renders no
+ * Exported for `navigation-bar.test.tsx`: a closed Base UI collapsible renders no
  * content, so the sheet's rows are not reachable through `MobileMenuSection`.
  */
 export function MobileMenuBranch({
@@ -718,13 +783,13 @@ function MobileMenuItem({
     return (
       <Collapsible>
         <CollapsibleTrigger className="text-xl font-semibold font-body text-primary flex w-full justify-between items-center group focus-visible:outline-none">
-          <span className="group-data-[state=open]:opacity-70">
+          <span className="group-data-[panel-open]:opacity-70">
             {decodeHtmlEntities(item.label)}
           </span>
-          <span className="group-data-[state=open]:hidden text-primary">
+          <span className="group-data-[panel-open]:hidden text-primary">
             <ChevronDownIcon size={20} />
           </span>
-          <span className="hidden group-data-[state=open]:block rotate-180 text-primary">
+          <span className="hidden group-data-[panel-open]:block rotate-180 text-primary">
             <ChevronDownIcon size={20} />
           </span>
         </CollapsibleTrigger>

@@ -1,23 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
+import { readFileSync } from "node:fs";
 
 /**
- * `ProductStock` is the PDP's dynamic hole. It reads `getLiveProductStock`
- * (`cacheLife("seconds")`, excluded from the prerender) and hands every
- * variation to `LiveAvailability`, which matches the selected variation.
- * It must not read `getCachedProduct`: that entry is the static product and
- * would bake stock into the shell.
+ * `ProductStock` reads `getProductStock` (expire 300 seconds, still inside
+ * the prerender) and hands every variation to `LiveAvailability`. Quote
+ * checkout returns before that read. It must not read `getCachedProduct`.
  */
 
-const { getLiveProductStock, getCachedProduct } = vi.hoisted(() => ({
-  getLiveProductStock: vi.fn<(slug: string) => Promise<unknown>>(),
-  getCachedProduct: vi.fn<(slug: string) => Promise<unknown>>(),
+const { getProductStock, getBranding } = vi.hoisted(() => ({
+  getProductStock: vi.fn<(slug: string) => Promise<unknown>>(),
+  getBranding:
+    vi.fn<() => Promise<{ storeSettings: { checkoutType: string } }>>(),
 }));
 
 vi.mock("@/lib/product-cache", () => ({
-  getLiveProductStock: (slug: string): Promise<unknown> =>
-    getLiveProductStock(slug),
-  getCachedProduct: (slug: string): Promise<unknown> => getCachedProduct(slug),
+  getProductStock: (slug: string): Promise<unknown> => getProductStock(slug),
+  getCachedProduct: (): Promise<unknown> => {
+    throw new Error("the availability line must not read the catalogue entry");
+  },
+}));
+vi.mock("@/lib/branding", () => ({
+  getBranding: (): Promise<{ storeSettings: { checkoutType: string } }> =>
+    getBranding(),
 }));
 vi.mock("@/components/headkit-ui/live-availability", () => ({
   LiveAvailability: (): null => null,
@@ -60,16 +65,14 @@ const PRODUCT = {
 };
 
 beforeEach(() => {
-  getLiveProductStock.mockReset();
-  getCachedProduct.mockReset();
-  getCachedProduct.mockRejectedValue(
-    new Error("the stock line must not read the cached product"),
-  );
+  getProductStock.mockReset();
+  getBranding.mockReset();
+  getBranding.mockResolvedValue({ storeSettings: { checkoutType: "custom" } });
 });
 
 describe("ProductStock", () => {
-  it("reads the live stock entry and passes every variation through", async () => {
-    getLiveProductStock.mockResolvedValue(PRODUCT);
+  it("reads the five-minute stock entry and passes every variation through", async () => {
+    getProductStock.mockResolvedValue(PRODUCT);
 
     const element = (await ProductStock({
       productSlug: "acme-hoodie",
@@ -77,8 +80,7 @@ describe("ProductStock", () => {
       snapshot: { variations: unknown[]; brandSlug: string };
     }>;
 
-    expect(getLiveProductStock).toHaveBeenCalledWith("acme-hoodie");
-    expect(getCachedProduct).not.toHaveBeenCalled();
+    expect(getProductStock).toHaveBeenCalledWith("acme-hoodie");
     expect(element.type).toBe(LiveAvailability);
     expect(element.props.snapshot.brandSlug).toBe("acme");
     expect(element.props.snapshot.variations).toEqual([
@@ -103,14 +105,44 @@ describe("ProductStock", () => {
     ]);
   });
 
+  it("skips the stock read when checkout is quote", async () => {
+    getBranding.mockResolvedValue({ storeSettings: { checkoutType: "quote" } });
+
+    await expect(
+      ProductStock({ productSlug: "acme-hoodie" }),
+    ).resolves.toBeNull();
+    expect(getProductStock).not.toHaveBeenCalled();
+  });
+
   it("renders nothing for a miss, and never throws on a failed read", async () => {
-    getLiveProductStock.mockResolvedValueOnce(null);
+    getProductStock.mockResolvedValueOnce(null);
     await expect(ProductStock({ productSlug: "gone" })).resolves.toBeNull();
 
-    getLiveProductStock.mockRejectedValueOnce(new Error("provider down"));
+    getProductStock.mockRejectedValueOnce(new Error("provider down"));
     await expect(
       ProductStock({ productSlug: "acme-hoodie" }),
       "a provider outage during a post-action refresh must not trip the route error boundary",
     ).resolves.toBeNull();
+  });
+
+  it("keeps a five-minute prerenderable lifetime on its own entry", () => {
+    const source = readFileSync(
+      new URL("../../lib/product-cache.ts", import.meta.url),
+      "utf8",
+    );
+    const start = source.indexOf("function getProductStock(");
+    expect(
+      start,
+      "getProductStock is declared in product-cache",
+    ).toBeGreaterThan(-1);
+    const next = source.indexOf("\nexport ", start + 1);
+    const fn = source.slice(start, next === -1 ? undefined : next);
+    expect(fn).toContain('"use cache: remote"');
+    expect(fn).toContain("stale: 300");
+    expect(fn).toContain("revalidate: 60");
+    expect(fn).toContain("expire: 300");
+    expect(fn).not.toContain('cacheLife("seconds")');
+    expect(fn).not.toContain("getCachedProduct(");
+    expect(fn).not.toContain("getLiveProductStock");
   });
 });

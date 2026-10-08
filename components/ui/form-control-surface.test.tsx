@@ -193,18 +193,27 @@ describe("the brand form-control surface", () => {
         </RadioGroup>
       </>,
     );
-    const buttons = [...container.querySelectorAll("button")];
-    expect(buttons.length).toBe(2);
-    for (const b of buttons) {
-      expect(b.className).toContain("border-primary");
-      expect(b.className).toContain("ring-primary");
-      expect(b.className).not.toContain("ring-neutral-950");
+    // Selected by ROLE, not by tag name: Radix rendered these two as
+    // `<button>` and Base UI (#546) renders them as `<span role=...>`, and
+    // neither choice is what this test is about. The role is the part of the
+    // contract that must hold whichever primitive is underneath.
+    const controls = [
+      ...container.querySelectorAll('[role="checkbox"], [role="radio"]'),
+    ];
+    expect(controls.length).toBe(2);
+    for (const c of controls) {
+      expect(c.className).toContain("border-primary");
+      expect(c.className).toContain("ring-primary");
+      expect(c.className).not.toContain("ring-neutral-950");
     }
     // The checkbox fills with primary when checked; the radio must NOT, or the
-    // filled circle swallows its own indicator dot.
-    const [checkbox, radio] = buttons;
-    expect(checkbox!.className).toContain("data-[state=checked]:bg-primary");
-    expect(radio!.className).not.toContain("data-[state=checked]:bg-primary");
+    // filled circle swallows its own indicator dot. `data-[checked]` is Base
+    // UI's attribute; the Radix `data-[state=checked]` half is still named in
+    // `FORM_CONTROL_BOOLEAN_SURFACE` and is inert now that both branches are
+    // on one primitive.
+    const [checkbox, radio] = controls;
+    expect(checkbox!.className).toContain("data-[checked]:bg-primary");
+    expect(radio!.className).not.toContain("data-[checked]:bg-primary");
   });
 
   it("emits no `dark:` variant on any shared control", () => {

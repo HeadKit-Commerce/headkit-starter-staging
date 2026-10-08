@@ -184,20 +184,38 @@ async function mount(fields: FieldNode[]): Promise<void> {
   });
 }
 
-/** Every rendered checkbox/radio, by its accessible label text. */
+/**
+ * Every rendered checkbox/radio, by its accessible label text.
+ *
+ * `FormControl` hands the primitive ONE id (`formItemId`), and the two
+ * primitives place it differently: Radix put it on the element carrying
+ * `role`, while Base UI (#546) renders a visible `<span role=...>` with an id
+ * of its own and puts the given id on the HIDDEN native input beside it. The
+ * `<label for=...>` therefore points at the input, not at the role element.
+ * So the label is resolved through the sibling input when there is one, and
+ * the role element — the thing with the classes, the state and the click
+ * handler — is what gets returned either way.
+ */
 function controlsByLabel(role: "checkbox" | "radio"): Map<string, Element> {
   const out = new Map<string, Element>();
   for (const control of container.querySelectorAll(`[role="${role}"]`)) {
-    const label = control.id
-      ? container.querySelector(`label[for="${control.id}"]`)
-      : null;
+    const native = control.parentElement?.querySelector(
+      `input[type="${role}"]`,
+    );
+    const id = native?.id || control.id;
+    const label = id ? container.querySelector(`label[for="${id}"]`) : null;
     out.set(label?.textContent?.trim() ?? "", control);
   }
   return out;
 }
 
+/** Radix reported state as `data-state`; Base UI as a bare `data-checked`. */
 function isChecked(el: Element | undefined): boolean {
-  return el?.getAttribute("data-state") === "checked";
+  if (!el) return false;
+  return (
+    el.getAttribute("data-state") === "checked" ||
+    el.hasAttribute("data-checked")
+  );
 }
 
 describe("a choice the editor pre-selected", () => {

@@ -258,10 +258,9 @@ export async function HomeContent() {
 
   const heroLayout = theme.layout.heroLayout;
 
-  // Exactly ONE product carousel on this page keeps a warm first row, and only
-  // when the store runs the prefetch budget (`NEXT_PUBLIC_NAV_PREFETCH_BUDGET`;
-  // with it off, `InstantLink` prefetches every link as it does today and this
-  // choice costs nothing). The WP front page's first `headkit-product-carousel`
+  // Exactly ONE product carousel on this page is marked as the warm row.
+  // Product cards pass `prefetch={true}` themselves, so this no longer caps
+  // what Next downloads. The WP front page's first `headkit-product-carousel`
   // wins when it has one, because editor segments render above the platform's own
   // carousels; when it has none, the first hard-coded carousel a shopper sees takes
   // it — Featured when that is shown, otherwise On Sale.
@@ -388,6 +387,7 @@ export async function HomeContent() {
  * @see https://nextjs.org/docs/app/guides/instant-navigation
  */
 export const instant = true;
+export const ensureStatic = "navigation";
 
 export default function Home() {
   // HomeContent is fully cached ('use cache') — rendering it without a

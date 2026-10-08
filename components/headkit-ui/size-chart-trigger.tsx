@@ -57,19 +57,19 @@ export function SizeChartTrigger({
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className="headkit-size-chart-link headkit-size-guide-link shrink-0 text-sm underline underline-offset-2 text-primary"
-        >
-          {label}
-        </button>
+      <DialogTrigger
+        render={
+          <button
+            type="button"
+            className="headkit-size-chart-link headkit-size-guide-link shrink-0 text-sm underline underline-offset-2 text-primary"
+          />
+        }
+      >
+        {label}
       </DialogTrigger>
       <DialogContent
         className="headkit-size-chart-dialog max-h-[85vh] overflow-y-auto bg-brand-bg p-6 text-primary md:p-8"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-        }}
+        initialFocus={false}
       >
         <DialogTitle className="sr-only">{label}</DialogTitle>
         {kind === "html" ? (

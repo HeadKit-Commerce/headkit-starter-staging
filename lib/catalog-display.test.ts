@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   collapseCatalogProducts,
   expandCatalogProducts,
+  selectedColourFacetSlugs,
   partitionFullRows,
   resolveCarouselColourway,
 } from "@/lib/catalog-display";
@@ -64,7 +65,7 @@ const colourAttr = {
 };
 
 describe("expandCatalogProducts", () => {
-  it("collapses to one default/first colourway when showVariants is false", () => {
+  it("collapses to the first swatch when showVariants is false", () => {
     const products = [
       makeProduct({
         id: "1",
@@ -101,8 +102,8 @@ describe("expandCatalogProducts", () => {
 
     const result = expandCatalogProducts(products, false);
     expect(result).toHaveLength(1);
-    expect(result[0]?.colorwaySlug).toBe("blue");
-    expect(result[0]?.image?.src).toBe("/blue.jpg");
+    expect(result[0]?.colorwaySlug).toBe("red");
+    expect(result[0]?.image?.src).toBe("/red.jpg");
   });
 
   it("expands colourways when showVariants is true", () => {
@@ -341,7 +342,7 @@ describe("partitionFullRows", () => {
 });
 
 describe("collapseCatalogProducts", () => {
-  it("prefers admin pin over WooCommerce default", () => {
+  it("prefers an admin pin over the first swatch", () => {
     const products = [
       makeProduct({
         id: "42",
@@ -382,7 +383,7 @@ describe("collapseCatalogProducts", () => {
     expect(result[0]?.image?.src).toBe("/blue.jpg");
   });
 
-  it("uses latest updated variation colour when no default", () => {
+  it("ignores a variation's dateModified and keeps the first swatch", () => {
     const products = [
       makeProduct({
         id: "1",
@@ -418,9 +419,9 @@ describe("collapseCatalogProducts", () => {
       }),
     ];
 
-    expect(resolveCarouselColourway(products[0]!)).toBe("blue");
+    expect(resolveCarouselColourway(products[0]!)).toBe("red");
     const result = collapseCatalogProducts(products);
-    expect(result[0]?.colorwaySlug).toBe("blue");
+    expect(result[0]?.colorwaySlug).toBe("red");
   });
 
   it("keeps parent hoverImage on a collapsed single-colourway card", () => {
@@ -506,5 +507,71 @@ describe("collapseCatalogProducts", () => {
 
     const blueOnly = collapseCatalogProducts(products, { "1": "blue" });
     expect(blueOnly[0]?.onSale).toBe(false);
+  });
+});
+
+describe("colour facet cards", () => {
+  const products = [
+    makeProduct({
+      id: "1",
+      slug: "tee",
+      name: "Tee",
+      attributes: [colourAttr],
+      variations: [
+        {
+          id: "v1",
+          price: "10",
+          regularPrice: "10",
+          salePrice: "",
+          onSale: false,
+          stockStatus: "IN_STOCK",
+          image: { src: "/red.jpg" },
+          images: [{ src: "/red.jpg" }],
+          attributes: [{ key: "pa_colour", value: "red" }],
+        },
+        {
+          id: "v2",
+          price: "10",
+          regularPrice: "10",
+          salePrice: "",
+          onSale: false,
+          stockStatus: "IN_STOCK",
+          image: { src: "/blue.jpg" },
+          images: [{ src: "/blue.jpg" }],
+          attributes: [{ key: "pa_colour", value: "blue" }],
+        },
+      ],
+    }),
+  ];
+
+  it("shows the filtered colour on a collapsed card", () => {
+    const result = expandCatalogProducts(products, false, ["blue"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.colorwaySlug).toBe("blue");
+    expect(result[0]?.image?.src).toBe("/blue.jpg");
+  });
+
+  it("keeps only the matching colourway when variants are exploded", () => {
+    expect(expandCatalogProducts(products, true, ["white"])).toHaveLength(0);
+    const blue = expandCatalogProducts(products, true, ["blue"]);
+    expect(blue.map((product) => product.colorwaySlug)).toEqual(["blue"]);
+  });
+
+  it("keeps every selected colour, in swatch order", () => {
+    const result = expandCatalogProducts(products, true, ["blue", "red"]);
+    expect(result.map((product) => product.colorwaySlug)).toEqual([
+      "red",
+      "blue",
+    ]);
+  });
+
+  it("reads colour facet slugs and ignores other attributes", () => {
+    expect(
+      selectedColourFacetSlugs({
+        pa_colour: ["white"],
+        pa_size: ["m"],
+        colour: ["navy"],
+      }),
+    ).toEqual(["white", "navy"]);
   });
 });

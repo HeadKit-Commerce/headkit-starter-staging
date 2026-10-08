@@ -1,15 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/env", () => ({
+  env: {
+    NEXT_PUBLIC_HEADKIT_PUBLIC_KEY: "pk_store",
+    NEXT_PUBLIC_GRAPHQL_URL: "https://graph.example.test/graphql",
+    HEADKIT_PRIVATE_KEY: "sk_store",
+  },
+}));
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Product } from "@headkit/sdk";
-
-// `product-carousel.tsx` imports `lib/branding`, which imports `lib/env`.
-// Zod validation runs at module load and throws when these are unset.
-vi.hoisted(() => {
-  process.env.NEXT_PUBLIC_HEADKIT_PUBLIC_KEY ??= "pk_test";
-  process.env.NEXT_PUBLIC_GRAPHQL_URL ??= "http://localhost:4000/graphql";
-  process.env.HEADKIT_PRIVATE_KEY ??= "sk_test";
-});
-
 import {
   NavigationBar,
   type NavMenuItem,
@@ -21,15 +20,14 @@ import {
 
 /**
  * The two surfaces that keep an explicit `prefetch={true}` when a store runs the
- * prefetch budget (`NEXT_PUBLIC_NAV_PREFETCH_BUDGET`). `InstantLink`'s own default
+ * prefetch budget (`Partial Prefetching`). `InstantLink`'s own default
  * — `true` without the budget, unset with it — is `instant-link.test.tsx`'s.
  *
  * The point of this file is that the budget and its two exemptions are ONE
  * decision: a guard on `InstantLink` alone stays green while the nav prop or the
  * carousel's `prefetchCount` quietly stops being threaded, and a guard on either
  * call site alone stays green while the other regresses. So both are asserted here,
- * in both directions — the links that must stay explicitly warm under the budget,
- * including the home logo.
+ * in both directions — the links that must be warm AND the links that must not be.
  *
  * Every test declares the budget variable explicitly. With the budget OFF an unset
  * `prefetch` still resolves to `true`, so a suite that inherited the process's value
@@ -55,14 +53,17 @@ import {
  *     links, which is the storm the budget exists to stop — and the mega-menu panel
  *     is unmounted in server markup anyway, so their absence here is not evidence
  *     either way.
- *   - It covers no other `InstantLink` call site. Mega-menu child links stay
- *     unset under the budget; this file does not render that panel.
+ *   - It covers no other `InstantLink` call site. Every one of the others is
+ *     expected to pass prefetch through unset under the budget.
  */
 
 const { observedLinks } = vi.hoisted(() => ({
   observedLinks: vi.fn<(href: string, prefetch: boolean | undefined) => void>(),
 }));
 
+// `ProductCarousel` awaits `getBranding()`, which is a `"use cache: remote"`
+// function; `cacheLife()` throws outside a `cacheComponents` build, so the two
+// directives are no-ops here.
 vi.mock("next/cache", () => ({
   cacheLife: (): void => {},
   cacheTag: (): void => {},
@@ -148,7 +149,6 @@ function renderNav(): void {
 
 describe("the top-level desktop nav keeps its head start under the budget", () => {
   it("passes prefetch={true} to the childless top-level links of BOTH menus", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedLinks.mockClear();
 
     renderNav();
@@ -164,31 +164,17 @@ describe("the top-level desktop nav keeps its head start under the budget", () =
     expect(prefetchFor("/wholesale")).toContain(true);
   });
 
-  it("warms the home logo explicitly under the budget", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
+  it("leaves the logo link on the default, so 'warm' means the menu and not every nav anchor", () => {
     observedLinks.mockClear();
 
     renderNav();
 
-    // The centered-logo home link passes prefetch={true} itself. Under the
-    // budget an unset InstantLink is cold, so dropping that prop fails here.
+    // Not vacuous: the logo link must actually have rendered for its absence from
+    // the warm set to mean anything.
     expect(prefetchFor("/"), "the logo link did not render").not.toHaveLength(
       0,
     );
-    expect(prefetchFor("/")).toContain(true);
-  });
-
-  it("warms every nav link with the budget OFF, which is the platform default", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", undefined);
-    observedLinks.mockClear();
-
-    renderNav();
-
-    // The explicit nav flag is unchanged, and the links that do NOT carry it fall
-    // back to `true` — so a store that sets nothing sees exactly what it sees
-    // today. The logo is one of those explicit links.
-    expect(prefetchFor("/")).toContain(true);
-    expect(prefetchFor("/sale")).toContain(true);
+    expect(prefetchFor("/")).not.toContain(true);
   });
 });
 
@@ -214,9 +200,12 @@ const PRODUCTS = Array.from({ length: 8 }, (_, i) => product(`p${i}`));
 
 describe("ProductCarousel puts every product in Next's prefetch queue", () => {
   it("passes prefetch={true} for every card with the budget on", async () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedLinks.mockClear();
 
+    // `ProductCarousel` is an async Server Component, so it is CALLED and
+    // awaited rather than rendered as an element: react-dom's synchronous
+    // renderer throws "a component suspended while responding to synchronous
+    // input" on an async component.
     renderToStaticMarkup(
       await ProductCarousel({
         products: PRODUCTS,
@@ -237,7 +226,6 @@ describe("ProductCarousel puts every product in Next's prefetch queue", () => {
   });
 
   it("passes prefetch={true} when prefetchCount is omitted", async () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedLinks.mockClear();
 
     renderToStaticMarkup(await ProductCarousel({ products: PRODUCTS }));
@@ -246,18 +234,5 @@ describe("ProductCarousel puts every product in Next's prefetch queue", () => {
     expect(
       observedLinks.mock.calls.every(([, prefetch]) => prefetch === true),
     ).toBe(true);
-  });
-
-  it("warms every card with the budget OFF, including past the first row", async () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", undefined);
-    observedLinks.mockClear();
-
-    renderToStaticMarkup(await ProductCarousel({ products: PRODUCTS }));
-
-    expect(
-      observedLinks.mock.calls.every(([, prefetch]) => prefetch === true),
-      "with the budget off every card link must still full-prefetch; that is the behaviour this port must not change for existing stores",
-    ).toBe(true);
-    expect(observedLinks.mock.calls.length).toBeGreaterThan(0);
   });
 });

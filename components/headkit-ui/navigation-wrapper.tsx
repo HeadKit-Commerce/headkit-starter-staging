@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import type { MenuLocation } from "@headkit/sdk";
 import { cacheTag } from "next/cache";
 import { cacheLifeForProfile } from "@/lib/cache-profile";
@@ -328,6 +329,26 @@ export async function getFooterMenu(): Promise<NavMenuItem[]> {
   // `TAG.collections` — same reason as `fetchMenu`.
   cacheTag(TAG.footer, TAG.menu("FOOTER"), TAG.collections);
   return loadMenu("FOOTER", await collectionPathLookup());
+}
+
+/**
+ * Uncached nav for the one request where dashboard branding could not be read.
+ *
+ * Kept outside {@link NavigationWrapper}'s `"use cache"` function. Caching
+ * this render would store the Demo wordmark in place of an uploaded logo.
+ */
+export function fallbackNavigation(): ReactElement {
+  const { layout } = getStoreTheme();
+  return (
+    <NavigationBar
+      primaryMenuItems={[]}
+      secondaryMenuItems={[]}
+      navLayout={layout.navLayout}
+      navStyle={layout.navStyle}
+      logo={<BrandLogo logoUrl={null} siteName={resolveStoreName(null)} />}
+      mobileActions={<MobileHeaderActions />}
+    />
+  );
 }
 
 export async function NavigationWrapper() {

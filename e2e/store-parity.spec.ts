@@ -1008,7 +1008,7 @@ test.describe("Store V1->V2 route parity gate (MIG-03/MIG-04)", () => {
       if (TEMP_HOST === true) {
         expect(
           blanketDisallow,
-          `${ctx()} this run is flagged as a TEMPORARY host but /robots.txt does not disallow everything. Both SEO gates default OPEN (branding.ts DEFAULT_BUNDLE ships enableSitemap/allowIndexing true, and returns that bundle on any thrown error), so an untouched rehearsal host is fully crawlable with the customer's real catalogue. The page-level signal is the X-Robots-Tag header (lib/host-robots.ts), asserted by the next case — it is a SEPARATE comparison against the same isIndexableHost predicate, not the same call, so this case proves only robots.txt. robots.txt was:\n${body}`,
+          `${ctx()} this run is flagged as a TEMPORARY host but /robots.txt does not disallow everything. Both SEO gates default OPEN when branding env is unset (branding.ts DEFAULT_BUNDLE ships enableSitemap/allowIndexing true). A thrown dashboard read is fail-closed in robots.ts; the host predicate closes a rehearsal host either way, so an untouched rehearsal host is fully crawlable with the customer's real catalogue. The page-level signal is the X-Robots-Tag header (lib/host-robots.ts), asserted by the next case — it is a SEPARATE comparison against the same isIndexableHost predicate, not the same call, so this case proves only robots.txt. robots.txt was:\n${body}`,
         ).toBe(true);
         expect(
           advertisesSitemap,

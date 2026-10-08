@@ -58,10 +58,9 @@ export type StockSnapshot = {
 };
 
 /**
- * One-line placeholder that ships in the static shell. The live stock streams
- * into it. Next.js excludes a `cacheLife("seconds")` read from the prerender
- * (`expire` under five minutes), so this fallback is what a direct visit and
- * a client navigation show until that read resolves.
+ * Placeholder kept for a stock line that has to stream. The PDP does not
+ * mount it: `getProductStock` expires at five minutes and is part of the
+ * stored document.
  */
 export function AvailabilityLineFallback() {
   return (
@@ -76,7 +75,7 @@ export function AvailabilityLineFallback() {
 
 /**
  * Availability for the variation `ProductDetail` has selected. The snapshot
- * is the request-time stock read; the selection comes from context, so a size
+ * is the five-minute stock read; the selection comes from context, so a size
  * click moves the line and the button together.
  */
 export function LiveAvailability({ snapshot }: { snapshot: StockSnapshot }) {

@@ -35,7 +35,7 @@ export function FilterMenuItem({
           )}
         </div>
       </NavigationMenuTrigger>
-      <NavigationMenuContent className="w-screen! rounded-none! p-4">
+      <NavigationMenuContent className="rounded-none! p-4">
         {/* The scroll container is INSIDE the panel, not on the Radix
             viewport: the viewport's height is measured from this content, so
             capping here clamps both at once and leaves the shared

@@ -1,7 +1,9 @@
-import { getLiveProductStock } from "@/lib/product-cache";
+import { getProductStock } from "@/lib/product-cache";
 import { LiveAvailability } from "@/components/headkit-ui/live-availability";
 import type { StockSnapshot } from "@/components/headkit-ui/live-availability";
 import { resolveDisplayBrand } from "@/lib/product-brand";
+import { getBranding } from "@/lib/branding";
+import { isQuoteMode, normalizeCheckoutMode } from "@/lib/checkout-mode";
 
 interface Props {
   productSlug: string;
@@ -11,27 +13,32 @@ interface Props {
 /**
  * The PDP availability line.
  *
- * The product page renders this inside `<Suspense>`. The read is
- * `getLiveProductStock` (`"use cache: remote"`, `cacheLife("seconds")`).
- * Next.js leaves that lifetime out of the prerender, so the fallback is in
- * the static shell and this line streams in at request time. The gallery,
- * title, price and description stay on `getCachedProduct` and are not inside
- * this boundary.
+ * Reads `getProductStock`, the five-minute entry, and passes every variation
+ * to `LiveAvailability`. It does not read `getCachedProduct`: that entry is
+ * the catalogue snapshot and would hold the number for days.
  *
- * The snapshot includes every variation. `LiveAvailability` matches the
- * variation `ProductDetail` has selected, so a size click and the Add to Bag
- * button stay on the same stock. The URL colour is that component's seeded
- * selection, so this read does not pick a variation itself.
- *
- * Uses `products.get` until a lean `getStock` SDK method ships (ENG-853).
+ * Quote checkout hides this line. The check runs before the stock read, on
+ * the cached branding bundle, so a quote store never creates the five-minute
+ * entry and its product page stays on the catalogue lifetime.
  *
  * Must never throw during post-action RSC refresh (e.g. after add-to-cart):
  * a provider outage would otherwise trip the route `error.tsx` boundary.
  */
 export async function ProductStock({ productSlug }: Props) {
+  // `snapshot` is bound outside the try and the element is constructed after
+  // it, because `react-hooks/error-boundaries` refuses JSX built inside a
+  // try/catch: React renders the child later, so a render error there is not
+  // caught here anyway. The catch still swallows a failed READ.
   let snapshot: StockSnapshot | null = null;
   try {
-    const product = await getLiveProductStock(productSlug);
+    const branding = await getBranding();
+    if (
+      isQuoteMode(normalizeCheckoutMode(branding.storeSettings.checkoutType))
+    ) {
+      return null;
+    }
+
+    const product = await getProductStock(productSlug);
     if (!product) return null;
     snapshot = {
       stockStatus: product.stockStatus ?? "instock",
@@ -51,5 +58,6 @@ export async function ProductStock({ productSlug }: Props) {
     return null;
   }
 
+  if (!snapshot) return null;
   return <LiveAvailability snapshot={snapshot} />;
 }

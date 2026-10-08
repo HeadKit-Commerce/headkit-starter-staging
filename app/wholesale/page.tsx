@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { GravityForm } from "@/components/gravity-form";
+import { GravityForm } from "@/components/gravity-form-lazy";
 import { ShopifyContactForm } from "@/components/shopify-contact-form";
 import { shopifyContactSubscribeProps } from "@/lib/shopify-contact-subscribe";
 import {
@@ -63,6 +63,8 @@ export async function generateMetadata(): Promise<Metadata> {
     allowIndexing: seoSettings.allowIndexing,
   });
 }
+
+export const ensureStatic = "navigation";
 
 export default async function WholesalePage(): Promise<React.ReactElement> {
   const page = await getPageData(WHOLESALE_SLUG);

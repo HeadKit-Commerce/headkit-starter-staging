@@ -34,9 +34,10 @@ function slideVideo(slide: HeroSlide, mobile: boolean): string {
 }
 
 /**
- * Server Component. The heading and the largest image render here, not
- * inside a client carousel, so they are part of the static shell and do
- * not ship their own JavaScript.
+ * Server Component. The heading renders here, not inside a client carousel,
+ * so it is part of the static shell. A slide with a video uses that file
+ * and the slide image as its poster. A slide with only an image still
+ * renders the image here.
  * https://nextjs.org/docs/app/getting-started/server-and-client-components
  * https://nextjs.org/docs/app/getting-started/caching#static-cached-and-streaming
  */
@@ -87,7 +88,15 @@ function HeroSlideView({
           </div>
         </div>
         <div className={mediaClass}>
-          {slide.image || slide.mobileImage ? (
+          {hasVideo ? (
+            <HeroVideoSlide
+              mobileSrc={mobileVideo}
+              desktopSrc={desktopVideo}
+              mobilePoster={slide.mobileImage || slide.image || ""}
+              desktopPoster={slide.image || slide.mobileImage || ""}
+              isActive={active}
+            />
+          ) : slide.image || slide.mobileImage ? (
             <ArtDirectedImage
               mobileSrc={slide.mobileImage || slide.image}
               desktopSrc={slide.image || slide.mobileImage || ""}
@@ -95,13 +104,6 @@ function HeroSlideView({
               isLcp={index === 0}
               sizes={heroImageSizes(heroLayout)}
               className="h-full w-full object-cover"
-            />
-          ) : null}
-          {hasVideo ? (
-            <HeroVideoSlide
-              mobileSrc={mobileVideo}
-              desktopSrc={desktopVideo}
-              isActive={active}
             />
           ) : null}
           <div

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { unstable_rethrow } from "next/navigation";
 import { getBranding } from "@/lib/branding";
 import { env } from "@/lib/env";
 import { isIndexableCurrentHost } from "@/lib/indexing-decision";
@@ -27,12 +28,13 @@ function disallowEverything(host: string | undefined): MetadataRoute.Robots {
  * robots.txt, decided by HOSTNAME first (MIG-03, T-15.1-08-01).
  *
  * Order matters. The host predicate is consulted on EVERY path — and
- * independently of whether the branding read succeeded — because every failure
- * mode of that read currently opens indexing: `getBranding()` returns
- * DEFAULT_BUNDLE (both SEO gates enabled) when the dashboard env is unset AND
- * from a bare catch on any thrown read. A temporary migration host must serve
- * `Disallow: /` and advertise no sitemap whatever branding says, so the
- * decision cannot depend on branding at all. A thrown branding read must not
+ * independently of whether the branding read succeeded. The gates default
+ * OPEN when branding env is unset (`DEFAULT_BUNDLE` ships
+ * `enableSitemap` / `allowIndexing` true). A thrown dashboard read is
+ * fail-closed here (`seoSettings` stays null). A temporary migration host
+ * must serve `Disallow: /` and advertise no sitemap whatever branding says,
+ * so the decision cannot depend on branding at all. A thrown branding read
+ * must not
  * short-circuit past the host read either: a path that consults no runtime
  * input is one Next can statically prerender, which would freeze a blanket
  * `Disallow: /` onto the store's own live domain until the next deploy.
@@ -62,7 +64,8 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       storeSettings: { domain: storeDomain },
       seoSettings,
     } = await getBranding());
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     seoSettings = null;
   }
 

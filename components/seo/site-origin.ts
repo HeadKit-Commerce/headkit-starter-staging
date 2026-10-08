@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_rethrow } from "next/navigation";
 import { getBranding } from "@/lib/branding";
 import { normalizeSiteUrl, resolveSiteUrl } from "@/lib/site-url";
 
@@ -37,7 +38,8 @@ export async function resolveJsonLdSiteUrl(
   try {
     const { storeSettings } = await getBranding();
     return resolveSiteUrl(storeSettings.domain);
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return resolveSiteUrl(null);
   }
 }

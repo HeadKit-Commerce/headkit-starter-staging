@@ -6,7 +6,6 @@ import { createRoot, type Root } from "react-dom/client";
 import {
   isFlagOptedIn,
   navMouseDownEnabled,
-  navPrefetchBudgetEnabled,
   navigationSkeletonEnabled,
 } from "@/lib/nav-interaction-flags";
 import {
@@ -84,7 +83,6 @@ describe("the value table", () => {
   );
 
   it.each([
-    ["NEXT_PUBLIC_NAV_PREFETCH_BUDGET", navPrefetchBudgetEnabled],
     ["NEXT_PUBLIC_NAV_MOUSEDOWN", navMouseDownEnabled],
     ["NEXT_PUBLIC_NAVIGATION_SKELETON", navigationSkeletonEnabled],
   ] as const)(
@@ -102,13 +100,11 @@ describe("the value table", () => {
     },
   );
 
-  it("keeps the three switches independent", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
-    vi.stubEnv("NEXT_PUBLIC_NAV_MOUSEDOWN", undefined);
+  it("keeps the switches independent", () => {
+    vi.stubEnv("NEXT_PUBLIC_NAV_MOUSEDOWN", "true");
     vi.stubEnv("NEXT_PUBLIC_NAVIGATION_SKELETON", undefined);
 
-    expect(navPrefetchBudgetEnabled()).toBe(true);
-    expect(navMouseDownEnabled()).toBe(false);
+    expect(navMouseDownEnabled()).toBe(true);
     expect(navigationSkeletonEnabled()).toBe(false);
   });
 });
@@ -219,18 +215,10 @@ describe("the gates in source", () => {
     expect(layout.match(/<NavigationSkeletonHost \/>/g)).toHaveLength(1);
   });
 
-  it("sets partialPrefetching only behind the prefetch-budget switch", () => {
-    // The config half of the prefetch decision. It cannot import
-    // `lib/nav-interaction-flags.ts` (that module is part of the client graph), so
-    // the two spellings of one rule are held together here.
+  it("turns Partial Prefetching on for every store", () => {
     const config = readFileSync("next.config.ts", "utf8");
-    expect(config).toContain("NEXT_PUBLIC_NAV_PREFETCH_BUDGET");
-    expect(config).toMatch(
-      /\.\.\.\(navPrefetchBudget \? \{ partialPrefetching: true \} : \{\}\)/,
-    );
-    // Never unconditionally, which would change what every store's default links
-    // fetch without the matching `prefetch` default.
-    expect(config).not.toMatch(/^\s*partialPrefetching: true,\s*$/m);
+    expect(config).toMatch(/^\s*partialPrefetching: true,\s*$/m);
+    expect(config).not.toContain("navPrefetchBudget");
   });
 
   it("sets images.minimumCacheTTL only from an env value", () => {

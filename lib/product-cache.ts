@@ -47,23 +47,35 @@ export async function getCachedProduct(slug: string) {
 }
 
 /**
- * Request-time stock read for the PDP availability line.
+ * PDP availability read, separate from `getCachedProduct`.
  *
- * `cacheLife("seconds")` has an `expire` of one minute. Next.js excludes a
- * cached read from the prerender when `expire` is under five minutes, so this
- * is a dynamic hole: the static shell keeps the fallback, and the line streams
- * in when the read resolves. It is not `getCachedProduct` — that entry stays
- * on its own lifetime and would bake the stock into the shell.
+ * `expire` is 300 seconds. That is the shortest lifetime Next.js 16.4 still
+ * includes in a prerender, so this line stays in the stored document and
+ * `ensureStatic = "navigation"` still passes. `stale` is the same window.
+ * `revalidate` is 60 seconds: a busy product serves the stored line and
+ * refreshes it in the background. A quiet product is never more than five
+ * minutes behind. Anything shorter is a dynamic hole.
  *
- * `"use cache: remote"` because the read resumes inside `<Suspense>` on the
- * request. Plain `"use cache"` does not persist across serverless instances,
- * so the line would re-query the origin on every view. The product tag still
- * purges this entry; a stock webhook does not have to wait out the minute.
+ * `"use cache: remote"` shares that entry across serverless instances. The
+ * product tags let a product purge refresh it too. During `next build` the
+ * bulk prefetch answers, so the prerender does not pay a second origin
+ * request per product. Off the build, this calls `products.get` itself and
+ * does not read `getCachedProduct` — nesting it there would hold the number
+ * for the catalogue lifetime.
+ *
+ * Quote checkout never calls this. `ProductStock` returns first, so a quote
+ * store's product page stays on the catalogue cache.
  */
-export async function getLiveProductStock(slug: string) {
+export async function getProductStock(slug: string) {
   "use cache: remote";
-  cacheLife("seconds");
+  cacheLife({
+    stale: 300,
+    revalidate: 60,
+    expire: 300,
+  });
   cacheTag(TAG.product(slug), TAG.products);
+  const prefetched = await bulkPrefetch.get(slug);
+  if (prefetched) return prefetched;
   return headkit.products.get(slug);
 }
 

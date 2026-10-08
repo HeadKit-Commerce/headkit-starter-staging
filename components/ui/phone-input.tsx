@@ -107,24 +107,26 @@ const CountrySelect = ({
         if (open) setSearchValue("");
       }}
     >
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          className="flex gap-1 rounded-e-none rounded-s-lg border-primary border-r-0 px-3 focus:z-10"
-          disabled={disabled}
-        >
-          <FlagComponent
-            country={selectedCountry}
-            countryName={selectedCountry}
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            className="flex gap-1 rounded-e-none rounded-s-lg border-primary border-r-0 px-3 focus:z-10"
+            disabled={disabled}
           />
-          <ChevronsUpDownIcon
-            className={cn(
-              "-mr-2 h-4 w-4 opacity-50",
-              disabled ? "hidden" : "opacity-100",
-            )}
-          />
-        </Button>
+        }
+      >
+        <FlagComponent
+          country={selectedCountry}
+          countryName={selectedCountry}
+        />
+        <ChevronsUpDownIcon
+          className={cn(
+            "-mr-2 h-4 w-4 opacity-50",
+            disabled ? "hidden" : "opacity-100",
+          )}
+        />
       </PopoverTrigger>
       <PopoverContent className="w-[300px] p-0">
         <Command>
@@ -135,7 +137,7 @@ const CountrySelect = ({
               setTimeout(() => {
                 if (scrollAreaRef.current) {
                   const viewportElement = scrollAreaRef.current.querySelector(
-                    "[data-radix-scroll-area-viewport]",
+                    "[data-slot='scroll-area-viewport']",
                   );
                   if (viewportElement) {
                     viewportElement.scrollTop = 0;

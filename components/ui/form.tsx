@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import * as LabelPrimitive from "@radix-ui/react-label";
-import { Slot } from "@radix-ui/react-slot";
+import { useRender } from "@base-ui/react/use-render";
 import {
   Controller,
   ControllerProps,
@@ -87,8 +86,8 @@ const FormItem = React.forwardRef<
 FormItem.displayName = "FormItem";
 
 const FormLabel = React.forwardRef<
-  React.ElementRef<typeof LabelPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root>
+  HTMLLabelElement,
+  React.ComponentPropsWithoutRef<typeof Label>
 >(({ className, ...props }, ref) => {
   const { error, formItemId } = useFormField();
 
@@ -103,27 +102,33 @@ const FormLabel = React.forwardRef<
 });
 FormLabel.displayName = "FormLabel";
 
-const FormControl = React.forwardRef<
-  React.ElementRef<typeof Slot>,
-  React.ComponentPropsWithoutRef<typeof Slot>
->(({ ...props }, ref) => {
-  const { error, formItemId, formDescriptionId, formMessageId } =
-    useFormField();
+type FormControlProps = Omit<
+  React.ComponentPropsWithoutRef<"div">,
+  "children"
+> & {
+  children: React.ReactElement;
+};
 
-  return (
-    <Slot
-      ref={ref}
-      id={formItemId}
-      aria-describedby={
-        !error
-          ? `${formDescriptionId}`
-          : `${formDescriptionId} ${formMessageId}`
-      }
-      aria-invalid={!!error}
-      {...props}
-    />
-  );
-});
+const FormControl = React.forwardRef<HTMLElement, FormControlProps>(
+  ({ children, ...props }, ref) => {
+    const { error, formItemId, formDescriptionId, formMessageId } =
+      useFormField();
+
+    return useRender({
+      defaultTagName: "div",
+      render: children,
+      ref,
+      props: {
+        id: formItemId,
+        "aria-describedby": !error
+          ? formDescriptionId
+          : `${formDescriptionId} ${formMessageId}`,
+        ...(error ? { "aria-invalid": true as const } : {}),
+        ...props,
+      },
+    });
+  },
+);
 FormControl.displayName = "FormControl";
 
 const FormDescription = React.forwardRef<

@@ -19,8 +19,9 @@ import { DynamicMetadataMarker } from "@/components/seo/dynamic-metadata-marker"
  * So the composition this file pins is:
  *
  *   - a product the PUBLIC read resolves renders through `ProductPageBody`
- *     directly in the route — no `<Suspense>` above it, none inside it at the
- *     page level — and `searchParams` is never awaited on that path;
+ *     directly in the route — no `<Suspense>` around the product — and
+ *     `searchParams` is never awaited on that path. The one boundary inside
+ *     the body is the availability line;
  *   - a NULL public read (a Shopify draft under Admin preview, a missing
  *     product, the build-time placeholder, a failed read) falls into the one
  *     boundary, whose child `ProductPageContent` is the only place that awaits
@@ -44,11 +45,18 @@ import { DynamicMetadataMarker } from "@/components/seo/dynamic-metadata-marker"
 
 vi.mock("server-only", () => ({}));
 
+const commerce = vi.hoisted(() => ({
+  shopifyDomain: undefined as string | undefined,
+}));
+
 vi.mock("@/lib/env", () => ({
   env: {
     NEXT_PUBLIC_HEADKIT_PUBLIC_KEY: "pk_store",
     NEXT_PUBLIC_GRAPHQL_URL: "https://graph.example.test/graphql",
     HEADKIT_PRIVATE_KEY: "sk_store",
+    get SHOPIFY_STORE_DOMAIN() {
+      return commerce.shopifyDomain;
+    },
   },
 }));
 
@@ -83,7 +91,9 @@ const { getCachedProduct, getProductForPage } = vi.hoisted(() => ({
 vi.mock("@/lib/product-cache", () => ({
   getCachedProduct: (slug: string): Promise<unknown> => getCachedProduct(slug),
   getProductForPage: (slug: string, options?: unknown): Promise<unknown> =>
-    getProductForPage(slug, options),
+    options === undefined
+      ? getProductForPage(slug)
+      : getProductForPage(slug, options),
 }));
 
 vi.mock("@/lib/sdk", () => ({
@@ -154,7 +164,11 @@ vi.mock("@/components/headkit-ui/skeletons/product-card-skeleton", () => ({
   ProductCardSkeleton: (): null => null,
 }));
 
-import { ProductPageBody, ProductPageContent, ProductRoute } from "./page";
+import ProductPage, {
+  ProductPageBody,
+  ProductPageContent,
+  ProductRoute,
+} from "./page";
 import { ProductPageShell } from "./product-page-shell";
 import { ProductStock } from "@/components/headkit-ui/product-stock";
 import { ProductDetail } from "@/components/headkit-ui/product-detail";
@@ -269,21 +283,40 @@ function isMarkerBoundary(element: ReactElement): boolean {
 }
 
 beforeEach(() => {
+  commerce.shopifyDomain = "preview.myshopify.com";
   getCachedProduct.mockReset();
   getProductForPage.mockReset();
 });
 
-describe("products/[...slug] — a resolvable product renders OUTSIDE the boundary", () => {
-  it("returns ProductPageBody directly, not a Suspense wrapper, and never awaits searchParams", async () => {
+describe("products/[...slug] — the segment is a sync shell", () => {
+  it("returns the cached product route and the metadata marker without reading the catalogue", async () => {
+    const element = ProductPage({
+      params: Promise.resolve({ slug: [SLUG] }),
+    }) as ReactElement;
+    const children = routeChildren(element);
+
+    expect(getCachedProduct).not.toHaveBeenCalled();
+    expect(children.filter(isMarkerBoundary)).toHaveLength(1);
+    const content = children.find((child) => !isMarkerBoundary(child));
+    expect(content?.type).toBe(ProductRoute);
+    expect(
+      children.some(
+        (child) => child.type === Suspense && !isMarkerBoundary(child),
+      ),
+      "a page-level Suspense outlines the finished product into a hidden segment",
+    ).toBe(false);
+  });
+});
+
+describe("products/[...slug] — ProductRoute resolves the cached product", () => {
+  it("returns ProductPageBody directly, and never awaits searchParams", async () => {
     getCachedProduct.mockResolvedValue(FLAT_PRODUCT);
     const searchParams = trackedSearchParams({ preview_key: "unused" });
 
-    const body = pageContent(
-      (await ProductRoute({
-        params: Promise.resolve({ slug: [SLUG] }),
-        searchParams: searchParams.promise,
-      })) as ReactElement,
-    ) as ReactElement<{ product: unknown; colorSlug: unknown }>;
+    const body = (await ProductRoute({
+      params: Promise.resolve({ slug: [SLUG] }),
+      searchParams: searchParams.promise,
+    })) as ReactElement<{ product: unknown; colorSlug: unknown }>;
 
     expect(
       body.type,
@@ -308,11 +341,9 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
   it("forwards the colourway segment to the body", async () => {
     getCachedProduct.mockResolvedValue(FLAT_PRODUCT);
 
-    const body = pageContent(
-      (await ProductRoute({
-        params: Promise.resolve({ slug: [SLUG, "red"] }),
-      })) as ReactElement,
-    ) as ReactElement<{ colorSlug: unknown }>;
+    const body = (await ProductRoute({
+      params: Promise.resolve({ slug: [SLUG, "red"] }),
+    })) as ReactElement<{ colorSlug: unknown }>;
 
     expect(body.type).toBe(ProductPageBody);
     expect(body.props.colorSlug).toBe("red");
@@ -321,7 +352,7 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
   it("mounts the metadata marker as one EMPTY sibling boundary, never a wrapper", async () => {
     getCachedProduct.mockResolvedValue(FLAT_PRODUCT);
 
-    const element = (await ProductRoute({
+    const element = (await ProductPage({
       params: Promise.resolve({ slug: [SLUG] }),
     })) as ReactElement;
     const children = routeChildren(element);
@@ -339,11 +370,11 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
       children.some(
         (child) => child.type === Suspense && !isMarkerBoundary(child),
       ),
-      "the product must not gain a boundary of its own",
+      "the cached product is the shell; a page-level Suspense would outline it",
     ).toBe(false);
   });
 
-  it("composes the body with the inventory hole as its only Suspense", async () => {
+  it("composes the body with the five-minute stock line and no stock boundary", async () => {
     getCachedProduct.mockResolvedValue(FLAT_PRODUCT);
 
     const tree = await ProductPageBody({
@@ -355,9 +386,8 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
     const rendered = elements(tree);
     expect(
       rendered.filter((element) => element.type === Suspense),
-      "the product composition itself has no boundary; the inventory hole is the stock slot",
+      "the product composition has no boundary at all, the stock slot included",
     ).toEqual([]);
-
     const detail = rendered.find(
       (element) => element.type === ProductDetail,
     ) as ReactElement<{ stockSlot: ReactElement }> | undefined;
@@ -365,14 +395,10 @@ describe("products/[...slug] — a resolvable product renders OUTSIDE the bounda
       detail,
       "positive control: the body rendered the detail",
     ).toBeDefined();
-    const slot = detail!.props.stockSlot as ReactElement<{
-      children?: ReactElement;
-    }>;
-    expect(slot.type).toBe(Suspense);
-    const child = slot.props.children as ReactElement;
+    const slot = detail!.props.stockSlot as ReactElement;
     expect(
-      child.type,
-      "the hole's child is the live stock read, not the cached product",
+      slot.type,
+      "the stock slot is ProductStock itself: the five-minute read stays in the stored document, so it has no Suspense boundary",
     ).toBe(ProductStock);
   });
 
@@ -399,12 +425,10 @@ describe("products/[...slug] — a NULL public read is the only path into the bo
     getProductForPage.mockResolvedValue(FLAT_PRODUCT);
     const searchParams = trackedSearchParams({ preview_key: "draft-key" });
 
-    const boundary = pageContent(
-      (await ProductRoute({
-        params: Promise.resolve({ slug: [SLUG] }),
-        searchParams: searchParams.promise,
-      })) as ReactElement,
-    ) as ReactElement<{
+    const boundary = (await ProductRoute({
+      params: Promise.resolve({ slug: [SLUG] }),
+      searchParams: searchParams.promise,
+    })) as ReactElement<{
       fallback: ReactElement;
       children: ReactElement<Parameters<typeof ProductPageContent>[0]>;
     }>;
@@ -429,12 +453,39 @@ describe("products/[...slug] — a NULL public read is the only path into the bo
     expect(rendered, "and it renders the draft it resolved").toBeTruthy();
   });
 
+  it("does not read a Shopify preview key when the store is WooCommerce", async () => {
+    commerce.shopifyDomain = undefined;
+    getCachedProduct.mockResolvedValue(null);
+    getProductForPage.mockResolvedValue(FLAT_PRODUCT);
+    const searchParams = trackedSearchParams({ preview_key: "draft-key" });
+
+    const page = ProductPage({
+      params: Promise.resolve({ slug: [SLUG] }),
+      searchParams: searchParams.promise,
+    }) as ReactElement;
+    expect(
+      routeChildren(page).filter(isMarkerBoundary),
+      "WooCommerce does not mount connection() for a Shopify preview key",
+    ).toHaveLength(0);
+
+    const route = (await ProductRoute({
+      params: Promise.resolve({ slug: [SLUG] }),
+      searchParams: searchParams.promise,
+    })) as ReactElement;
+    const boundary = (
+      route.type === Suspense ? route : pageContent(route)
+    ) as ReactElement<{
+      children: ReactElement<Parameters<typeof ProductPageContent>[0]>;
+    }>;
+    await ProductPageContent(boundary.props.children.props);
+    expect(searchParams.awaited()).toBe(false);
+    expect(getProductForPage).toHaveBeenCalledWith(SLUG);
+  });
+
   it("answers the build-time placeholder from the boundary without touching the cache", async () => {
-    const boundary = pageContent(
-      (await ProductRoute({
-        params: Promise.resolve({ slug: ["__hk_static_placeholder"] }),
-      })) as ReactElement,
-    );
+    const boundary = (await ProductRoute({
+      params: Promise.resolve({ slug: ["__hk_static_placeholder"] }),
+    })) as ReactElement;
 
     expect(boundary.type).toBe(Suspense);
     expect(getCachedProduct).not.toHaveBeenCalled();
@@ -443,11 +494,9 @@ describe("products/[...slug] — a NULL public read is the only path into the bo
   it("falls through to the boundary when the public read throws, so the request-time branch can retry", async () => {
     getCachedProduct.mockRejectedValue(new Error("provider 401"));
 
-    const boundary = pageContent(
-      (await ProductRoute({
-        params: Promise.resolve({ slug: [SLUG] }),
-      })) as ReactElement,
-    );
+    const boundary = (await ProductRoute({
+      params: Promise.resolve({ slug: [SLUG] }),
+    })) as ReactElement;
 
     expect(
       boundary.type,

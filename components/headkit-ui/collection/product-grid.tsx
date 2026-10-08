@@ -13,6 +13,7 @@ import { useCatalogDisplay } from "@/components/headkit-ui/catalog-display-provi
 import {
   expandCatalogProducts,
   partitionFullRows,
+  selectedColourFacetSlugs,
 } from "@/lib/catalog-display";
 import {
   buildViewItemList,
@@ -49,10 +50,20 @@ export function ProductGrid({
 }: {
   preferHeaderLcp?: boolean;
 } = {}) {
-  const { products, isLoading, isLoadingBefore, isLoadingAfter, hasMore } =
-    useCollection();
+  const {
+    products,
+    isLoading,
+    isLoadingBefore,
+    isLoadingAfter,
+    hasMore,
+    filterValues,
+  } = useCollection();
   const { showVariants, showSwatches } = useCatalogDisplay();
-  const catalogProducts = expandCatalogProducts(products, showVariants);
+  const catalogProducts = expandCatalogProducts(
+    products,
+    showVariants,
+    selectedColourFacetSlugs(filterValues.attributes),
+  );
   // Hold incomplete trailing rows while more parent products can still load —
   // otherwise empty CSS-grid cells look like blank cards above Load More.
   const { visible: visibleProducts } = partitionFullRows(catalogProducts, {

@@ -143,10 +143,22 @@ describe("facet panel scroll container", () => {
     // The site mega-menu renders through the same viewport, so capping THERE
     // would change the header dropdown too. The cap belongs to the panel.
     const shared = read("../../ui/navigation-menu.tsx");
-    expect(shared).toContain(
-      "h-[var(--radix-navigation-menu-viewport-height)]",
-    );
+    // Height is the open content. A popup-height var is only written by a
+    // positioner, and this shell has none — an unset var is not a height.
+    expect(shared).not.toContain("h-[var(--popup-height)]");
     expect(shared).not.toContain("overflow-y-auto");
+    // Open content must stay in flow. An absolute content box gives the
+    // panel a 0 height, the viewport clips, and clicks land on the page.
+    expect(shared).not.toContain("md:absolute");
+    // The shell only places the panel at the nav's left edge. Width is the
+    // content's (`w-screen`, `md:w-max` so a facet panel shrinks). A `w-full`
+    // shell clips that content back to the nav.
+    expect(shared).toContain("absolute left-0 top-full z-30 w-max");
+    expect(shared).not.toContain("absolute left-0 top-full z-30 w-full");
+    expect(shared).toContain("w-screen md:w-max");
+    expect(shared).not.toContain("--anchor-width");
+    expect(shared).not.toContain("md:w-[var(--popup-width)]");
+    expect(shared).toContain("closeOnClick = true");
   });
 });
 

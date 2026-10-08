@@ -150,25 +150,6 @@ const positiveIntEnv = (raw: string | undefined, fallback: number): number => {
 };
 
 /**
- * The prefetch budget's build-time half.
- *
- * `partialPrefetching` and `InstantLink`'s `prefetch` default are ONE decision
- * read from ONE variable: partial prefetching is what makes an unset `prefetch`
- * cheap (a `/_tree` request plus static per-segment bundles, no runtime request),
- * so a build with the config key and without the default change — or the reverse —
- * is a state nobody measured. `lib/nav-interaction-flags.ts` owns the value table
- * and the client-side half; this is the same rule, spelled out here because
- * `next.config.ts` cannot import from `@/lib` paths that pull in client code.
- *
- * Off by default, which is the platform's behaviour today. The key itself is valid
- * on the pinned Next (>= 16.3); it used to be omitted because on 16.2.x it failed
- * `next build`'s type check, and that blocker is gone.
- */
-const navPrefetchBudget = ["true", "1", "on", "yes"].includes(
-  (process.env.NEXT_PUBLIC_NAV_PREFETCH_BUDGET ?? "").trim().toLowerCase(),
-);
-
-/**
  * Minimum lifetime of an OPTIMIZED image in the image cache, in seconds.
  *
  * UNSET BY DEFAULT, which means Next's own default of 14,400 s / 4 h
@@ -271,12 +252,12 @@ const nextConfig: NextConfig = {
   // requests, Instant Insights / Navigation Inspector in dev.
   // https://nextjs.org/blog/next-16-3
   //
-  // Partial Prefetching makes a default link fetch only the reusable App Shell,
-  // and it is half of ONE per-store decision with `InstantLink`'s `prefetch`
-  // default — see `navPrefetchBudget` above and that component's docblock, which
-  // owns the rule. Off unless the store sets NEXT_PUBLIC_NAV_PREFETCH_BUDGET.
+  // Partial Prefetching: a link that does not pass `prefetch` downloads the
+  // shared App Shell. Product cards and the nav pass `prefetch={true}` for
+  // the URL they point at.
+  // https://nextjs.org/docs/app/guides/prefetching
   cacheComponents: true,
-  ...(navPrefetchBudget ? { partialPrefetching: true } : {}),
+  partialPrefetching: true,
   ...(prerenderTimeout
     ? {
         staticPageGenerationTimeout:
@@ -284,14 +265,10 @@ const nextConfig: NextConfig = {
       }
     : {}),
   experimental: {
-    optimizePackageImports: [
-      "react-icons",
-      "lucide-react",
-      "@headkit/sdk",
-      "framer-motion",
-      "date-fns",
-      "radix-ui",
-    ],
+    // Remind on `next dev` / `next build` when a newer stable Next.js
+    // release is available. https://nextjs.org/blog/next-16-4
+    agentUpgrade: "latest",
+    optimizePackageImports: ["react-icons", "@headkit/sdk", "@base-ui/react"],
     cpus: buildCpus,
     staticGenerationMaxConcurrency: staticGenConcurrency,
     // Report EVERY bad page in one build, not just the first one.

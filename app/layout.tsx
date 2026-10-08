@@ -6,6 +6,7 @@ import "./globals.css";
 import "@/overrides/styles.css";
 import {
   NavigationWrapper,
+  fallbackNavigation,
   getFooterMenus,
 } from "@/components/headkit-ui/navigation-wrapper";
 import { CartProvider } from "@/components/headkit-ui/cart-context";
@@ -24,11 +25,19 @@ import {
   resolveFooterDescription,
   resolveStoreName,
 } from "@/lib/make-metadata";
-import { getBranding, getBrandingAssets } from "@/lib/branding";
-import { resolveSiteUrl } from "@/lib/site-url";
-import { normalizeCheckoutMode } from "@/lib/checkout-mode";
+import {
+  fallbackBrandingBundle,
+  getBranding,
+  getBrandingAssets,
+  type Branding,
+  type SeoSettings,
+  type StoreSettings,
+} from "@/lib/branding";
+import { BrandingUnavailableError } from "@/lib/branding-cache-policy";
 import { env } from "@/lib/env";
 import { isShopifyStorefront } from "@/lib/shopify-storefront";
+import { resolveSiteUrl } from "@/lib/site-url";
+import { normalizeCheckoutMode } from "@/lib/checkout-mode";
 import { CheckoutModeProvider } from "@/components/checkout/checkout-mode-provider";
 import { CatalogDisplayProvider } from "@/components/headkit-ui/catalog-display-provider";
 import { SwatchImageProvider } from "@/components/headkit-ui/swatch-image-provider";
@@ -38,7 +47,10 @@ import { resolveOnPrimaryTextColor } from "@/lib/contrast";
 import { BrandingIconsProvider } from "@/components/branding/branding-icons-provider";
 import { ConsentBanner } from "@/components/headkit-ui/consent-banner";
 import { DeferredThirdPartyScripts } from "@/components/headkit-ui/deferred-third-party-scripts";
-import { getEmailMarketingStatus } from "@/lib/email-marketing";
+import {
+  getEmailMarketingStatus,
+  type EmailMarketingStatusResult,
+} from "@/lib/email-marketing";
 import { Toaster } from "@/components/ui/toaster";
 import { ClientThemeProvider } from "@/components/headkit-ui/client-theme-provider";
 import { clientThemeSlice } from "@/lib/client-theme";
@@ -118,18 +130,56 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   // Per-tenant branding + CMS footer menus (Footer / Footer 2 / Footer Policy).
-  // Both degrade gracefully (branding → defaults; empty menus → static footer).
-  const [
-    { branding, storeSettings, seoSettings },
-    footerMenus,
-    { iconUrl },
-    emailMarketing,
-  ] = await Promise.all([
-    getBranding(),
-    getFooterMenus(),
-    getBrandingAssets(),
-    getEmailMarketingStatus(),
-  ]);
+  // A failed dashboard read throws out of the cached functions so it is not
+  // stored as “no logo”. The catch is outside `"use cache"`: this one request
+  // renders the empty stand-in, and the previous logo entry stays.
+  let branding: Branding;
+  let storeSettings: StoreSettings;
+  let seoSettings: SeoSettings;
+  let footerMenus: Awaited<ReturnType<typeof getFooterMenus>>;
+  let iconUrl: string | null;
+  let emailMarketing: EmailMarketingStatusResult;
+  let navigation: React.ReactNode;
+  try {
+    const [bundle, menus, assets, email] = await Promise.all([
+      getBranding(),
+      getFooterMenus(),
+      getBrandingAssets(),
+      getEmailMarketingStatus(),
+    ]);
+    branding = bundle.branding;
+    storeSettings = bundle.storeSettings;
+    seoSettings = bundle.seoSettings;
+    footerMenus = menus;
+    iconUrl = assets.iconUrl;
+    emailMarketing = email;
+    navigation = await NavigationWrapper();
+  } catch (error) {
+    unstable_rethrow(error);
+    if (!(error instanceof BrandingUnavailableError)) throw error;
+    const fallback = fallbackBrandingBundle();
+    branding = fallback.branding;
+    storeSettings = fallback.storeSettings;
+    seoSettings = fallback.seoSettings;
+    footerMenus = [];
+    iconUrl = null;
+    emailMarketing = {
+      enabled: false,
+      provider: "",
+      publicApiKey: null,
+      listConfigured: false,
+    };
+    navigation = fallbackNavigation();
+  }
+
+  // The store's WebMCP tools. Absent means off, and there is deliberately NO
+  // env fallback: an env var would be per-deploy, and this must be per-store
+  // and flippable from the dashboard without a rebuild. See lib/branding.ts.
+  const webmcpEnabled = storeSettings.webmcpEnabled;
+  // Shopify leaves for hosted checkout. WooCommerce stays on /checkout.
+  // Quote mode is checkoutType, read inside the registrar. One of the three,
+  // never a description that lists all of them.
+  const hostedCheckout = isShopifyStorefront(env);
 
   const siteName = resolveStoreName(storeSettings.name);
   // One origin for the whole document: the JSON-LD graph's @id/url, the
@@ -152,14 +202,6 @@ export default async function RootLayout({
   // `ENV_GTM_ID` is one: an env var would be per-DEPLOY, and this must be
   // per-STORE and flippable from the dashboard without a rebuild.
   const cookieConsentEnabled = storeSettings.cookieConsentEnabled;
-  // The store's WebMCP tools. Absent means off, and there is deliberately NO
-  // env fallback: an env var would be per-deploy, and this must be per-store
-  // and flippable from the dashboard without a rebuild. See lib/branding.ts.
-  const webmcpEnabled = storeSettings.webmcpEnabled;
-  // Shopify leaves for hosted checkout. WooCommerce stays on /checkout.
-  // Quote mode is checkoutType, read inside the registrar. One of the three,
-  // never a description that lists all of them.
-  const hostedCheckout = isShopifyStorefront(env);
   const checkoutMode = normalizeCheckoutMode(storeSettings.checkoutType);
   const emailProvider = emailMarketing.provider.toLowerCase();
   const klaviyoPublicKey =
@@ -325,14 +367,6 @@ export default async function RootLayout({
                 a boundary here would hold every document open. */}
               <SwatchImageProvider enabled={experimentalSwatchImagesEnabled()}>
                 <CheckoutModeProvider mode={checkoutMode}>
-                  {/* WebMCP tools for an in-page agent. Gated on the store
-                  setting (dashboard → In-page agents). DEFAULT OFF, so the
-                  component is not mounted and nothing runs. The gate is on
-                  the mount, the same shape as NavigationSkeletonHost: the
-                  registrar adds no <Suspense> and makes no request-time read. */}
-                  {webmcpEnabled ? (
-                    <WebMcpRegistrar hostedCheckout={hostedCheckout} />
-                  ) : null}
                   <AuthProvider>
                     <CartProvider>
                       <HostedCartSync />
@@ -355,7 +389,15 @@ export default async function RootLayout({
                       {navigationSkeletonEnabled() ? (
                         <NavigationSkeletonHost />
                       ) : null}
-                      <NavigationWrapper />
+                      {/* WebMCP tools for an in-page agent. Gated on the store
+                  setting (dashboard → In-page agents). DEFAULT OFF, so the
+                  component is not mounted and nothing runs. The gate is on
+                  the mount, the same shape as NavigationSkeletonHost: the
+                  registrar adds no <Suspense> and makes no request-time read. */}
+                      {webmcpEnabled ? (
+                        <WebMcpRegistrar hostedCheckout={hostedCheckout} />
+                      ) : null}
+                      {navigation}
                       <main className="headkit-main pb-10">{children}</main>
                       <Suspense fallback={null}>
                         <BelowMain />

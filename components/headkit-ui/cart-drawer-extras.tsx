@@ -53,7 +53,7 @@ export function CartDrawerExtras({
             {packaging.options.map((option) => (
               <label
                 key={option.id}
-                className="flex cursor-pointer flex-col gap-2 rounded-md border border-neutral-200 p-2 has-[[data-state=checked]]:border-primary"
+                className="flex cursor-pointer flex-col gap-2 rounded-md border border-neutral-200 p-2 has-[[data-checked]]:border-primary"
               >
                 {option.image ? (
                   // Arbitrary merchant URLs are not in next/image remotePatterns.

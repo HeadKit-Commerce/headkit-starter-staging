@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { unstable_rethrow } from "next/navigation";
 import { getBranding } from "@/lib/branding";
 import { env } from "@/lib/env";
 import { getPostsBasePath } from "@/lib/posts-base-path";
@@ -45,8 +46,8 @@ export async function GET(): Promise<NextResponse> {
 
 /**
  * The store's declared origin, or the baked env url when branding is
- * unreadable. Never throws: a branding outage must not take the blog rewrites
- * down with it, and the caller already treats an empty origin as "unknown".
+ * unreadable. A branding outage must not take the blog rewrites down with
+ * it, and the caller already treats an empty origin as "unknown".
  */
 async function resolveStoreOrigin(): Promise<string> {
   try {
@@ -54,7 +55,8 @@ async function resolveStoreOrigin(): Promise<string> {
       storeSettings: { domain },
     } = await getBranding();
     return resolveSiteUrl(domain, env.NEXT_PUBLIC_FRONTEND_URL);
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return resolveSiteUrl(null, env.NEXT_PUBLIC_FRONTEND_URL);
   }
 }

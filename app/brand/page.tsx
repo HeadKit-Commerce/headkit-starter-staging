@@ -103,6 +103,10 @@ const BREADCRUMBS = [
  * @see https://nextjs.org/docs/app/guides/instant-navigation
  */
 export const instant = true;
+// The finished document is prerendered. This fails the build if the
+// route, or a layout above it, starts reading cookies, headers,
+// searchParams, or connection(). The root layout stays unset.
+export const ensureStatic = "navigation";
 
 export default function Page() {
   return (

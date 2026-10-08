@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-// `product-stock.tsx` imports `lib/product-brand`, which imports `lib/sdk`.
-// `createClientSDK()` reads the public key at module load and throws when it
-// is unset. The other two keys are what `lib/env` requires on the server.
+// This file's import graph parses `lib/env` and calls `createClientSDK()` at
+// module load, both of which throw when these are unset. Seeded before the
+// imports below, the same way the other starter suites do it.
 vi.hoisted(() => {
   process.env.NEXT_PUBLIC_HEADKIT_PUBLIC_KEY ??= "pk_test";
   process.env.NEXT_PUBLIC_GRAPHQL_URL ??= "http://localhost:4000/graphql";
@@ -80,8 +80,15 @@ vi.mock("@/lib/ga4-ecommerce", () => ({
   pushGa4Ecommerce: (): void => {},
 }));
 vi.mock("@/lib/product-cache", () => ({
-  getLiveProductStock: async (): Promise<unknown> => PRODUCT,
+  getProductStock: async (): Promise<unknown> => PRODUCT,
   getCachedProduct: async (): Promise<unknown> => PRODUCT,
+}));
+vi.mock("@/lib/branding", () => ({
+  getBranding: async (): Promise<{
+    storeSettings: { checkoutType: string };
+  }> => ({
+    storeSettings: { checkoutType: "custom" },
+  }),
 }));
 
 import { ProductDetail } from "@/components/headkit-ui/product-detail";

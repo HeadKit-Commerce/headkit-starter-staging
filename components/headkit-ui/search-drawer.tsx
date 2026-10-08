@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useCallback, useState } from "react";
+import type { ReactElement } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,7 @@ import { searchProducts } from "@/lib/search-actions";
 
 interface SearchDrawerProps {
   /** Custom trigger element. If not provided, uses default search icon button. */
-  trigger?: ReactNode;
+  trigger?: ReactElement;
   /** Open on mount, after the header has loaded this chunk. */
   defaultOpen?: boolean;
 }
@@ -51,24 +51,33 @@ export function SearchDrawer({
   const [products, setProducts] = useState<ProductSummaryFieldsFragment[]>([]);
   const catalogProducts = expandCatalogProducts(products, showVariants);
 
-  const doSearch = useCallback(
-    debounce(async (q: string) => {
+  // One generation counter for the life of the drawer. A slower response for
+  // an earlier query must not paint over the query the shopper has since typed.
+  const doSearch = useMemo(() => {
+    let generation = 0;
+    return debounce((q: string) => {
+      const requestId = ++generation;
       if (!q.trim()) {
         setProducts([]);
+        setIsLoading(false);
         return;
       }
       setIsLoading(true);
-      try {
-        const products = await searchProducts(q, 4);
-        setProducts(products);
-      } catch (err) {
-        console.error("Search error:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    }, 350),
-    [],
-  );
+      void (async () => {
+        try {
+          const next = await searchProducts(q, 4);
+          if (requestId !== generation) return;
+          setProducts(next);
+        } catch (err) {
+          if (requestId !== generation) return;
+          console.error("Search error:", err);
+        } finally {
+          if (requestId !== generation) return;
+          setIsLoading(false);
+        }
+      })();
+    }, 350);
+  }, []);
 
   const handleChange = (value: string) => {
     setQuery(value);
@@ -89,7 +98,7 @@ export function SearchDrawer({
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>{trigger ?? defaultTrigger}</SheetTrigger>
+      <SheetTrigger render={trigger ?? defaultTrigger} />
 
       <SheetContent
         side="top"
@@ -112,7 +121,7 @@ export function SearchDrawer({
             </div>
           </div>
 
-          {isLoading ? (
+          {isLoading && catalogProducts.length === 0 ? (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               {[1, 2, 3, 4].map((i) => (
                 <ProductCardSkeleton key={i} />
@@ -120,9 +129,15 @@ export function SearchDrawer({
             </div>
           ) : catalogProducts.length > 0 ? (
             <>
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div
+                className="grid grid-cols-2 gap-4 md:grid-cols-4"
+                aria-busy={isLoading}
+              >
                 {catalogProducts.map((p) => (
-                  <div key={p.id} onClick={() => setOpen(false)}>
+                  <div
+                    key={`${p.id}:${p.colorwaySlug ?? ""}`}
+                    onClick={() => setOpen(false)}
+                  >
                     <ProductCard product={p} isNew={p.isNew} />
                   </div>
                 ))}
@@ -131,7 +146,7 @@ export function SearchDrawer({
                 View more results
               </Button>
             </>
-          ) : query.trim() ? (
+          ) : query.trim() && !isLoading ? (
             <p className="text-center text-muted-foreground">
               No products found for &ldquo;{query}&rdquo;
             </p>

@@ -88,9 +88,23 @@ vi.mock("@/lib/branding", () => ({
       seoSettings: { description: "", allowIndexing: true },
     }),
   getBrandingAssets: (): Promise<unknown> => Promise.resolve({ iconUrl: null }),
+  fallbackBrandingBundle: (): unknown => ({
+    branding: {
+      iconUrl: null,
+      iconLibrary: "lucide",
+      cornerStyle: "soft",
+      showVariants: false,
+      showSwatches: false,
+      imageRollover: false,
+      defaultCollectionSort: "",
+    },
+    storeSettings: { name: "A Store", domain: "shop.example.com" },
+    seoSettings: { description: "", allowIndexing: true },
+  }),
 }));
 vi.mock("@/components/headkit-ui/navigation-wrapper", () => ({
   NavigationWrapper: (): null => null,
+  fallbackNavigation: (): null => null,
   getFooterMenus: (): Promise<unknown[]> => Promise.resolve([]),
 }));
 vi.mock("@/lib/email-marketing", () => ({

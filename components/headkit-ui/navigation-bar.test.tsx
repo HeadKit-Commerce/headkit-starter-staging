@@ -1,3 +1,6 @@
+import type { ReactElement } from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -7,7 +10,11 @@ import {
   NavigationBar,
   type NavMenuItem,
 } from "@/components/headkit-ui/navigation-bar";
-import { NavigationMenu } from "@/components/ui/navigation-menu";
+import {
+  NavigationMenu,
+  NavigationMenuContent,
+  NavigationMenuItem,
+} from "@/components/ui/navigation-menu";
 import { normalizeMenuTree } from "@/lib/menu-columns";
 import {
   BIKES,
@@ -26,13 +33,28 @@ import {
  * Link, plus one childless leaf. That store shipped Events as a flat top-level
  * link while its three siblings opened correctly — the asymmetry this locks.
  *
- * Radix keeps `NavigationMenuContent` unmounted until the menu opens, so the
+ * Base UI keeps `NavigationMenuContent` unmounted until the menu opens, so the
  * child links themselves are absent from server markup for working and broken
  * parents alike. The trigger is therefore the only server-observable proof that
  * the subtree was wired, and it is the exact signal the live-site diagnosis
- * used: the broken parent carried neither `data-state` nor
- * `data-radix-collection-item`, both siblings carried both.
+ * used: the broken parent carried no `aria-expanded="false"`, both siblings did.
  */
+
+/**
+ * MegaMenu links are composite items. They only exist inside
+ * `NavigationMenuContent`, which supplies the composite root. `keepMounted`
+ * is what makes that root exist in static markup: a closed content renders
+ * nothing.
+ */
+function renderMegaMenu(node: ReactElement): string {
+  return renderToStaticMarkup(
+    <NavigationMenu>
+      <NavigationMenuItem>
+        <NavigationMenuContent keepMounted>{node}</NavigationMenuContent>
+      </NavigationMenuItem>
+    </NavigationMenu>,
+  );
+}
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -130,14 +152,45 @@ function rootControl(html: string, label: string): string {
   return tag[0];
 }
 
+describe("NavigationBar closed bar", () => {
+  it("pins the logo and actions to the bar padding instead of a central band", () => {
+    const html = renderNav();
+    const lists = html.match(/<ul class="[^"]*"/g) ?? [];
+
+    expect(lists[0]).toContain("flex-none");
+    expect(lists[0]).toContain("justify-start");
+    expect(lists[0]).not.toContain("flex-1");
+    expect(lists[1]).toContain("headkit-nav-secondary");
+    expect(lists[1]).toContain("flex-none");
+    expect(lists[1]).toContain("justify-end");
+    expect(lists[1]).not.toContain("flex-1");
+  });
+
+  it("still spreads a centred logo's link groups across the bar", () => {
+    const html = renderToStaticMarkup(
+      <NavigationBar
+        primaryMenuItems={PEBBLR_PRIMARY}
+        logo={<span>Pebblr</span>}
+        navLayout="centered-logo"
+      />,
+    );
+    const lists = html.match(/<ul class="[^"]*"/g) ?? [];
+
+    expect(lists[0]).toContain("flex-1");
+    expect(lists[0]).toContain("justify-start");
+    expect(lists[0]).not.toContain("flex-none");
+    expect(lists[1]).toContain("flex-1");
+    expect(lists[1]).toContain("justify-end");
+  });
+});
+
 describe("NavigationBar desktop dropdowns", () => {
   it("wires a dropdown trigger for the '#' parent without an href", () => {
     const events = rootControl(renderNav(), "Events");
 
     expect(events).toMatch(/^<button\b/);
-    expect(events).toContain('data-state="closed"');
-    expect(events).toContain("data-radix-collection-item");
     expect(events).toContain('aria-expanded="false"');
+    expect(events).not.toContain("data-radix-collection-item");
     // No href means the browser has no fragment to follow: clicking "Events"
     // opens the menu without pushing `/#` or scrolling the page to the top.
     expect(events).not.toContain("href");
@@ -151,18 +204,17 @@ describe("NavigationBar desktop dropdowns", () => {
 
     expect(packages).toMatch(/^<button\b/);
     expect(packages).not.toContain("href");
-    expect(packages).toContain('data-state="closed"');
-    expect(packages).toContain("data-radix-collection-item");
     expect(packages).toContain('aria-expanded="false"');
+    expect(packages).not.toContain("data-radix-collection-item");
   });
 
   it("wires a trigger for every parent with children, and none without", () => {
     const html = renderNav();
     const hasTrigger = (label: string): boolean =>
-      rootControl(html, label).includes('data-state="closed"');
+      rootControl(html, label).includes('aria-expanded="false"');
 
-    // All four WordPress parents that carry children, across both element
-    // types: "Events" is a `#` button, the other three are anchors.
+    // All four WordPress parents that carry children render as buttons.
+    // FAQ is the childless leaf link.
     expect(hasTrigger("Photobooth Packages")).toBe(true);
     expect(hasTrigger("Booths")).toBe(true);
     expect(hasTrigger("Events")).toBe(true);
@@ -173,21 +225,17 @@ describe("NavigationBar desktop dropdowns", () => {
 });
 
 /**
- * The panel itself. Radix keeps `NavigationMenuContent` unmounted until the
- * menu opens, so these render `MegaMenu` directly — the same component the
- * content wraps.
+ * The panel itself. Base UI keeps `NavigationMenuContent` unmounted until the
+ * menu opens, so these render `MegaMenu` through `renderMegaMenu` — the same
+ * content root the open menu uses.
  */
 describe("MegaMenu panel", () => {
-  // `NavigationMenuLink` reads the root Radix context, so the panel is
-  // rendered inside a bare `NavigationMenu` exactly as the open menu does.
   const panel = (
     item: NavMenuItem,
     viewAll?: { href: string; label: string },
   ): string =>
-    renderToStaticMarkup(
-      <NavigationMenu>
-        <MegaMenu items={item.children} {...(viewAll ? { viewAll } : {})} />
-      </NavigationMenu>,
+    renderMegaMenu(
+      <MegaMenu items={item.children} {...(viewAll ? { viewAll } : {})} />,
     );
 
   it("renders no WordPress column-container label", () => {
@@ -309,11 +357,7 @@ describe("MegaMenu panel", () => {
       link("Bare Two"),
       link("Bare Three"),
     ]);
-    const html = renderToStaticMarkup(
-      <NavigationMenu>
-        <MegaMenu items={[mixedColumn]} />
-      </NavigationMenu>,
-    );
+    const html = renderMegaMenu(<MegaMenu items={[mixedColumn]} />);
 
     // Exactly one column, so exactly one gap-5 group boundary.
     expect(html.match(/class="flex flex-col gap-5"/g)).toHaveLength(1);
@@ -395,11 +439,7 @@ describe("MobileMenuSection", () => {
  */
 describe("fourth menu level", () => {
   it("renders subcategory links under their category heading in the panel", () => {
-    const html = renderToStaticMarkup(
-      <NavigationMenu>
-        <MegaMenu items={EQUIPMENT.children} />
-      </NavigationMenu>,
-    );
+    const html = renderMegaMenu(<MegaMenu items={EQUIPMENT.children} />);
 
     // The container spends level 2, so the panel's heading is level 3 and the
     // links under it are the level-4 subcategories the old query dropped.
@@ -411,16 +451,14 @@ describe("fourth menu level", () => {
   it("indents a fourth level that sits under a CONTAINER-FREE parent", () => {
     // No container, so the four levels land one deeper in the panel: column
     // heading, sub-link, and a sub-sub-list beneath it.
-    const html = renderToStaticMarkup(
-      <NavigationMenu>
-        <MegaMenu
-          items={[
-            link("Electric Bikes", [
-              link("E-Bikes Mountain", [link("Full Suspension")]),
-            ]),
-          ]}
-        />
-      </NavigationMenu>,
+    const html = renderMegaMenu(
+      <MegaMenu
+        items={[
+          link("Electric Bikes", [
+            link("E-Bikes Mountain", [link("Full Suspension")]),
+          ]),
+        ]}
+      />,
     );
 
     expect(html).toContain(">Full Suspension<");
@@ -428,10 +466,8 @@ describe("fourth menu level", () => {
   });
 
   it("renders every subcategory the fixture carries", () => {
-    const html = renderToStaticMarkup(
-      <NavigationMenu>
-        <MegaMenu items={CLOTHING_AND_GEAR.children} />
-      </NavigationMenu>,
+    const html = renderMegaMenu(
+      <MegaMenu items={CLOTHING_AND_GEAR.children} />,
     );
 
     for (const label of [
@@ -481,14 +517,35 @@ describe("fourth menu level", () => {
       ...child,
       children: child.children.map((sub) => ({ ...sub, children: [] })),
     }));
-    const html = renderToStaticMarkup(
-      <NavigationMenu>
-        <MegaMenu items={threeDeep} />
-      </NavigationMenu>,
-    );
+    const html = renderMegaMenu(<MegaMenu items={threeDeep} />);
 
     expect(html).toContain(">Electric Bikes<");
     expect(html).toContain(">E-Bikes Mountain<");
     expect(html).not.toContain('<ul class="flex flex-col gap-1 pl-3">');
+  });
+});
+
+describe("header hover bridge", () => {
+  it("keeps every header trigger hittable while a menu is open", () => {
+    const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
+    const rule = css.match(/\.headkit-nav > ul \{[^}]*\}/);
+
+    expect(rule?.[0]).toMatch(/pointer-events:\s*auto\s*!important/);
+    expect(rule?.[0]).not.toMatch(/\.headkit-nav ul(?! >)/);
+  });
+
+  it("marks each dropdown trigger so a move across the bar can open it", () => {
+    const html = renderNav();
+
+    expect(rootControl(html, "Photobooth Packages")).toContain(
+      'data-headkit-menu="1982"',
+    );
+    expect(rootControl(html, "Booths")).toContain('data-headkit-menu="2594"');
+    expect(rootControl(html, "Events")).toContain('data-headkit-menu="1814"');
+    expect(rootControl(html, "Customise")).toContain(
+      'data-headkit-menu="3569"',
+    );
+    expect(rootControl(html, "FAQ")).not.toContain("data-headkit-menu");
+    expect(html).toContain("pointer-events-auto!");
   });
 });

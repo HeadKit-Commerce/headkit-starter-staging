@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Slot } from "@radix-ui/react-slot";
+import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 import {
   ArrowRightIcon,
@@ -110,39 +110,36 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     // Previously the prop was silently dropped, producing a nested
     // <button><a/></button> — invalid nested interactive controls that also
     // failed the a11y target-size audit (the inner link obscured the button).
-    if (asChild) {
-      return (
-        <Slot
-          className={cn(
-            buttonVariants({ variant, size, className }),
-            fullWidth && "w-full",
-          )}
-          ref={ref as React.Ref<HTMLElement>}
-          {...(props as React.HTMLAttributes<HTMLElement>)}
-        >
-          {children}
-        </Slot>
-      );
-    }
     const IconComponent = rightIcon ? RightIconMap[rightIcon] : null;
-    return (
-      <button
-        className={cn(
+    return useRender({
+      defaultTagName: "button",
+      ...(asChild
+        ? { render: React.Children.only(children) as React.ReactElement }
+        : {}),
+      ref: ref as React.Ref<HTMLElement>,
+      props: {
+        className: cn(
           buttonVariants({ variant, size, className }),
           fullWidth && "w-full",
-        )}
-        ref={ref}
-        disabled={disabled ?? !!loading}
-        {...props}
-      >
-        {loading ? (loadingText ?? "Processing...") : children}
-        {loading ? (
-          <SpinnerIcon className="h-4 w-4 animate-spin" />
-        ) : IconComponent ? (
-          <IconComponent className="h-4 w-4" />
-        ) : null}
-      </button>
-    );
+        ),
+        disabled: disabled ?? !!loading,
+        ...props,
+        ...(asChild
+          ? {}
+          : {
+              children: (
+                <>
+                  {loading ? (loadingText ?? "Processing...") : children}
+                  {loading ? (
+                    <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  ) : IconComponent ? (
+                    <IconComponent className="h-4 w-4" />
+                  ) : null}
+                </>
+              ),
+            }),
+      },
+    });
   },
 );
 Button.displayName = "Button";

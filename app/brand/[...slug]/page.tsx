@@ -169,9 +169,24 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * @see https://nextjs.org/docs/app/getting-started/caching
  */
 export const instant = true;
+// The finished document is prerendered. This fails the build if the
+// route, or a layout above it, starts reading cookies, headers,
+// searchParams, or connection(). The root layout stays unset.
+export const ensureStatic = "navigation";
 
-export default function Page(props: Props) {
-  return <BrandPageContent {...props} />;
+/**
+ * Sync segment. The cached brand header and page-1 grid are this segment,
+ * with no page-level `<Suspense>`. `prefetch={true}` on brand links has the
+ * page ready before the click.
+ *
+ * Only `params` is forwarded, never the whole props object: `ensureStatic`
+ * above fails the build on a `searchParams` read, so the narrower call is
+ * what keeps that assertion honest.
+ *
+ * @see https://nextjs.org/docs/app/guides/instant-navigation
+ */
+export default function Page({ params }: Props): ReactNode {
+  return <BrandPageContent params={params} />;
 }
 
 export async function BrandPageContent({ params }: Props) {

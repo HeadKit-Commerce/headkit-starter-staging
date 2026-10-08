@@ -1,4 +1,6 @@
 import { notFound, redirect } from "next/navigation";
+import { env } from "@/lib/env";
+import { isShopifyStorefront } from "@/lib/shopify-storefront";
 import {
   resolveShopifyPreviewProductPath,
   shopifyPreviewKeyFromSearchParams,
@@ -23,6 +25,11 @@ export const instant = false;
 export default async function ShopifyDraftProductPreviewPage({
   searchParams,
 }: Props): Promise<never> {
+  // Same provider flag as contact, checkout, and the CMS. WooCommerce
+  // answers before the query string is read.
+  if (!isShopifyStorefront(env)) {
+    notFound();
+  }
   const params = (await searchParams) ?? {};
   const previewKey = shopifyPreviewKeyFromSearchParams(params);
   if (!previewKey) {

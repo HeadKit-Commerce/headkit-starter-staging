@@ -268,3 +268,16 @@
   font-style: italic;
   font-synthesis: style;
 }
+
+/*
+ * While a menu is open, Base UI's hover bridge writes inline
+ * `pointer-events: none` on the trigger's closest `<ul>` and `auto` only on
+ * the active trigger. Sibling links then cannot take the menu over until the
+ * pointer enters the panel, which clears that style. The header mega menu
+ * sits flush under the whole bar, so moving across the links is the switch.
+ * `!important` beats the inline style. Facet and sort menus are not inside
+ * `.headkit-nav`, so they keep the bridge.
+ */
+.headkit-nav > ul {
+  pointer-events: auto !important;
+}
