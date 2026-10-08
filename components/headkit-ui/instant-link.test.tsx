@@ -88,89 +88,37 @@ function renderTrigger(href: string): string {
 }
 
 /**
- * The prefetch-resolution contract, in BOTH states of the prefetch budget.
+ * What InstantLink hands next/link.
  *
- * `InstantLink` defaults `prefetch` to `true`, which is what the starter's 50-odd
- * call sites were written against. With `NEXT_PUBLIC_NAV_PREFETCH_BUDGET` on it
- * defaults to UNSET instead, and only the two surfaces that ask explicitly keep a
- * full prefetch. The measurement behind the budget is on the Bike Society fork: 63
- * product links on one home page, a sweep whose last prefetch landed at 33,084 ms
- * having covered 31 of 213 links, and a click made during it costing 4.0-5.8 s MORE
- * than the same click with prefetching blocked.
- *
- * WHAT THESE COVER: what `InstantLink` hands `next/link` — `true` by default,
- * `undefined` under the budget, and whatever the caller said when the caller was
- * explicit. That is the prop plumbing and nothing else.
- *
- * WHERE THEY STOP, and it is a wide stop:
- *   - They do NOT exercise Next's own prefetch behaviour. What `undefined`
- *     ('auto' → `FetchStrategy.PPR`) versus `true` ('full' → `FetchStrategy.Full`)
- *     actually puts on the wire is Next's code, observable only over HTTP.
- *   - They do NOT cover the 50-odd other `InstantLink` call sites. Only the two
- *     surfaces that pass an explicit `true` are covered, in
- *     `prefetch-budget.test.tsx`, and only for the shapes named there.
- *   - They say nothing about hover/touch prefetch, which `prefetch={false}`
- *     disables and an unset value keeps.
+ * An omitted `prefetch` stays omitted, which is Next's `'auto'`. With
+ * Partial Prefetching that is the shared App Shell. Callers that need the
+ * URL's own cached content pass `prefetch={true}` themselves.
  */
 describe("InstantLink prefetch resolution", () => {
-  it("defaults to prefetch={true} with the budget OFF, which is today's platform behaviour", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", undefined);
+  it("omits prefetch when the caller does not set it", () => {
     observedPrefetch.mockClear();
 
     renderToStaticMarkup(<InstantLink href="/shop/foo">Product</InstantLink>);
 
     expect(
       observedPrefetch,
-      "Removing the default is a platform-wide change to perceived navigation speed. Unset must keep it.",
-    ).toHaveBeenCalledWith(true);
-  });
-
-  it("passes prefetch through UNSET with the budget ON", () => {
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
-    observedPrefetch.mockClear();
-
-    renderToStaticMarkup(<InstantLink href="/shop/foo">Product</InstantLink>);
-
-    expect(
-      observedPrefetch,
-      "Under the budget an unset prop is next/link's 'auto' intent; defaulting it to true is what produced the 63-link prefetch storm.",
+      "An omitted prop is next/link's 'auto'. Defaulting it to true is the prefetch storm.",
     ).toHaveBeenCalledWith(undefined);
   });
 
-  it.each(["", "ture", "2"])(
-    "keeps the default for the unrecognised budget value %o",
-    (raw) => {
-      vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", raw);
-      observedPrefetch.mockClear();
+  it("forwards an explicit prefetch={true}", () => {
+    observedPrefetch.mockClear();
 
-      renderToStaticMarkup(<InstantLink href="/shop/foo">Product</InstantLink>);
+    renderToStaticMarkup(
+      <InstantLink href="/shop/foo" prefetch>
+        Product
+      </InstantLink>,
+    );
 
-      expect(observedPrefetch).toHaveBeenCalledWith(true);
-    },
-  );
-
-  it("forwards an explicit prefetch={true} in either state", () => {
-    for (const budget of [undefined, "true"]) {
-      vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", budget);
-      observedPrefetch.mockClear();
-
-      renderToStaticMarkup(
-        <InstantLink href="/shop/foo" prefetch>
-          Product
-        </InstantLink>,
-      );
-
-      expect(
-        observedPrefetch,
-        "The warm-link opt-in is the whole point of the budget: an explicit prefetch={true} must still reach next/link.",
-      ).toHaveBeenCalledWith(true);
-    }
+    expect(observedPrefetch).toHaveBeenCalledWith(true);
   });
 
   it("forwards an explicit prefetch={false} rather than swallowing it", () => {
-    // `false` is a real, different mode ('none': no viewport prefetch AND no
-    // hover/touch prefetch), so it must not be collapsed into the default.
-    vi.stubEnv("NEXT_PUBLIC_NAV_PREFETCH_BUDGET", "true");
     observedPrefetch.mockClear();
 
     renderToStaticMarkup(

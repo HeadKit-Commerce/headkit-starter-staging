@@ -1,18 +1,10 @@
 /**
- * The three per-store switches for how a link BEHAVES, and the one place each
+ * The two per-store switches for how a link BEHAVES, and the one place each
  * variable is read or its value interpreted.
  *
- * All three arrived together from the Bike Society fork, where each is the
- * measured default. Upstream they are opt-in, because each one changes how every
- * storefront on the platform feels and the measurement behind it is one store's:
+ * These arrived from the Bike Society fork. They stay opt-in, because each one
+ * changes how a storefront feels:
  *
- *  - `NEXT_PUBLIC_NAV_PREFETCH_BUDGET` — spend the prefetch head start on the
- *    desktop nav and one carousel row instead of on every link. Off, a link
- *    still defaults to `prefetch={true}` and `next.config.ts` leaves
- *    `partialPrefetching` unset, which is what the platform does today. The two
- *    halves are ONE switch on purpose: partial prefetching is what makes an
- *    unset `prefetch` cheap, so a build with the config key and without the
- *    default change (or the reverse) is a state nobody measured.
  *  - `NEXT_PUBLIC_NAV_MOUSEDOWN` — start an in-app navigation on `mousedown`
  *    rather than on `click`. Off, `InstantLink` installs no mouse-down handler
  *    at all.
@@ -80,21 +72,6 @@ const ON_VALUES: ReadonlySet<string> = new Set(["true", "1", "on", "yes"]);
 export function isFlagOptedIn(raw: string | undefined): boolean {
   if (raw === undefined) return false;
   return ON_VALUES.has(raw.trim().toLowerCase());
-}
-
-/**
- * Is the prefetch budget in force?
- *
- * ON: `InstantLink` passes `prefetch` through unset (`next/link`'s `'auto'`) and
- * only the surfaces that ask for it explicitly get a full prefetch.
- * OFF (default): `InstantLink` keeps its `prefetch = true` default, so every
- * in-app link full-prefetches as it does today.
- *
- * `next.config.ts` reads the same variable to decide `partialPrefetching`, and
- * the two must agree — see the module header.
- */
-export function navPrefetchBudgetEnabled(): boolean {
-  return isFlagOptedIn(process.env.NEXT_PUBLIC_NAV_PREFETCH_BUDGET);
 }
 
 /**

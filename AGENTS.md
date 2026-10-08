@@ -963,7 +963,12 @@ Three things hold it up, and the last is the one a refactor loses:
   cheap signal if either resolver moves. Measured on a built page: same 247,788 bytes, 0
   boundaries, 0 hidden segments before and after.
 
-### Three navigation-interaction switches, all OFF by default
+### Two navigation-interaction switches, both OFF by default
+
+Partial Prefetching is always on. `InstantLink` omits `prefetch` unless the
+caller passes it, so a normal link downloads the shared App Shell. Product
+cards and the nav pass `prefetch={true}` for their own URL.
+
 
 `lib/nav-interaction-flags.ts` is the ONE place each variable is read and its value
 interpreted, and it carries the value table (only an explicit `true`/`1`/`on`/`yes` turns a
@@ -972,15 +977,6 @@ shopper new behaviour). Do not read `process.env.NEXT_PUBLIC_NAV_*` anywhere els
 a public variable only where the name appears verbatim, which is why the reads live there and
 the declarations live in `lib/env.ts`.
 
-- **`NEXT_PUBLIC_NAV_PREFETCH_BUDGET`** — one switch, two spellings that must agree.
-  `InstantLink`'s `resolvePrefetch` stops defaulting `prefetch` to `true`, and `next.config.ts`
-  sets `partialPrefetching: true` from the same variable; partial prefetching is what makes an
-  unset `prefetch` cheap, so a build with one half and not the other is a state nobody measured.
-  With the budget on the head start is spent explicitly, on the top-level desktop nav
-  (`DesktopMenuSection`'s `prefetch` prop) and the first visible row of the page's first product
-  carousel (`ProductCarousel`'s `prefetchCount`, wired in `app/page.tsx` and `block-editor.tsx`
-  via `firstProductCarouselSegmentIndex`). `prefetch={false}` is not the way to quieten a link —
-  that is `'none'` and kills hover/touch prefetch too.
 - **`NEXT_PUBLIC_NAV_MOUSEDOWN`** — an in-app link starts its navigation on `mousedown`.
   `mouseDownNavigationRefusal` is the guard, and the five gestures it must never hijack
   (middle-click, cmd/ctrl-click, shift-click, right-click, alt-click) are why it returns a reason

@@ -388,12 +388,10 @@ function DesktopMenuSection({
   /** Visibility classes for each top-level item (responsive collapse). */
   itemClassName?: string;
   /**
-   * Forwarded to each top-level link's `InstantLink`. Under the prefetch budget
-   * (`NEXT_PUBLIC_NAV_PREFETCH_BUDGET`, off by default) the top-level nav is one of
-   * the two surfaces that keeps an explicit `prefetch={true}`, because it is a
-   * handful of links and the most likely next click. Mega-menu CHILD links
-   * deliberately do NOT get it — a WordPress menu can carry dozens of them, which
-   * is the storm the budget exists to stop.
+   * Forwarded to each top-level link's `InstantLink`. The top-level nav passes
+   * `prefetch={true}` because it is a handful of links and the most likely next
+   * click. Mega-menu child links do not, so a large WordPress menu does not
+   * prefetch every child.
    */
   prefetch?: boolean | undefined;
 }) {
