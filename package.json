@@ -2,6 +2,10 @@
   "name": "@headkit/starter",
   "version": "0.1.5",
   "private": true,
+  "sideEffects": [
+    "*.css",
+    "**/*.css"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
