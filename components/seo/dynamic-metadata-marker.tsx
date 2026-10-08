@@ -30,10 +30,13 @@ import { connection } from "next/server";
  * ---------------------------------------------------------------------------
  * WHO STILL MOUNTS IT
  * ---------------------------------------------------------------------------
- * `app/products/[...slug]` alone. Its `generateMetadata` reads `searchParams`
- * for the Shopify Admin `preview_key`, and the route prerenders real products
- * through `ProductPageBody` with no boundary of its own, so without a marker
- * that read is a build error. The cost is confined to the FLAT product URL,
+ * `app/products/[...slug]` alone, and only when `isShopifyStorefront` is
+ * set. Its `generateMetadata` then reads `searchParams` for the Shopify Admin
+ * `preview_key`. A WooCommerce connection does not mount this marker and does
+ * not read that key. The route prerenders real products through
+ * `ProductPageBody` with no boundary of its own, so without a marker that
+ * read is a build error on a Shopify store. The cost is confined to the FLAT
+ * product URL,
  * which 308s onto the canonical `/shop/…` path anyway and is not the route
  * shoppers land on.
  *

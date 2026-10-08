@@ -15,15 +15,29 @@ vi.mock("@/lib/product-cache", () => ({
   ): Promise<{ slug: string } | null> => getProductForPage(slug, options),
 }));
 
+const commerce = vi.hoisted(() => ({
+  domain: undefined as string | undefined,
+}));
+
+vi.mock("@/lib/env", () => ({
+  env: {
+    get SHOPIFY_STORE_DOMAIN() {
+      return commerce.domain;
+    },
+  },
+}));
+
 import {
   SHOPIFY_PREVIEW_SLUG_PREFIX,
   resolveShopifyPreviewProductPath,
   shopifyPreviewKeyFromSearchParams,
+  shopifyPreviewKeyWhenConnected,
   shopifyProductIdFromSearchParams,
 } from "./shopify-preview";
 
 beforeEach(() => {
   getProductForPage.mockReset();
+  commerce.domain = undefined;
 });
 
 describe("shopifyPreviewKeyFromSearchParams", () => {
@@ -74,5 +88,36 @@ describe("resolveShopifyPreviewProductPath", () => {
     await expect(
       resolveShopifyPreviewProductPath("preview-secret", "999"),
     ).resolves.toBeNull();
+  });
+});
+
+describe("shopifyPreviewKeyWhenConnected", () => {
+  it("does not read the query when the store is not Shopify", async () => {
+    let awaited = false;
+    const searchParams = {
+      then(
+        resolve: (value: Record<string, string>) => unknown,
+        reject?: (reason: unknown) => unknown,
+      ) {
+        awaited = true;
+        return Promise.resolve({ preview_key: "secret" }).then(resolve, reject);
+      },
+    };
+
+    await expect(
+      shopifyPreviewKeyWhenConnected(
+        searchParams as unknown as Promise<Record<string, string>>,
+      ),
+    ).resolves.toBeUndefined();
+    expect(awaited).toBe(false);
+  });
+
+  it("reads preview_key when the store is Shopify", async () => {
+    commerce.domain = "preview.myshopify.com";
+    await expect(
+      shopifyPreviewKeyWhenConnected(
+        Promise.resolve({ preview_key: "secret" }),
+      ),
+    ).resolves.toBe("secret");
   });
 });
