@@ -994,8 +994,9 @@ export function ProductDetail({
   const ga4ViewItemKey = `${ga4Item.item_id}|${ga4Item.price}`;
   useEffect(() => {
     pushGa4Ecommerce(buildViewItem(ga4Currency, ga4Item));
-    // Keyed on the identity + price that changed, not on the object: the memo
-    // yields a new reference on every render.
+    // Keyed on the identity + price that changed, not on the object:
+    // `ga4Item` is rebuilt on every render (see above) and depending on it
+    // would re-fire `view_item` on every render instead of per variant.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ga4ViewItemKey]);
 
