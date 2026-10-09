@@ -35,9 +35,10 @@ function slideVideo(slide: HeroSlide, mobile: boolean): string {
 
 /**
  * Server Component. The heading renders here, not inside a client carousel,
- * so it is part of the static shell. A slide with a video uses that file
- * and the slide image as its poster. A slide with only an image still
- * renders the image here.
+ * so it is part of the static shell. A slide with a video renders the slide
+ * image as a stacked, optimized still under that file — never as the native
+ * `poster`, which Next cannot optimize (see hero-video-slide.tsx). A slide
+ * with only an image renders the same still on its own.
  * https://nextjs.org/docs/app/getting-started/server-and-client-components
  * https://nextjs.org/docs/app/getting-started/caching#static-cached-and-streaming
  */
@@ -92,8 +93,11 @@ function HeroSlideView({
             <HeroVideoSlide
               mobileSrc={mobileVideo}
               desktopSrc={desktopVideo}
-              mobilePoster={slide.mobileImage || slide.image || ""}
-              desktopPoster={slide.image || slide.mobileImage || ""}
+              mobileStill={slide.mobileImage || slide.image || ""}
+              desktopStill={slide.image || slide.mobileImage || ""}
+              alt={alt}
+              isLcp={index === 0}
+              sizes={heroImageSizes(heroLayout)}
               isActive={active}
             />
           ) : slide.image || slide.mobileImage ? (

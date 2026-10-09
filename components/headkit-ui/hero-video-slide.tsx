@@ -1,3 +1,4 @@
+import { ArtDirectedImage } from "@/components/headkit-ui/art-directed-image";
 import {
   AutoplayVideo,
   type VideoSource,
@@ -6,10 +7,16 @@ import {
 interface Props {
   mobileSrc: string;
   desktopSrc: string;
-  /** Slide still used as the video `poster` on small screens. */
-  mobilePoster?: string;
-  /** Slide still used as the video `poster` from the `md` breakpoint up. */
-  desktopPoster?: string;
+  /** Slide still painted under the video on small screens. */
+  mobileStill?: string;
+  /** Slide still painted under the video from the `md` breakpoint up. */
+  desktopStill?: string;
+  /** Alt text for the still. The video itself is decorative. */
+  alt: string;
+  /** First slide. Its still is the LCP element until the video decodes. */
+  isLcp: boolean;
+  /** Slot width for the still's `sizes`. */
+  sizes?: string;
   isActive: boolean;
 }
 
@@ -23,17 +30,33 @@ function videoType(src: string): string {
 /**
  * Hero background video.
  *
- * The Next.js video guide uses a native `<video>` with `poster`, `autoPlay`,
- * `muted`, and `playsInline`. The slide image is that poster, not a second
- * picture stacked on top, so the first frame replaces it as soon as it
- * decodes. `source media` picks the phone or desktop file without fetching both.
+ * The still is a stacked `ArtDirectedImage`, NOT the native `poster`
+ * attribute. A `poster` is a plain URL: Next never optimises it, and it
+ * carries no `srcSet`, no `media` and no priority hint, so the raw WordPress
+ * upload became the LCP resource. Measured on the Paralel Furniture store
+ * (tigerheart-studios/paralel-storefront#54, Lighthouse 13.5.0, three runs
+ * per form factor): mobile LCP 11.5 s -> 2.7 s, performance 68 -> 86, page
+ * weight 5,652 KB -> 4,591 KB, and the `lcp-discovery` audit went from
+ * failing on `priorityHinted=false` to passing. The LCP resource went from a
+ * 1,132,082-byte upload to 5,490 bytes of AVIF at `w=640`.
+ *
+ * `ArtDirectedImage` is what makes that possible: one encode per breakpoint
+ * through `getImageProps`, AVIF/WebP negotiation, and a media-scoped
+ * `preload(..., { as: "image", fetchPriority: "high" })` for the first slide.
+ *
+ * The video sits above the still and loads `metadata` rather than `auto`, so
+ * it no longer competes with the LCP image for bandwidth; it fades in over
+ * the still as it decodes instead of replacing a poster.
  * https://nextjs.org/docs/app/guides/videos
  */
 export function HeroVideoSlide({
   mobileSrc,
   desktopSrc,
-  mobilePoster,
-  desktopPoster,
+  mobileStill,
+  desktopStill,
+  alt,
+  isLcp,
+  sizes,
   isActive,
 }: Props): React.JSX.Element | null {
   const sources: VideoSource[] = [];
@@ -54,15 +77,27 @@ export function HeroVideoSlide({
   }
   if (sources.length === 0) return null;
 
-  const poster = desktopPoster || mobilePoster;
+  const mobileStillSrc = mobileStill || desktopStill || "";
+  const desktopStillSrc = desktopStill || mobileStill || "";
 
   return (
-    <AutoplayVideo
-      className="absolute inset-0 h-full w-full object-cover"
-      sources={sources}
-      {...(poster ? { poster } : {})}
-      isActive={isActive}
-      preload={isActive ? "auto" : "none"}
-    />
+    <>
+      {mobileStillSrc ? (
+        <ArtDirectedImage
+          mobileSrc={mobileStillSrc}
+          desktopSrc={desktopStillSrc}
+          alt={alt}
+          isLcp={isLcp && isActive}
+          className="absolute inset-0 h-full w-full object-cover"
+          {...(sizes ? { sizes } : {})}
+        />
+      ) : null}
+      <AutoplayVideo
+        className="absolute inset-0 h-full w-full object-cover"
+        sources={sources}
+        isActive={isActive}
+        preload={isActive ? "metadata" : "none"}
+      />
+    </>
   );
 }
