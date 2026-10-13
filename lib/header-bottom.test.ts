@@ -12,17 +12,8 @@ import {
 } from "@/lib/header-bottom";
 
 /**
- * The header-bottom binding: one measurement, published once, read by the
- * pending-navigation skeleton so it starts under the header instead of over it.
- *
- * The skeleton's own guard (`components/headkit-ui/skeletons/navigation-skeleton.test.tsx`)
- * asserts the READ side — that the overlay's `top` is `headerBottomCssValue()` and
- * never 0. This file asserts the WRITE side and the one thing neither can observe
- * from the other: that `NavigationBar` publishes at all. That last case is a
- * source-text scan, and it is a tripwire rather than a proof — it catches the call
- * disappearing by name, not a call that stops running. Mounting the real header in
- * jsdom would need the cart, auth and branding providers around it and would still
- * measure nothing, because jsdom has no layout.
+ * The header-bottom binding: one measurement, published once, read by
+ * anything that must sit under the sticky header.
  */
 describe("header-bottom binding", () => {
   afterEach(() => {
@@ -75,11 +66,9 @@ describe("header-bottom binding", () => {
     );
     expect(
       source,
-      "Nothing else measures the header. If the nav stops publishing, the skeleton silently falls back to the 80px default and drifts from any preheader.",
+      "Nothing else measures the header. If the nav stops publishing, consumers fall back to the 80px default and drift from any preheader.",
     ).toContain("publishHeaderBottom(");
     // Both halves of the header: the preheader in normal flow and the sticky nav.
-    // `HEADER_REGION_SELECTOR` is what the skeleton's press swallow exempts, so a
-    // header that is not marked is a header that renders visible and dead.
     expect(source.match(/HEADER_REGION_ATTRIBUTE\]:/g)?.length ?? 0).toBe(2);
     expect(HEADER_REGION_SELECTOR).toBe(`[${HEADER_REGION_ATTRIBUTE}]`);
   });

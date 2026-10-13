@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useCallback,
@@ -16,13 +17,15 @@ import type {
 } from "@headkit/sdk";
 import { listCollectionProducts } from "@/lib/collection-actions";
 import { useCatalogDisplay } from "@/components/headkit-ui/catalog-display-provider";
-import { requestNavigationSkeleton } from "@/lib/navigation-skeleton-store";
-import { navigationSkeletonEnabled } from "@/lib/nav-interaction-flags";
+import { nextSearchHold } from "./search-hold";
 import {
   buildProductListFilter,
   deriveFilterValues,
   encodeFilterSlug,
+  isColorAttrSlug,
   sameFilterValues,
+  searchTermFromQuery,
+  toAttributeKey,
   DEFAULT_FILTER_VALUES,
   NO_SEARCH_PARAMS,
   type FilterValues,
@@ -139,7 +142,7 @@ export function CollectionProvider({
   // link click, so nothing in `InstantLink` fires for it, and React keeps a
   // transition pending across a `router.push` until the destination's RSC payload
   // has arrived and committed.
-  const [isNavigationPending, startNavigationTransition] = useTransition();
+  const [, startNavigationTransition] = useTransition();
 
   const [products, setProducts] = useState(initialProducts);
   const [totalProducts, setTotalProducts] = useState(initialTotal);
@@ -153,11 +156,6 @@ export function CollectionProvider({
   const isInitialLoadRef = useRef(true);
   const [hasFirstPage, setHasFirstPage] = useState(initialPage === 1);
   const prevAttributeSlugRef = useRef<string | undefined>(undefined);
-  // The live navigation-skeleton request for a filter change, and the destination
-  // it was opened for. Declared with the other refs; both are read by the effect at
-  // the bottom of this component.
-  const skeletonTokenRef = useRef<number | null>(null);
-  const pendingFilterPathRef = useRef<string>("");
   // Loading flags live in refs so fetchProducts never closes over a stale
   // isLoadingAfter=true after a filter change mid-request (that bug made
   // load-more permanently no-op while the UI looked idle).
@@ -208,6 +206,8 @@ export function CollectionProvider({
       initialBrands,
     }),
   );
+  const searchTermRef = useRef(search ?? "");
+  const [activeSearch, setActiveSearch] = useState(search ?? "");
 
   const hasMore = products.length < totalProducts;
 
@@ -228,7 +228,7 @@ export function CollectionProvider({
       opts?: { omitPage?: boolean },
     ) => {
       const params = new URLSearchParams();
-      if (search) params.set("q", search);
+      if (searchTermRef.current) params.set("q", searchTermRef.current);
       if (page > 1 && !opts?.omitPage) params.set("page", page.toString());
       if (filters.categories.length)
         params.set("categories", filters.categories.join(","));
@@ -263,7 +263,7 @@ export function CollectionProvider({
         );
       }
     },
-    [categoryBasePath, pathname, search],
+    [categoryBasePath, pathname],
   );
 
   const buildListFilter = useCallback(
@@ -273,16 +273,16 @@ export function CollectionProvider({
         ...(brandSlug !== undefined ? { brandSlug } : {}),
         ...(onSale !== undefined ? { onSale } : {}),
         ...(isNew !== undefined ? { isNew } : {}),
-        ...(search !== undefined ? { search } : {}),
+        ...(searchTermRef.current ? { search: searchTermRef.current } : {}),
         ...(isNew
           ? { defaultSort: "CREATED_AT" as SortKeyType }
-          : search
+          : searchTermRef.current
             ? {}
             : {
                 defaultSort: defaultCollectionSort as SortKeyType,
               }),
       });
-      if (search && !filters.sort?.trim()) {
+      if (searchTermRef.current && !filters.sort?.trim()) {
         filter.orderby = "relevance";
         filter.order = "desc";
       }
@@ -293,7 +293,6 @@ export function CollectionProvider({
       brandSlug,
       onSale,
       isNew,
-      search,
       defaultCollectionSort,
     ],
   );
@@ -524,7 +523,7 @@ export function CollectionProvider({
       // a path change, not a query param.
       const filterPath = newAttributeSlug ? `/f/${newAttributeSlug}` : "";
       const params = new URLSearchParams();
-      if (search) params.set("q", search);
+      if (searchTermRef.current) params.set("q", searchTermRef.current);
       if (filterValues.categories.length)
         params.set("categories", filterValues.categories.join(","));
       // Brand omitted from query (06.1) — it lives in filterPath.
@@ -533,13 +532,6 @@ export function CollectionProvider({
       if (filterValues.price_min) params.set("price_min", filterValues.price_min);
       if (filterValues.price_max) params.set("price_max", filterValues.price_max);
       const qs = params.toString();
-      // Recorded for the skeleton request below, which needs the DESTINATION so the
-      // host can tell "landed" from "never left" — a filter change that resolves to
-      // the path already showing has no route change to observe.
-      pendingFilterPathRef.current = filterPath;
-      // The push, and nothing else, so `isNavigationPending` means exactly "a filter
-      // navigation is in flight" for as long as one is.
-      //
       // Concise body, so whatever `router.push` returns is the transition's result.
       // Today that is `undefined` and React treats the scope as an ordinary sync
       // transition, which is what production runs; if a future Next returns a
@@ -579,16 +571,113 @@ export function CollectionProvider({
   // Accepted: none of these URLs is canonical, none is in the sitemap, and each
   // is produced by this grid's own `history.replaceState` rather than linked to.
   useEffect(() => {
-    const corrected = deriveFilterValues(
-      new URLSearchParams(window.location.search),
-      { initialPage, productFilter, initialFilterValues, initialBrands },
-    );
-    setFilterValues((current) =>
-      sameFilterValues(current, corrected) ? current : corrected,
-    );
+    const params = new URLSearchParams(window.location.search);
+    const corrected = deriveFilterValues(params, {
+      initialPage,
+      productFilter,
+      initialFilterValues,
+      initialBrands,
+    });
+    const nextSearch = searchTermFromQuery(search, params);
+    const searchChanged = nextSearch !== searchTermRef.current;
+    if (searchChanged) {
+      searchTermRef.current = nextSearch;
+      setActiveSearch(nextSearch);
+    }
+    let filtersChanged = false;
+    setFilterValues((current) => {
+      if (sameFilterValues(current, corrected)) return current;
+      filtersChanged = true;
+      return corrected;
+    });
+    // A query alone (`/search?q=`) does not change filter values, so fetch here.
+    if (searchChanged && !filtersChanged) {
+      void fetchProducts(corrected.page, "middle");
+    }
     // Mount only — later URL changes come from this provider itself.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+
+  // A colour click is `router.push` to `/f/<slug>`. Those URLs are not built
+  // at deploy time, so the first open is a cold function render. Bare collections
+  // are already a prerender HIT. Warm the top colours while the shopper is still
+  // reading, but not during LCP: a short timer from mount used to prefetch eight
+  // colour routes while the hero image was still loading. Eight, not every
+  // option: a full sweep made the click they were meant to speed up slower.
+  useEffect(() => {
+    if (!categoryBasePath) return;
+    if (typeof router.prefetch !== "function") return;
+    const colorAttr = productFilter.attributes?.find(
+      (attr) => attr?.slug && isColorAttrSlug(attr.slug),
+    );
+    if (!colorAttr?.slug) return;
+    const key = toAttributeKey(colorAttr.slug);
+    const hrefs = [...(colorAttr.options ?? [])]
+      .flatMap((option) => (option?.slug ? [option] : []))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8)
+      .flatMap((option) => {
+        const slug = encodeFilterSlug({
+          ...DEFAULT_FILTER_VALUES,
+          attributes: { [key]: [option.slug] },
+        });
+        if (!slug) return [];
+        const href = `${categoryBasePath}/f/${slug}`;
+        return href === pathname ? [] : [href];
+      });
+    if (hrefs.length === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+    const warm = (): void => {
+      if (cancelled) return;
+      timer = setTimeout(() => {
+        for (const href of hrefs) router.prefetch(href);
+      }, 3500);
+    };
+    if (document.readyState === "complete") warm();
+    else window.addEventListener("load", warm, { once: true });
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      window.removeEventListener("load", warm);
+    };
+  }, [categoryBasePath, pathname, productFilter, router]);
+
+
+  // `/search` prerenders the unfiltered catalog. A `?q=` visit used to paint
+  // that catalog and then replace it when this effect's fetch returned.
+  // Hide that grid until the query's own products have committed. A later
+  // sort or filter refresh must not hide results again — `settled` sticks.
+  const searchHoldRef = useRef({
+    fetchSeen: false,
+    settled: false,
+    serverMatched: null as boolean | null,
+  });
+  useLayoutEffect(() => {
+    const urlQuery = new URLSearchParams(window.location.search).get("q") ?? "";
+    const decision = nextSearchHold({
+      urlQuery,
+      appliedQuery: activeSearch,
+      isLoading,
+      fetchSeen: searchHoldRef.current.fetchSeen,
+      settled: searchHoldRef.current.settled,
+      serverMatched: searchHoldRef.current.serverMatched,
+    });
+    searchHoldRef.current = {
+      fetchSeen: decision.fetchSeen,
+      settled: decision.settled,
+      serverMatched: decision.serverMatched,
+    };
+    if (decision.hold) {
+      document.documentElement.setAttribute("data-search-query", "1");
+    } else {
+      document.documentElement.removeAttribute("data-search-query");
+    }
+    return () => {
+      document.documentElement.removeAttribute("data-search-query");
+    };
+  }, [isLoading, activeSearch]);
 
   const setFilterValuesDeferred = useCallback(
     (values: FilterValues) => {
@@ -605,27 +694,6 @@ export function CollectionProvider({
     });
   }, [startFilterTransition]);
 
-  // The full-page skeleton for a FILTER navigation, when the store has opted into
-  // it (`NEXT_PUBLIC_NAVIGATION_SKELETON`). Same delay constant, same
-  // `CollectionPageSkeleton` body and the same host a clicked link uses: a
-  // filter-path navigation IS an ordinary route navigation to a `/collections/*`
-  // URL — warm or cold exactly as a clicked one is. What differs is only how it
-  // starts.
-  //
-  // Request only, and never a withdrawal: the host ends it when the route commits.
-  // Withdrawing here on `isNavigationPending === false` would put the teardown back
-  // in a place that cannot tell a finished navigation from an unmounted requester —
-  // see `lib/navigation-skeleton-store.ts`.
-  useEffect(() => {
-    // The per-store switch, checked first so an "off" store never opens a request
-    // the (unmounted) host could not end.
-    if (!navigationSkeletonEnabled()) return;
-    if (!isNavigationPending) return;
-    skeletonTokenRef.current ??= requestNavigationSkeleton(
-      "collection",
-      `${categoryBasePath ?? ""}${pendingFilterPathRef.current}`,
-    );
-  }, [isNavigationPending, categoryBasePath]);
 
   return (
     <CollectionContext.Provider
@@ -647,7 +715,7 @@ export function CollectionProvider({
         prefetchNextPage,
         productFilter,
         isNew: Boolean(isNew),
-        search: search ?? "",
+        search: activeSearch,
       }}
     >
       {children}

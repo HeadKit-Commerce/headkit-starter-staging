@@ -5,47 +5,9 @@ import { createRoot, type Root } from "react-dom/client";
 import type { ProductSummaryFieldsFragment } from "@headkit/sdk";
 
 /**
- * A filter change that NAVIGATES gets the full-page skeleton; one served in place
- * does not, and Load More must never see it.
- *
- * `CollectionProvider` settles a filter change one of two ways. On a
- * `/collections/*` route an attribute or brand change is a real route navigation —
- * `router.push` to `/f/<slug>` — because the server renders that combination from
- * its own cache entry. Everything else (sort, price, in-stock, category chips, Load
- * More, Load Previous) is served in place by `listCollectionProducts` with the URL
- * corrected by `history.replaceState`.
- *
- * Only the first can be silent for seconds, and only the first is a navigation a
- * link's own pending state cannot see — a filter tick is not a link click, so
- * nothing in `InstantLink` fires. The second already shows a cue: `ProductGrid` keeps
- * the cards the shopper is reading and appends a skeleton row, and `Filter` dims
- * itself. Raising a full-page skeleton over THAT would be a regression, most of all
- * for Load More, which appends to a grid mid-read.
- *
- * So these tests are about which path a change takes and what the grid holds while
- * it does, not about the skeleton's markup (`skeletons/navigation-skeleton.test.tsx`
- * owns that) or its 400 ms threshold.
- *
- * BOTH WAITS ARE HELD OPEN ON PURPOSE, and a guard that does not hold them is green
- * under the bug. A mocked `push` returns instantly, so the transition around it
- * settles before the 400 ms threshold and every skeleton assertion passes for the
- * wrong reason; likewise a server action that resolves instantly never reaches the
- * threshold either. So the navigation is held by a promise the test resolves
- * (`resolveNavigation`) and the in-place fetch by one it resolves separately
- * (`pendingFetch`).
- *
- * A NOTE ON THE FIRST CHANGE. `CollectionProvider` used to seed
- * `prevAttributeSlugRef` with `undefined`, so the first filter change on a
- * `/collections/*` route took the navigation branch even when no attribute or brand
- * moved — a sort or in-stock toggle pushed once, then later ones were served in
- * place. PR #517 records the slug on the initial pass and that is gone, which is why
- * the in-place cases below need no priming: a sort change is served in place from the
- * first tick.
- *
- * WHAT IT STILL CANNOT SEE. No router runs here, so nothing about the real
- * navigation is observed — not its duration, not the server read behind
- * `initialProducts`. The cold-click timings and the frame of the skeleton actually
- * painting are browser measurements, recorded in the fork's PR #44.
+ * A filter change that NAVIGATES pushes a filter path; one served in place
+ * fetches via `listCollectionProducts` and must keep the cards the shopper
+ * is reading. Destination `loading.tsx` covers cold navigations.
  */
 
 // React 19 needs this before `act` will flush updates synchronously.
@@ -132,9 +94,6 @@ vi.mock("@/components/headkit-ui/product-card", () => ({
 import { CollectionPage } from "@/components/headkit-ui/collection/collection-page";
 import { useCollection } from "@/components/headkit-ui/collection/collection-context";
 import { CatalogDisplayProvider } from "@/components/headkit-ui/catalog-display-provider";
-import { NAVIGATION_SKELETON_DELAY_MS } from "@/components/headkit-ui/skeletons/navigation-skeleton";
-import { NavigationSkeletonHost } from "@/components/headkit-ui/skeletons/navigation-skeleton-host";
-import { resetNavigationSkeletonStore } from "@/lib/navigation-skeleton-store";
 
 const PREFS = {
   showVariants: false,
@@ -186,9 +145,6 @@ function tree(props: {
 }): React.JSX.Element {
   return (
     <CatalogDisplayProvider prefs={PREFS}>
-      {/* Mounted beside the listing, as the root layout mounts it: the provider
-          only REQUESTS the skeleton, and the host is what draws it. */}
-      <NavigationSkeletonHost />
       <CollectionPage
         initialProducts={props.initialProducts}
         initialTotal={props.initialTotal}
@@ -226,10 +182,6 @@ function names(root: HTMLElement): string[] {
   );
 }
 
-function skeletons(): number {
-  return document.querySelectorAll('[data-testid="navigation-skeleton"]')
-    .length;
-}
 
 let host: HTMLElement;
 let root: Root;
@@ -237,14 +189,6 @@ let root: Root;
 beforeEach(() => {
   vi.useFakeTimers();
   push.mockClear();
-  // DECLARE the state this file exercises — the skeleton switched ON.
-  // `lib/nav-interaction-flags.test.ts` owns the OFF state and the value table.
-  vi.stubEnv("NEXT_PUBLIC_NAVIGATION_SKELETON", "true");
-  resetNavigationSkeletonStore();
-  // The host ends a request when the path it started from is no longer the current
-  // one, so jsdom's own URL has to agree with the mocked `usePathname()` — otherwise
-  // every request is cleared on its first effect and the skeleton assertions below
-  // pass for the wrong reason.
   window.history.replaceState(null, "", BASE_PATH);
   holdNavigation = false;
   resolveNavigation = null;
@@ -258,7 +202,6 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
-  vi.unstubAllEnvs();
   vi.useRealTimers();
 });
 
@@ -277,7 +220,7 @@ function mount(initialFilterValues?: Record<string, string[]>): void {
 /** Let every queued effect, transition and microtask settle. */
 function settle(): void {
   act(() => {
-    vi.advanceTimersByTime(NAVIGATION_SKELETON_DELAY_MS * 2);
+    vi.advanceTimersByTime(800);
   });
 }
 
@@ -301,92 +244,11 @@ describe("a filter change that navigates", () => {
     expect(pendingFetch).toBeNull();
   });
 
-  it("raises nothing at all when NEXT_PUBLIC_NAVIGATION_SKELETON is off, which is the default", async () => {
-    // The OFF half of the per-store switch, on the raiser that is NOT a link —
-    // `lib/nav-interaction-flags.test.ts` covers the link and owns the value table.
-    // The positive test below is this one's control: same harness, same held
-    // navigation, same clock, one variable different.
-    vi.stubEnv("NEXT_PUBLIC_NAVIGATION_SKELETON", undefined);
-    holdNavigation = true;
-    mount();
 
-    await act(async () => {
-      handle?.setFilterValues({
-        ...handle.filterValues,
-        attributes: { pa_colour: ["black"] },
-        page: 1,
-      });
-    });
-
-    // Well past the threshold, with the navigation still held open.
-    act(() => {
-      vi.advanceTimersByTime(NAVIGATION_SKELETON_DELAY_MS * 3);
-    });
-    expect(skeletons()).toBe(0);
-    // And the filter change itself is untouched — the switch turns off the cover,
-    // never the navigation under it.
-    expect(push).toHaveBeenCalledTimes(1);
-    expect(push.mock.calls[0]?.[0]).toBe(`${BASE_PATH}/f/colour.black`);
-
-    await act(async () => {
-      resolveNavigation?.();
-    });
-  });
-
-  it("raises the shared category skeleton once the wait passes the threshold", async () => {
-    holdNavigation = true;
-    mount();
-
-    await act(async () => {
-      handle?.setFilterValues({
-        ...handle.filterValues,
-        attributes: { pa_colour: ["black"] },
-        page: 1,
-      });
-    });
-
-    // Under the threshold the shopper gets nothing, which is the point of the delay:
-    // a warm filter navigation lands inside it and must stay silent.
-    act(() => {
-      vi.advanceTimersByTime(NAVIGATION_SKELETON_DELAY_MS - 50);
-    });
-    expect(skeletons()).toBe(0);
-
-    act(() => {
-      vi.advanceTimersByTime(100);
-    });
-    expect(skeletons()).toBe(1);
-    // The category body, shared with the link-click path — not a second one.
-    expect(
-      document
-        .querySelector('[data-testid="navigation-skeleton"]')
-        ?.getAttribute("data-skeleton-kind"),
-    ).toBe("collection");
-
-    // And it comes down when the DESTINATION LANDS — not when the transition
-    // settles. The provider does not withdraw its own request: a requester cannot
-    // tell "the navigation finished" from "my container closed", which is the whole
-    // reason the host owns the lifetime.
-    await act(async () => {
-      resolveNavigation?.();
-    });
-    expect(
-      skeletons(),
-      "The transition settled but the shopper is still looking at the old grid.",
-    ).toBe(1);
-
-    // The host polls `location`, so landing is a history change — not a React
-    // re-render and not a mocked hook.
-    window.history.replaceState(null, "", `${BASE_PATH}/f/colour.black`);
-    act(() => {
-      vi.advanceTimersByTime(50);
-    });
-    expect(skeletons()).toBe(0);
-  });
 });
 
 describe("a listing update served in place", () => {
-  it("raises no full-page skeleton for Load More, however long it takes", async () => {
+  it("keeps the cards for Load More while the fetch is in flight", async () => {
     mount();
     // A second page exists, so Load More is live.
     await act(async () => {
@@ -406,13 +268,9 @@ describe("a listing update served in place", () => {
     await act(async () => {
       handle?.loadMore();
     });
-    // Held in flight well past the threshold: nothing may appear over the grid.
     settle();
     expect(pendingFetch).not.toBeNull();
-    expect(skeletons()).toBe(0);
     expect(push).not.toHaveBeenCalled();
-    // And the cards the shopper is reading are still there, which is the whole
-    // reason a full-page skeleton would be wrong here.
     expect(names(host)).toEqual(["Alpine Jacket", "Harbour Pump"]);
 
     await act(async () => {
@@ -424,10 +282,9 @@ describe("a listing update served in place", () => {
       "Harbour Pump",
       "Cadex Wheel",
     ]);
-    expect(skeletons()).toBe(0);
   });
 
-  it("raises no full-page skeleton for a slow sort change", async () => {
+  it("serves a sort change in place without navigating", async () => {
     mount();
 
     await act(async () => {
@@ -444,7 +301,6 @@ describe("a listing update served in place", () => {
 
     settle();
     expect(pendingFetch).not.toBeNull();
-    expect(skeletons()).toBe(0);
     expect(names(host)).toEqual(["Alpine Jacket", "Harbour Pump"]);
 
     await act(async () => {
@@ -452,10 +308,9 @@ describe("a listing update served in place", () => {
     });
 
     expect(names(host)).toEqual(["Cadex Wheel"]);
-    expect(skeletons()).toBe(0);
   });
 
-  it("raises no full-page skeleton for a slow in-stock toggle", async () => {
+  it("serves an in-stock toggle in place without navigating", async () => {
     mount();
 
     await act(async () => {
@@ -468,6 +323,5 @@ describe("a listing update served in place", () => {
 
     expect(push).not.toHaveBeenCalled();
     settle();
-    expect(skeletons()).toBe(0);
   });
 });

@@ -21,10 +21,7 @@ const PostCard = ({
   const decodedTitle = decodeHtmlEntities(title);
   const href = resolvePostHref(uri, postsBasePath);
   return (
-    // `skeleton="post"` because the article skeleton cannot be derived from this
-    // href: the blog base is the store's WordPress Posts-page slug, which is
-    // server data. See `lib/navigation-skeleton-target.ts`.
-    <InstantLink href={href} skeleton="post" className="block group">
+    <InstantLink href={href} className="block group">
       <div className="relative aspect-video w-full overflow-hidden rounded-brand bg-gray-100">
         {image && (
           <Image

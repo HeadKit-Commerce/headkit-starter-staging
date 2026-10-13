@@ -26,7 +26,7 @@
  * `collectionPathFromSegments` in `lib/canonical-path.ts`) and the RECOGNISERS,
  * which decide whether a path is a category listing by matching exactly what
  * those emit — the navigation skeleton's target test
- * (`lib/navigation-skeleton-target.ts`), the proxy's canonical-redirect gate
+ *, the proxy's canonical-redirect gate
  * (`lib/canonical-redirect-request.ts`, and so `proxy.ts`, which is why this
  * file must stay dependency-free) and the CMS-menu href rewrite
  * (`lib/menu-canonical-href.ts`).

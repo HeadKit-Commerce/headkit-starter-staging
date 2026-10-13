@@ -63,17 +63,7 @@ const clientSchema = z.object({
   // Partial Prefetching is always on. A link omits `prefetch` unless the caller
   // passes it. Product cards and the nav pass `prefetch={true}`.
   //   NEXT_PUBLIC_NAV_MOUSEDOWN — start an in-app navigation on `mousedown`.
-  //   NEXT_PUBLIC_NAVIGATION_SKELETON — draw a full-page skeleton while a
-  //     navigation is pending.
-  //
-  // Declared here because this is where the full variable set is documented; the
-  // values are READ in `lib/nav-interaction-flags.ts`, which is the one place the
-  // rule lives and which states why the reads cannot come through this module.
-  //
-  // Deliberately NOT a z.enum: an unrecognised value must be accepted and mean off,
-  // not fail the store's boot.
   NEXT_PUBLIC_NAV_MOUSEDOWN: z.string().optional(),
-  NEXT_PUBLIC_NAVIGATION_SKELETON: z.string().optional(),
   // WHEN the marketing tag stack (GTM / Klaviyo / HubSpot) loads. Unlike the
   // three switches above this one DEFAULTS ON — unset means the new, deferred
   // schedule (wait for `load`, then idle) — and an explicit "true" / "1" /
@@ -214,8 +204,6 @@ function createEnv(): ClientEnv & Partial<ServerEnv> {
         : undefined,
     NEXT_PUBLIC_NAV_MOUSEDOWN:
       process.env.NEXT_PUBLIC_NAV_MOUSEDOWN || undefined,
-    NEXT_PUBLIC_NAVIGATION_SKELETON:
-      process.env.NEXT_PUBLIC_NAVIGATION_SKELETON || undefined,
     NEXT_PUBLIC_THIRD_PARTY_EAGER:
       process.env.NEXT_PUBLIC_THIRD_PARTY_EAGER || undefined,
   });

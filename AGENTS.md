@@ -983,45 +983,7 @@ the declarations live in `lib/env.ts`.
   `useRouter().push()`, so `replace`/`scroll`/`onNavigate`/`useLinkStatus` and any injected
   `onClick` behave as they do on a real click, and the component stays renderable with no
   app-router context.
-- **`NEXT_PUBLIC_NAVIGATION_SKELETON`** — the full-page skeleton for a pending navigation.
 
-### A navigation skeleton is REQUESTED by a gesture and DRAWN by one host
-
-Two raisers, one renderer. `InstantLink` requests from its own event handler, and
-`CollectionProvider` requests from a transition that wraps ONLY the filter-path `router.push`.
-Neither renders the skeleton and neither withdraws its request: `NavigationSkeletonHost` (mounted
-once in `app/layout.tsx`, behind the switch, outside `{children}`) owns the whole lifetime and
-ends a request when the route commits, or at a 15 s ceiling.
-
-Three rules hold it together, each of which cost a measured failure on the fork this came from:
-
-- **Request from a handler, never from a render or an effect.** A container that dismisses on
-  click unmounts the link ~160 ms after the press, which is before the 400 ms threshold, and the
-  superseded render means `useLinkStatus()` never reports `pending` there at all. A function call
-  in a handler always runs.
-- **Only something that OBSERVED the navigation end may end the request.** An effect cleanup
-  cannot tell "the navigation finished" from "my container closed", so there is no release call
-  anywhere — see `lib/navigation-skeleton-store.ts`.
-- **The host reads `window.location.pathname` inside an effect, never `usePathname()`.** Next
-  treats that hook as URL data during prerender and suspends on a route whose params are not
-  enumerated; from the root layout there is no boundary to give it, because a boundary there
-  re-opens the soft 404 (see "Setting a status code needs THREE conditions").
-- **The overlay NEVER covers the header, and that is geometry rather than z-order.** The header
-  is a layout element that survives every client navigation, so painting over it is what makes a
-  shopper report the header "reloading" on every press — the complaint that produced this rule on
-  2026-09-25. Its top is the header's LIVE bottom edge, published as a CSS custom property by
-  `NavigationBar`'s existing scroll/resize measurement and read through `lib/header-bottom.ts`;
-  never take a second measurement, and never freeze one at mount (that froze strip was the defect
-  behind the earlier `top: 0`). The document-level press swallow exempts the marked header region
-  for the same reason: a visible, dead header is worse than a hidden one. `z-50` is deliberate —
-  dropping below the nav's `z-20` would also drop below the PDP sticky bar (`z-40`) and the
-  consent banner (`z-[45]`), which are page content and would then float over the skeleton.
-
-Which body a route gets is decided in ONE place, `lib/navigation-skeleton-target.ts`: a table of
-predicates written against the app's own URL builders, plus an opt-out set. A kind a URL cannot
-carry is THREADED instead — `"post"` comes from the post cards' `skeleton` prop, because the blog
-base is per-store server data. None of this is server-rendered, so no route, `loading.tsx` or
-`<Suspense>` is involved and the 404/308 gates are untouched.
 
 ### `images.minimumCacheTTL` is env-driven, and there is one escape from it
 

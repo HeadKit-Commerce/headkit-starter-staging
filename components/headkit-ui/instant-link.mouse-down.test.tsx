@@ -109,9 +109,6 @@ beforeEach(() => {
   // A previous example may have committed an optimistic URL. Every example
   // starts from the page the shopper is leaving.
   window.history.replaceState(null, "", "/");
-  // Both switches declared, never inherited: a suite that reads the process's
-  // value passes or fails on how it was launched.
-  vi.stubEnv("NEXT_PUBLIC_NAVIGATION_SKELETON", undefined);
 });
 
 afterEach(() => {

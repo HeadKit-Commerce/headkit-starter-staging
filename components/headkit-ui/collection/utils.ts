@@ -3,11 +3,15 @@ import type {
   ProductCategoryDetail,
   ProductFilters,
 } from "@headkit/sdk";
-import { COLOR_ATTR_SLUGS, isColorAttrSlug } from "@/lib/color-attr-slug";
+import {
+  COLOR_ATTR_SLUGS,
+  isColorAttrSlug,
+  toAttributeKey,
+} from "@/lib/color-attr-slug";
 import { decodeHtmlEntities } from "@/lib/utils";
 import { COLLECTION_PATH_PREFIX } from "@/lib/route-prefixes";
 
-export { isColorAttrSlug };
+export { isColorAttrSlug, toAttributeKey };
 
 export const SortKey = {
   FEATURED: "FEATURED",
@@ -404,6 +408,21 @@ export function deriveFilterValues(
   const priceMax = searchParams.get("price_max");
   if (priceMax) vals.price_max = priceMax;
   return vals;
+}
+
+
+/**
+ * Resolve the active search term after hydration.
+ * Prefer `?q=` from the URL; fall back to the server prop (usually empty on
+ * the static `/search` shell).
+ */
+export function searchTermFromQuery(
+  serverSearch: string | undefined,
+  searchParams: URLSearchParams,
+): string {
+  const q = searchParams.get("q")?.trim() ?? "";
+  if (q) return q;
+  return serverSearch ?? "";
 }
 
 /** Query string with nothing in it — the server's view of the world. */

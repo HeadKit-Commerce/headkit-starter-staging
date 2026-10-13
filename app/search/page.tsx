@@ -1,144 +1,164 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Suspense } from "react";
-import { headkit as sdk } from "@/lib/sdk";
+import { cacheLife, cacheTag } from "next/cache";
 import { getCatalogFilters } from "@/lib/catalog-filters";
 import { CollectionHeader } from "@/components/headkit-ui/collection/collection-header";
-import { CollectionPage } from "@/components/headkit-ui/collection/collection-page";
-import { buildProductListFilter } from "@/components/headkit-ui/collection/utils";
-import type { SortKeyType } from "@/components/headkit-ui/collection/utils";
-import { BreadcrumbJsonLD } from "@/components/seo/breadcrumb-json-ld";
 import { CollectionProductsSkeleton } from "@/components/headkit-ui/skeletons/collection-page-skeleton";
+import { CollectionPage } from "@/components/headkit-ui/collection/collection-page";
+import {
+  buildProductListFilter,
+  DEFAULT_FILTER_VALUES,
+} from "@/components/headkit-ui/collection/utils";
+import { BreadcrumbJsonLD } from "@/components/seo/breadcrumb-json-ld";
 import { CATALOG_PAGE_SIZE } from "@/components/headkit-ui/catalog-grid";
-
-interface Props {
-  searchParams: Promise<Record<string, string>>;
-}
+import { getCachedCatalogPage } from "@/lib/catalog-cache";
+import { getBranding } from "@/lib/branding";
+import { makeSeoMetadata, storefrontUrl } from "@/lib/make-metadata";
 
 const PER_PAGE = CATALOG_PAGE_SIZE;
 
-export async function generateMetadata({
-  searchParams,
-}: Props): Promise<Metadata> {
-  const sp = await searchParams;
-  const q = sp.q ?? "";
+const SEARCH_DESCRIPTION =
+  "Search the product catalog by name or keyword. Filter matches by category, price, and availability.";
 
-  if (!q) {
-    return {
+const SEARCH_BREADCRUMBS = [
+  { name: "Home", uri: "/", current: false },
+  { name: "Search", uri: "/search", current: true },
+] as const;
+
+/**
+ * Metadata does not read `searchParams`. Awaiting `?q=` opted this route out
+ * of the static shell, and the query string is disallowed in robots.txt, so
+ * the canonical document is the bare `/search` URL.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  try {
+    const { storeSettings, seoSettings, branding } = await getBranding();
+    return await makeSeoMetadata(null, {
       title: "Search",
-      description: "Search for products in our store",
-    };
+      description: SEARCH_DESCRIPTION,
+      storeName: storeSettings.name ?? undefined,
+      allowIndexing: seoSettings.allowIndexing,
+      canonical: storefrontUrl("/search", storeSettings.domain),
+      siteUrl: storeSettings.domain,
+      dashboardOgImageUrl: seoSettings.ogImageUrl ?? undefined,
+      brandingIconUrl: branding?.iconUrl ?? undefined,
+    });
+  } catch {
+    return await makeSeoMetadata(null, {
+      title: "Search",
+      description: SEARCH_DESCRIPTION,
+      canonical: storefrontUrl("/search"),
+    });
   }
-
-  return {
-    title: `Search results for "${q}"`,
-    description: `Search for "${q}" in our store`,
-  };
 }
 
 /**
- * Dynamic island: awaits searchParams inside Suspense so Instant Navigation
- * can show the static Search shell immediately.
+ * Aggregated facet options for the search shell.
+ *
+ * `"use cache: remote"`, not plain `"use cache"`: the plain directive is a
+ * per-instance in-memory LRU that does not persist across requests in
+ * serverless, so this store-wide `product-filters` read — ~12 s of WordPress
+ * aggregation on a large catalogue — was re-executed on every `/search` view
+ * and measured 14.4–17.1 s, all of it in the streamed tail behind a cache
+ * header reading HIT.
  */
-async function SearchResults({ searchParams }: Props): Promise<ReactNode> {
-  const sp = await searchParams;
-  const q = sp.q ?? "";
-  const page = sp.page ? parseInt(sp.page) : 1;
+async function getSearchFilters() {
+  "use cache: remote";
+  cacheLife("hours");
+  cacheTag("headkit:products");
+  return getCatalogFilters();
+}
 
-  const categories = sp.categories?.split(",").filter(Boolean) ?? [];
-  const brands = sp.brands?.split(",").filter(Boolean) ?? [];
-  const instock = sp.instock === "true";
-  const sort = (sp.sort ?? "") as SortKeyType | "";
-  const attributes: Record<string, string[]> = {};
+/**
+ * Instant Navigation (Next.js 16.3): sync default export. Page 1 of the
+ * catalog is in the HTML for the bare URL. `?q=` is copied into the grid on
+ * mount (`searchTermFromQuery`) — reading it on the server kept the document
+ * open until an uncached `collections.list` finished, which is what a crawler
+ * records as a slow page even when the edge cache says HIT. The catalog stays
+ * hidden on `?q=` until that fetch commits, so it is not shown and then
+ * replaced.
+ */
+export const instant = true;
+export const ensureStatic = "navigation";
 
-  // /search defaults to closest match (WP relevance), not branding sort.
-  const filter = buildProductListFilter(
-    {
-      categories,
-      brands,
-      attributes,
-      instock,
-      sort,
-      page,
-    },
-    { search: q },
-  );
-  if (q && !sort) {
-    filter.orderby = "relevance";
-    filter.order = "desc";
-  }
-
-  const [productsResult, productFilter] = await Promise.all([
-    sdk.collections.list(filter, page, PER_PAGE),
-    getCatalogFilters(),
-  ]);
-
-  const title = q ? `Search results for "${q}"` : "Search products";
-  const description = q
-    ? `${productsResult.total} product${productsResult.total === 1 ? "" : "s"} found for "${q}"`
-    : "Search for products in our store";
-
+export default function Page(): ReactNode {
   return (
     <>
+      <BreadcrumbJsonLD
+        items={SEARCH_BREADCRUMBS.map((crumb) => ({
+          name: crumb.name,
+          href: crumb.uri,
+        }))}
+      />
       <CollectionHeader
-        name={title}
-        description={description}
-        breadcrumbs={[
-          { name: "Home", uri: "/", current: false },
-          { name: "Search", uri: "/search", current: true },
-        ]}
+        name="Search"
+        description={SEARCH_DESCRIPTION}
+        breadcrumbs={[...SEARCH_BREADCRUMBS]}
         childBasePath="/collections"
       />
+      <SearchQueryShell />
+      <SearchProductsShell />
+    </>
+  );
+}
+
+const SEARCH_QUERY_CSS =
+  "[data-search-skeleton]{display:none}" +
+  "html[data-search-query] [data-search-skeleton]{display:block}" +
+  "html[data-search-query] [data-search-catalog]{display:none}";
+
+/**
+ * Hides the prerendered catalog on `/search?q=` before the browser paints it.
+ *
+ * The script runs while the document is parsing, ahead of the product grid.
+ * Soft navigations from the header search set the same attribute in
+ * `CollectionProvider` before paint. Bare `/search` never sets it, so the
+ * cached catalog stays the canonical document.
+ */
+function SearchQueryShell() {
+  return (
+    <>
+      {/* Parser-blocking on purpose: next/script would run after first paint. */}
+      {/* eslint-disable-next-line react/no-danger */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html:
+            '(function(){try{var q=new URLSearchParams(location.search).get("q");if(q&&q.trim())document.documentElement.setAttribute("data-search-query","1")}catch(e){}})();',
+        }}
+      />
+      <style>{SEARCH_QUERY_CSS}</style>
+      <div data-search-skeleton="">
+        <CollectionProductsSkeleton />
+      </div>
+    </>
+  );
+}
+
+/**
+ * Unfiltered page 1, cached with the shop catalog. A query is not part of
+ * this shell: `CollectionProvider` refetches when `?q=` is present, and
+ * `SearchQueryShell` keeps this grid hidden until that fetch commits.
+ * Scoped as `shop` so product and shop-landing invalidation cover it without
+ * a new route-tag union member.
+ */
+async function SearchProductsShell() {
+  const filter = buildProductListFilter({
+    ...DEFAULT_FILTER_VALUES,
+    page: 1,
+  });
+  const [productsResult, productFilter] = await Promise.all([
+    getCachedCatalogPage(filter, 1, PER_PAGE, { kind: "shop" }),
+    getSearchFilters(),
+  ]);
+  return (
+    <div data-search-catalog="">
       <CollectionPage
         initialProducts={productsResult.products}
         initialTotal={productsResult.total}
         productFilter={productFilter}
-        initialPage={page}
+        initialPage={1}
         itemsPerPage={PER_PAGE}
-        {...(q ? { search: q } : {})}
       />
-    </>
-  );
-}
-
-/**
- * Sync shell — Instant Navigation reuses this App Shell; query-dependent
- * header + grid stream under Suspense with a product skeleton fallback.
- */
-
-/**
- * Instant Navigation (Next.js 16.3) — sync App Shell + Suspense streaming.
- * @see https://nextjs.org/docs/app/guides/instant-navigation
- */
-export const instant = true;
-
-export default function Page({ searchParams }: Props): ReactNode {
-  return (
-    <>
-      <BreadcrumbJsonLD
-        items={[
-          { name: "Home", href: "/" },
-          { name: "Search", href: "/search" },
-        ]}
-      />
-      <Suspense
-        fallback={
-          <>
-            <CollectionHeader
-              name="Search"
-              description="Search for products in our store"
-              breadcrumbs={[
-                { name: "Home", uri: "/", current: false },
-                { name: "Search", uri: "/search", current: true },
-              ]}
-              childBasePath="/collections"
-            />
-            <CollectionProductsSkeleton />
-          </>
-        }
-      >
-        <SearchResults searchParams={searchParams} />
-      </Suspense>
-    </>
+    </div>
   );
 }

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRef, type ComponentProps, type ReactNode } from "react";
 import { convertToRelativePath, isAppNavigationHref } from "@/lib/convert-uri";
-import type { NavigationSkeletonKind } from "@/lib/navigation-skeleton-target";
 import { navMouseDownEnabled } from "@/lib/nav-interaction-flags";
 import { cn } from "@/lib/utils";
 
@@ -12,16 +11,10 @@ type PendingVariant = "card" | "text";
 type InstantLinkProps = Omit<ComponentProps<typeof Link>, "prefetch"> & {
   /**
    * Accepted so existing call sites keep typechecking. The clicked link does
-   * not paint a pending state. The destination route's `loading.tsx` is the
-   * skeleton, and only when that page is not ready.
+   * not paint a pending state. The destination route's `loading.tsx` is shown
+   * when that page is not ready.
    */
   pendingVariant?: PendingVariant;
-  /**
-   * Accepted so existing call sites keep typechecking. The destination
-   * route's `loading.tsx` chooses the skeleton. This prop is not a second
-   * overlay on the page the shopper is leaving.
-   */
-  skeleton?: NavigationSkeletonKind | null | undefined;
   /**
    * Widened from `next/link`'s own `boolean | 'auto' | null`, which under this
    * repo's `exactOptionalPropertyTypes` rejects an explicit `undefined`. Callers
@@ -131,7 +124,7 @@ export function mouseDownNavigationRefusal(event: {
  * Next.js 16.3 Instant Navigation link.
  *
  * Prefetch-on-intent and mouse-down navigation stay. The clicked link does
- * not paint its own skeleton: the destination route's `loading.tsx` is shown
+ * not paint its own pending state — the destination route's `loading.tsx` is shown
  * only when that page is not already ready. `lib/nav-interaction-flags.ts`
  * owns the mouse-down switch. Prefetch is whatever the caller passed;
  * an omitted prop is Next's `'auto'`.
@@ -231,7 +224,6 @@ function commitOptimisticUrl(
 export function InstantLink({
   prefetch,
   pendingVariant: _pendingVariant = "card",
-  skeleton: _skeleton,
   className,
   children,
   href,

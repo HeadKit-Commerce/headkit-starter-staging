@@ -16,9 +16,7 @@
  * times a second; as a custom property on `<html>` the browser re-resolves the
  * `top` of anything reading it with no React work at all, which is what makes the
  * offset TRACK the header instead of freezing at its mounted value. That freeze is
- * the specific defect that sank the first attempt at a header-aware navigation
- * skeleton on the fork (measured once on mount, so any scroll afterwards slid the
- * old page through the uncovered strip); see `navigation-skeleton.tsx`.
+ * the specific defect that sank an earlier overlay that froze its top at mount.
  *
  * The fallback in {@link headerBottomCssValue} is the nav's own default height, so
  * a consumer that renders before the first publish starts under a header-sized
@@ -61,17 +59,7 @@ export function publishHeaderBottom(bottom: number): void {
   );
 }
 
-/**
- * Marks the header region — the preheader and the sticky nav — for code that must
- * treat a press there differently from a press on the page below.
- *
- * Its one consumer is the navigation skeleton's press-swallowing listener, which is
- * document-level and would otherwise deaden the header the overlay no longer
- * covers. Containment is used rather than a pointer coordinate because a mega-menu
- * panel hangs BELOW the header's bottom edge — under the overlay, and correctly
- * swallowed — and because a keyboard-dispatched `click` carries no usable
- * coordinate.
- */
+/** Marks the sticky header region for layout consumers. */
 export const HEADER_REGION_ATTRIBUTE = "data-headkit-header";
 
 /** Selector form of {@link HEADER_REGION_ATTRIBUTE}, for `closest()`. */

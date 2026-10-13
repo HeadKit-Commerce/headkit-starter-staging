@@ -9,9 +9,7 @@ interface CollectionPageSkeletonProps {
    * Pulse the placeholders. Off by default, and every server caller leaves it
    * that way — see the note below on why the RSC shells stay static.
    *
-   * `NavigationSkeleton` turns it ON: that overlay is drawn by the browser over a
-   * page the shopper is waiting on, where a motionless grey screen reads as a
-   * frozen one, and it costs no RSC bytes because it is never server-rendered.
+   * Client callers that want a pulse (e.g. in-grid pending rows) turn it ON.
    */
   animated?: boolean;
 }
@@ -22,8 +20,7 @@ interface CollectionPageSkeletonProps {
  * Mirrors CollectionHeader + optional subcategory strip + filter bar + product
  * grid proportions so first paint / IN transitions don't jump when content
  * streams in. Kept static (no `animate-pulse`) by default so CDN-sealed RSC HTML
- * stays lean; `animated` is the one caller that wants the pulse, and it is the
- * client-side navigation overlay, which is never server-rendered.
+ * stays lean; pass `animated` when a client pending cue should pulse.
  *
  * @see https://nextjs.org/docs/app/guides/adopting-partial-prefetching
  */

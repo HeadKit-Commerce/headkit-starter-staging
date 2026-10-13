@@ -133,12 +133,6 @@ export function PostCard({
     return (
       <InstantLink
         href={href}
-        // The post-article skeleton cannot be derived from this href: the blog
-        // base is the store's WordPress Posts-page slug, which is server data.
-        // `postsBasePath` is that data, already resolved for the href above, so
-        // the kind is threaded from here — the escape hatch
-        // `lib/navigation-skeleton-target.ts` documents.
-        skeleton="post"
         className={cn("block", className)}
       >
         {body}
