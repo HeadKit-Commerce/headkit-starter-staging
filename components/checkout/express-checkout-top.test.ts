@@ -3,7 +3,7 @@ import { CheckoutFormStepEnum } from "@/components/checkout/utils";
 import {
   hasAvailableWallet,
   shouldMountExpressCheckout,
-} from "./express-checkout-top";
+} from "./express-checkout-mount";
 
 /**
  * The wallet-availability gate behind the "Express checkout" heading and the
@@ -80,7 +80,30 @@ describe("shouldMountExpressCheckout", () => {
     expect(shouldMountExpressCheckout(CheckoutFormStepEnum.ADDRESS)).toBe(true);
   });
 
-  it("stays mounted on Payment so Express and Payment Element wallets can both show", () => {
+  it("stays mounted on Payment (Express is PI ECE; PE wallets are hidden)", () => {
     expect(shouldMountExpressCheckout(CheckoutFormStepEnum.PAYMENT)).toBe(true);
+  });
+
+  it("hides Express when Click & Collect is selected", () => {
+    expect(
+      shouldMountExpressCheckout(CheckoutFormStepEnum.CONTACT, {
+        needsShipping: true,
+        shippingRates: [
+          {
+            packageId: "0",
+            name: "Shipping",
+            shippingRates: [
+              {
+                rateId: "pickup_location:1",
+                name: "Pickup",
+                price: "0",
+                taxes: "0",
+                selected: true,
+              },
+            ],
+          },
+        ],
+      }),
+    ).toBe(false);
   });
 });

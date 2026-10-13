@@ -28,6 +28,7 @@ import {
   ExpressCheckoutTop,
   shouldMountExpressCheckout,
 } from "@/components/checkout/express-checkout-top";
+// ExpressCheckoutTop mounts OUTSIDE CheckoutElementsProvider (PI Elements).
 import { useCartContext } from "@/components/headkit-ui/cart-context";
 import type { CheckoutSessionProp } from "@/app/checkout/checkout-page-content";
 import {
@@ -722,19 +723,8 @@ function CheckoutSteps({
 
   return (
     <>
-      {/* Express/wallet checkout (Apple Pay / Google Pay / Link) — the single
-          ExpressCheckoutElement instance, mounted at the top through Contact,
-          Delivery, Address, and Payment. Checkout Session Payment Element also
-          keeps wallets on `auto`, so Apple Pay can appear in both places
-          (Shopify / Stripe hosted checkout). Stripe allows only ONE ECE per
-          CheckoutProvider. Rendered from CheckoutSteps so confirm-time
-          dead-session can reach handleSessionExpired (ENG-784). */}
-      {shouldMountExpressCheckout(currentStep) ? (
-        <ExpressCheckoutTop
-          sessionId={sessionId}
-          onSessionExpired={handleSessionExpired}
-        />
-      ) : null}
+      {/* Express is mounted OUTSIDE CheckoutElementsProvider (see CheckoutForm
+          root) on a Payment Intents Elements tree — not here. */}
       <div className="space-y-2">
         {/* Step 1: Contact */}
         <AccordionWrapper
@@ -1093,58 +1083,64 @@ export function CheckoutForm({
     );
   }
 
+  const showExpress =
+    !!cartData &&
+    shouldMountExpressCheckout(CheckoutFormStepEnum.CONTACT, cartData);
+
   return (
-    <CheckoutElementsProvider
-      key={checkoutSession.sessionId}
-      stripe={stripePromise}
-      options={{
-        adaptivePricing: {
-          allowed: true,
-        },
-        clientSecret: checkoutSession.clientSecret,
-        // ENG-801 (quick-260714-n0w): provider-level email prefill. Stripe's
-        // custom-checkout best practice: `defaultValues.email` prefills the
-        // ContactDetailsElement AND initiates Link auth, and stays MUTABLE
-        // (unlike `customer_email` at create, which render-locks the field —
-        // sessions are still created email-LESS). The provider mounts once
-        // per session (keyed by sessionId above), so this covers (a) first
-        // paint when the server resolved an email (page.tsx
-        // `resolveCheckoutEmail` — the reload path carries the cart billing
-        // email server-side) and (b) the recreate path (remount with
-        // `restoredEmail`). Residual gap: an email that only arrives via the
-        // ASYNC getFullCartAction fill inside CheckoutSteps AFTER provider
-        // mount is missed here — the contact submit's update-email branch
-        // and the bounded session-email push are the safety nets. Uses the
-        // per-session FROZEN prefill (see `frozenPrefill` above) so option
-        // drift can never feed Stripe a stale email. Spread conditionally:
-        // the key is optional + exactOptionalPropertyTypes.
-        // ENG-783 fix2: NEVER pass defaultValues.email for an AUTHED shopper.
-        // `defaultValues.email` makes stripe.js internally call updateEmail at
-        // element init; when the session was created with a bound customer
-        // that has an email (logged-in reuse path) the API rejects it with
-        // IntegrationError "You cannot update the email because a
-        // `customer_email` or `customer` with an email is already set on the
-        // Checkout Session." — and that rejection fans out as `loaderror` on
-        // ALL elements and kills useCheckout (dead checkout). Empirical
-        // harness proved defaultValues.email × customer-with-email is the
-        // ONLY failing combination (bound customer alone loads fine). For
-        // authed shoppers the prefill is also redundant: an email-ful bound
-        // customer prefills the session's own email into the element; a
-        // first-time authed session lets the shopper type into the element.
-        // Guest prefill (restore-email flow, ENG-801) stays unchanged.
-        ...(sessionPrefillEmail && !isAuthenticated
-          ? { defaultValues: { email: sessionPrefillEmail } }
-          : {}),
-        elementsOptions,
-      }}
-    >
-      <CheckoutActionsProvider>
-        <CheckoutDebugRegistrar session={checkoutSession} />
-        <div className="px-[20px] md:px-[40px] mx-auto grid grid-cols-12 gap-[20px]">
-          {/* Checkout form — left on desktop. The single ExpressCheckoutElement
-              is rendered INSIDE CheckoutSteps (top of its output) so its
-              dead-session recovery can reach handleSessionExpired (ENG-784). */}
-          <div className="order-2 md:order-1 col-span-12 md:col-span-6">
+    <div className="px-[20px] md:px-[40px] mx-auto grid grid-cols-12 gap-[20px]">
+      <div className="order-2 md:order-1 col-span-12 md:col-span-6">
+        {/* PI Express — OUTSIDE CheckoutElementsProvider so it does not wait
+            on useCheckout() and can use shippingaddresschange. */}
+        {showExpress && cartData ? (
+          <ExpressCheckoutTop stripePromise={stripePromise} cart={cartData} />
+        ) : null}
+        <CheckoutElementsProvider
+          key={checkoutSession.sessionId}
+          stripe={stripePromise}
+          options={{
+            adaptivePricing: {
+              allowed: true,
+            },
+            clientSecret: checkoutSession.clientSecret,
+            // ENG-801 (quick-260714-n0w): provider-level email prefill. Stripe's
+            // custom-checkout best practice: `defaultValues.email` prefills the
+            // ContactDetailsElement AND initiates Link auth, and stays MUTABLE
+            // (unlike `customer_email` at create, which render-locks the field —
+            // sessions are still created email-LESS). The provider mounts once
+            // per session (keyed by sessionId above), so this covers (a) first
+            // paint when the server resolved an email (page.tsx
+            // `resolveCheckoutEmail` — the reload path carries the cart billing
+            // email server-side) and (b) the recreate path (remount with
+            // `restoredEmail`). Residual gap: an email that only arrives via the
+            // ASYNC getFullCartAction fill inside CheckoutSteps AFTER provider
+            // mount is missed here — the contact submit's update-email branch
+            // and the bounded session-email push are the safety nets. Uses the
+            // per-session FROZEN prefill (see `frozenPrefill` above) so option
+            // drift can never feed Stripe a stale email. Spread conditionally:
+            // the key is optional + exactOptionalPropertyTypes.
+            // ENG-783 fix2: NEVER pass defaultValues.email for an AUTHED shopper.
+            // `defaultValues.email` makes stripe.js internally call updateEmail at
+            // element init; when the session was created with a bound customer
+            // that has an email (logged-in reuse path) the API rejects it with
+            // IntegrationError "You cannot update the email because a
+            // `customer_email` or `customer` with an email is already set on the
+            // Checkout Session." — and that rejection fans out as `loaderror` on
+            // ALL elements and kills useCheckout (dead checkout). Empirical
+            // harness proved defaultValues.email × customer-with-email is the
+            // ONLY failing combination (bound customer alone loads fine). For
+            // authed shoppers the prefill is also redundant: an email-ful bound
+            // customer prefills the session's own email into the element; a
+            // first-time authed session lets the shopper type into the element.
+            // Guest prefill (restore-email flow, ENG-801) stays unchanged.
+            ...(sessionPrefillEmail && !isAuthenticated
+              ? { defaultValues: { email: sessionPrefillEmail } }
+              : {}),
+            elementsOptions,
+          }}
+        >
+          <CheckoutActionsProvider>
+            <CheckoutDebugRegistrar session={checkoutSession} />
             <CheckoutSteps
               sessionId={checkoutSession.sessionId}
               pickupLocationsFromApi={pickupLocationsFromApi}
@@ -1166,13 +1162,12 @@ export function CheckoutForm({
               })}
               {...(onRefreshSession && { onRefreshSession })}
             />
-          </div>
-          {/* Cart sidebar — right on desktop, collapsible on mobile */}
-          <div className="order-1 md:order-2 col-span-12 md:col-start-7 md:col-span-6 lg:col-start-8 lg:col-span-5">
-            {cartSidebar}
-          </div>
-        </div>
-      </CheckoutActionsProvider>
-    </CheckoutElementsProvider>
+          </CheckoutActionsProvider>
+        </CheckoutElementsProvider>
+      </div>
+      <div className="order-1 md:order-2 col-span-12 md:col-start-7 md:col-span-6 lg:col-start-8 lg:col-span-5">
+        {cartSidebar}
+      </div>
+    </div>
   );
 }

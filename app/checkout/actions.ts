@@ -95,6 +95,23 @@ export async function createCheckoutSessionAction(
 }
 
 /**
+ * Creates a Stripe PaymentIntent for the current cart (Express / Apple Pay).
+ * Used only by the Payment Intents Express Checkout Element — Payment Element
+ * stays on Checkout Sessions. Amount is the authoritative cart total after
+ * in-sheet shipping updates.
+ */
+export async function createPaymentIntentAction() {
+  const cartToken = await getCartToken();
+  if (!cartToken) throw new Error("No active cart session.");
+  const authToken = getAuthToken(await cookies());
+  return createServerHeadkit(
+    cartToken,
+    undefined,
+    authToken,
+  ).payments.createIntent();
+}
+
+/**
  * Records the given Stripe Checkout Session as the shopper's ACTIVE session
  * (ENG-784 mechanism 1). Client-invoked by design: `cookies().set()` is
  * illegal during an RSC render, so the checkout page registers the session
