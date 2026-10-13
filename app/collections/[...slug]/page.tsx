@@ -568,6 +568,9 @@ export async function CollectionRoute({
         filterSlug={filterSlug}
         categoryBasePath={categoryBasePath}
         preferHeaderLcp={preferHeaderLcp}
+        defaultCollectionSort={
+          branding.defaultCollectionSort as SortKeyType
+        }
       />
     </>
   );
@@ -577,9 +580,11 @@ export async function CollectionRoute({
  * Page 1 of the grid, filtered by the PATH facet only, rendered in the static
  * shell — no `<Suspense>` above it anywhere on this route.
  *
- * Both of its reads (`getBranding`, `getCachedCatalogPage`) are `"use cache"`,
- * and it awaits no `searchParams`, so the whole route still prerenders. Those
- * two properties are what the shell placement costs, and neither is optional:
+ * Its catalog read (`getCachedCatalogPage`) is `"use cache"`, and it awaits no
+ * `searchParams`, so the whole route still prerenders. Default sort is passed
+ * in from `CollectionRoute`'s branding read so the shell does not serialise
+ * behind a second `getBranding()`. Those properties are what the shell
+ * placement costs, and neither is optional:
  *
  *   - A request-time read here (`searchParams`, `cookies()`, `headers()`, an
  *     uncached fetch) with no boundary turns the route DYNAMIC — `ƒ`, 0-byte
@@ -607,12 +612,15 @@ async function CollectionProductsShell({
   filterSlug,
   categoryBasePath,
   preferHeaderLcp = false,
+  defaultCollectionSort,
 }: {
   categorySlug: string;
   productFilter: ProductFilters;
   filterSlug: string | undefined;
   categoryBasePath: string;
   preferHeaderLcp?: boolean;
+  /** From the parent route's branding read — avoids a serial await before catalog. */
+  defaultCollectionSort: SortKeyType;
 }) {
   const decoded = filterSlug ? decodeFilterSlug(filterSlug) : undefined;
   const initialFilterValues =
@@ -622,7 +630,8 @@ async function CollectionProductsShell({
   const initialBrands =
     decoded && decoded.brands.length > 0 ? decoded.brands : undefined;
 
-  const { branding } = await getBranding();
+  // Sort comes from CollectionRoute's branding await — do not re-await
+  // getBranding() here or the catalog page stays behind a cold branding path.
   const filter = buildProductListFilter(
     {
       ...DEFAULT_FILTER_VALUES,
@@ -632,7 +641,7 @@ async function CollectionProductsShell({
     },
     {
       categorySlug,
-      defaultSort: branding.defaultCollectionSort as SortKeyType,
+      defaultSort: defaultCollectionSort,
     },
   );
 

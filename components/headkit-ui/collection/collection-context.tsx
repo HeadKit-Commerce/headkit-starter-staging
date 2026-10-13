@@ -44,6 +44,8 @@ interface CollectionContextType {
   clearFilters: () => void;
   loadMore: () => void;
   loadPrevious: () => void;
+  /** Warm the next page without committing — near-end prefetch (not on entry). */
+  prefetchNextPage: () => void;
   productFilter: ProductFilters;
   /** True on /new — sort default is newest-first, not branding. */
   isNew: boolean;
@@ -76,6 +78,22 @@ interface CollectionProviderProps {
 }
 
 const CollectionContext = createContext<CollectionContextType | null>(null);
+
+type PrefetchBuffer = {
+  page: number;
+  products: ProductSummaryFieldsFragment[];
+  total: number;
+};
+
+/** Scroll the listing chrome into view after a full grid replace (sort/filter). */
+function scrollCollectionToTop(): void {
+  const el = document.querySelector<HTMLElement>("[data-headkit-collection]");
+  if (el) {
+    el.scrollIntoView({ block: "start", behavior: "instant" });
+    return;
+  }
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
 
 export function CollectionProvider({
   children,
@@ -146,30 +164,30 @@ export function CollectionProvider({
   const isLoadingRef = useRef(false);
   const isLoadingBeforeRef = useRef(false);
   const isLoadingAfterRef = useRef(false);
-  // Mirrors of the committed product list and its length, read by fetchProducts
-  // (to clamp the total when an "after" page comes back empty) and by
-  // loadMore's guard. Like the loading flags above they are maintained at the
-  // mutation site, not in the render body: `commitProducts` is the only writer
-  // of `products`, and it applies the caller's updater to the LIST MIRROR and
-  // assigns both refs before dispatching the setter, so the refs are current
-  // the moment it returns. Writing them from inside the `setProducts` updater
-  // would defer them to the render pass whenever the fiber already has pending
-  // lanes, and both readers run after an `await`. A render-body write would be
-  // redundant, and a render React discards would write a pre-append count back
-  // over it (react-hooks/refs).
-  const productsRef = useRef(initialProducts);
+  // Synchronous mirror of products.length — written ONLY by commitProducts, never
+  // in render (react-hooks/refs + discarded-render races). See
+  // collection-load-more-count.test.tsx.
   const productsCountRef = useRef(initialProducts.length);
+  const currentPageRef = useRef(initialPage);
+  currentPageRef.current = currentPage;
+  const totalProductsRef = useRef(initialTotal);
+  totalProductsRef.current = totalProducts;
+  const prefetchRef = useRef<PrefetchBuffer | null>(null);
+  const prefetchInFlightRef = useRef<number | null>(null);
 
   const commitProducts = useCallback(
     (
-      next: (
-        prev: ProductSummaryFieldsFragment[],
-      ) => ProductSummaryFieldsFragment[],
+      next:
+        | ProductSummaryFieldsFragment[]
+        | ((
+            prev: ProductSummaryFieldsFragment[],
+          ) => ProductSummaryFieldsFragment[]),
     ) => {
-      const list = next(productsRef.current);
-      productsRef.current = list;
-      productsCountRef.current = list.length;
-      setProducts(list);
+      setProducts((prev) => {
+        const list = typeof next === "function" ? next(prev) : next;
+        productsCountRef.current = list.length;
+        return list;
+      });
     },
     [],
   );
@@ -193,11 +211,25 @@ export function CollectionProvider({
 
   const hasMore = products.length < totalProducts;
 
+  const clearPrefetch = useCallback(() => {
+    prefetchRef.current = null;
+    prefetchInFlightRef.current = null;
+  }, []);
+
+  /**
+   * Sync query/path. Append (Load More) omits `page` so a remount cannot
+   * reinterpret `?page=N` as a single-page window and put Load More under a
+   * short grid. Deep links still set `page` until the shopper appends further.
+   */
   const syncUrl = useCallback(
-    (page: number, filters: FilterValues) => {
+    (
+      page: number,
+      filters: FilterValues,
+      opts?: { omitPage?: boolean },
+    ) => {
       const params = new URLSearchParams();
       if (search) params.set("q", search);
-      if (page > 1) params.set("page", page.toString());
+      if (page > 1 && !opts?.omitPage) params.set("page", page.toString());
       if (filters.categories.length)
         params.set("categories", filters.categories.join(","));
       // Brand is path-encoded (06.1) — NEVER a query param. It rides in the
@@ -234,6 +266,38 @@ export function CollectionProvider({
     [categoryBasePath, pathname, search],
   );
 
+  const buildListFilter = useCallback(
+    (filters: FilterValues) => {
+      const filter = buildProductListFilter(filters, {
+        ...(categorySlug !== undefined ? { categorySlug } : {}),
+        ...(brandSlug !== undefined ? { brandSlug } : {}),
+        ...(onSale !== undefined ? { onSale } : {}),
+        ...(isNew !== undefined ? { isNew } : {}),
+        ...(search !== undefined ? { search } : {}),
+        ...(isNew
+          ? { defaultSort: "CREATED_AT" as SortKeyType }
+          : search
+            ? {}
+            : {
+                defaultSort: defaultCollectionSort as SortKeyType,
+              }),
+      });
+      if (search && !filters.sort?.trim()) {
+        filter.orderby = "relevance";
+        filter.order = "desc";
+      }
+      return filter;
+    },
+    [
+      categorySlug,
+      brandSlug,
+      onSale,
+      isNew,
+      search,
+      defaultCollectionSort,
+    ],
+  );
+
   const fetchProducts = useCallback(
     async (page: number, position: "before" | "after" | "middle") => {
       if (
@@ -253,30 +317,15 @@ export function CollectionProvider({
       } else {
         isLoadingRef.current = true;
         setIsLoading(true);
+        clearPrefetch();
       }
 
       try {
-        const filter = buildProductListFilter(filterValues, {
-          ...(categorySlug !== undefined ? { categorySlug } : {}),
-          ...(brandSlug !== undefined ? { brandSlug } : {}),
-          ...(onSale !== undefined ? { onSale } : {}),
-          ...(isNew !== undefined ? { isNew } : {}),
-          ...(search !== undefined ? { search } : {}),
-          // Route exceptions: /new stays newest-first; /search uses relevance
-          // (applied below). Other catalog routes use branding default.
-          ...(isNew
-            ? { defaultSort: "CREATED_AT" as SortKeyType }
-            : search
-              ? {}
-              : {
-                  defaultSort: defaultCollectionSort as SortKeyType,
-                }),
-        });
-        if (search && !filterValues.sort?.trim()) {
-          filter.orderby = "relevance";
-          filter.order = "desc";
-        }
-        const result = await listCollectionProducts(filter, page, itemsPerPage);
+        const result = await listCollectionProducts(
+          buildListFilter(filterValues),
+          page,
+          itemsPerPage,
+        );
 
         // Empty "after" page means we've exhausted the list — clamp the total
         // so hasMore flips false and the sentinel stops firing.
@@ -294,16 +343,19 @@ export function CollectionProvider({
         setTotalProducts(result.total);
 
         if (position === "middle") {
-          commitProducts(() => result.products);
+          commitProducts(result.products);
           setHasFirstPage(page === 1);
+          syncUrl(page, filterValues);
+          scrollCollectionToTop();
         } else if (position === "before") {
           commitProducts((prev) => [...result.products, ...prev]);
           if (page === 1) setHasFirstPage(true);
+          syncUrl(page, filterValues);
         } else {
           commitProducts((prev) => [...prev, ...result.products]);
+          // Omit page so remount/refresh cannot collapse to a single-page window.
+          syncUrl(page, filterValues, { omitPage: true });
         }
-
-        syncUrl(page, filterValues);
       } catch {
         // Keep the previous product list; loading flags clear in finally so the
         // user can retry via the Load More button.
@@ -322,30 +374,132 @@ export function CollectionProvider({
     },
     [
       filterValues,
-      categorySlug,
-      brandSlug,
-      onSale,
-      isNew,
-      search,
       itemsPerPage,
       syncUrl,
-      defaultCollectionSort,
-      // Stable (empty dep array), so listing it does not widen when
-      // fetchProducts is recreated.
+      buildListFilter,
       commitProducts,
+      clearPrefetch,
+    ],
+  );
+
+  /**
+   * Deep link `?page=N`: keep SSR page 1 and append 2…N so the grid is a
+   * continuous list (Load Previous / short-window Load More never appear).
+   */
+  const hydrateThroughPage = useCallback(
+    async (targetPage: number) => {
+      if (targetPage <= 1) return;
+      if (
+        isLoadingRef.current ||
+        isLoadingBeforeRef.current ||
+        isLoadingAfterRef.current
+      ) {
+        return;
+      }
+      clearPrefetch();
+      isLoadingAfterRef.current = true;
+      setIsLoadingAfter(true);
+      try {
+        const filter = buildListFilter(filterValues);
+        for (let page = 2; page <= targetPage; page++) {
+          const result = await listCollectionProducts(
+            filter,
+            page,
+            itemsPerPage,
+          );
+          if (result.products.length === 0) {
+            setTotalProducts(productsCountRef.current);
+            break;
+          }
+          setCurrentPage(page);
+          setTotalProducts(result.total);
+          commitProducts((prev) => [...prev, ...result.products]);
+        }
+        setHasFirstPage(true);
+        // Keep `?page=` for shareable deep links until the shopper loads more.
+        syncUrl(targetPage, filterValues);
+      } catch {
+        /* keep SSR page 1 */
+      } finally {
+        isLoadingAfterRef.current = false;
+        setIsLoadingAfter(false);
+      }
+    },
+    [
+      filterValues,
+      itemsPerPage,
+      buildListFilter,
+      commitProducts,
+      syncUrl,
+      clearPrefetch,
     ],
   );
 
   const loadMore = useCallback(() => {
     if (isLoadingAfterRef.current) return;
-    if (productsCountRef.current >= totalProducts) return;
-    void fetchProducts(currentPage + 1, "after");
-  }, [currentPage, fetchProducts, totalProducts]);
+    if (productsCountRef.current >= totalProductsRef.current) return;
+    const nextPage = currentPageRef.current + 1;
+    const buffered = prefetchRef.current;
+    if (buffered && buffered.page === nextPage) {
+      prefetchRef.current = null;
+      isLoadingAfterRef.current = true;
+      setIsLoadingAfter(true);
+      try {
+        if (buffered.products.length === 0) {
+          setTotalProducts(productsCountRef.current);
+        } else {
+          setCurrentPage(nextPage);
+          setTotalProducts(buffered.total);
+          commitProducts((prev) => [...prev, ...buffered.products]);
+          syncUrl(nextPage, filterValues, { omitPage: true });
+        }
+      } finally {
+        isLoadingAfterRef.current = false;
+        setIsLoadingAfter(false);
+      }
+      return;
+    }
+    void fetchProducts(nextPage, "after");
+  }, [fetchProducts, commitProducts, syncUrl, filterValues]);
 
   const loadPrevious = useCallback(() => {
-    if (isLoadingBeforeRef.current || currentPage <= 1) return;
-    void fetchProducts(currentPage - 1, "before");
-  }, [currentPage, fetchProducts]);
+    if (isLoadingBeforeRef.current || currentPageRef.current <= 1) return;
+    void fetchProducts(currentPageRef.current - 1, "before");
+  }, [fetchProducts]);
+
+  const prefetchNextPage = useCallback(() => {
+    const nextPage = currentPageRef.current + 1;
+    if (productsCountRef.current >= totalProductsRef.current) return;
+    if (prefetchRef.current?.page === nextPage) return;
+    if (prefetchInFlightRef.current === nextPage) return;
+    if (
+      isLoadingAfterRef.current ||
+      isLoadingRef.current ||
+      isLoadingBeforeRef.current
+    ) {
+      return;
+    }
+
+    prefetchInFlightRef.current = nextPage;
+    const filter = buildListFilter(filterValues);
+    void listCollectionProducts(filter, nextPage, itemsPerPage)
+      .then((result) => {
+        if (prefetchInFlightRef.current !== nextPage) return;
+        prefetchRef.current = {
+          page: nextPage,
+          products: result.products,
+          total: result.total,
+        };
+      })
+      .catch(() => {
+        /* leave buffer empty — loadMore will fetch on demand */
+      })
+      .finally(() => {
+        if (prefetchInFlightRef.current === nextPage) {
+          prefetchInFlightRef.current = null;
+        }
+      });
+  }, [buildListFilter, filterValues, itemsPerPage]);
 
   useEffect(() => {
     const newAttributeSlug = encodeFilterSlug(filterValues);
@@ -361,6 +515,8 @@ export function CollectionProvider({
       return;
     }
 
+    clearPrefetch();
+
     if (categoryBasePath && newAttributeSlug !== previousAttributeSlug) {
       // Attribute/brand filters changed — navigate to the new filter path so the
       // server renders the correct products from cache (static per filter combo).
@@ -374,6 +530,8 @@ export function CollectionProvider({
       // Brand omitted from query (06.1) — it lives in filterPath.
       if (filterValues.instock) params.set("instock", "true");
       if (filterValues.sort) params.set("sort", filterValues.sort);
+      if (filterValues.price_min) params.set("price_min", filterValues.price_min);
+      if (filterValues.price_max) params.set("price_max", filterValues.price_max);
       const qs = params.toString();
       // Recorded for the skeleton request below, which needs the DESTINATION so the
       // host can tell "landed" from "never left" — a filter change that resolves to
@@ -395,7 +553,15 @@ export function CollectionProvider({
       return;
     }
 
-    fetchProducts(filterValues.page, "middle");
+    const targetPage = filterValues.page;
+    // Deep link / remount with ?page=N while SSR still holds page 1: accumulate
+    // rather than replace with a short window (Load More-at-top defect).
+    if (targetPage > 1 && hasFirstPage && currentPageRef.current === 1) {
+      void hydrateThroughPage(targetPage);
+      return;
+    }
+
+    void fetchProducts(targetPage, "middle");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterValues]);
 
@@ -478,6 +644,7 @@ export function CollectionProvider({
         clearFilters,
         loadMore,
         loadPrevious,
+        prefetchNextPage,
         productFilter,
         isNew: Boolean(isNew),
         search: search ?? "",

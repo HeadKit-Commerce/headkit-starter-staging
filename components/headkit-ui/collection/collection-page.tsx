@@ -135,7 +135,10 @@ export function CollectionPage({
         initialFilterValues={initialFilterValues}
         initialBrands={initialBrands}
       >
-        <div className="headkit-collection flex flex-col gap-4">
+        <div
+          className="headkit-collection flex flex-col gap-4"
+          data-headkit-collection
+        >
           <Filter />
           <LoadPrevious />
           <ProductGrid preferHeaderLcp={preferHeaderLcp} />

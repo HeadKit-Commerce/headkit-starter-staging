@@ -147,12 +147,9 @@ function mount(): {
 }
 
 describe("CollectionProvider — Load More and the exhausted-list clamp", () => {
-  // One jsdom window serves every test in the file, and a successful page load
-  // calls `history.replaceState` to put `?page=2` in the address bar. Left
-  // there, the NEXT mount's query-state correction reads that page, replaces
-  // `filterValues`, and the provider issues a `"middle"` fetch of its own
-  // before any click — which REPLACES the list instead of appending to it. The
-  // reset keeps each case's first request the one its click makes.
+  // One jsdom window serves every test in the file. Append omits `?page=` so a
+  // remount cannot collapse to a single-page window; still reset the URL so a
+  // leftover query from another suite cannot seed filterValues on mount.
   beforeEach(() => {
     window.history.replaceState(null, "", "/search?q=helmet");
     listCollectionProducts.mockReset();
@@ -169,6 +166,8 @@ describe("CollectionProvider — Load More and the exhausted-list clamp", () => 
 
     await h.clickMore();
     expect(h.state()).toBe("count:4 total:84 hasMore:true");
+    // Append must omit `page` — `?page=2` would remount as a short window.
+    expect(window.location.search).toBe("?q=helmet");
 
     h.unmount();
   });

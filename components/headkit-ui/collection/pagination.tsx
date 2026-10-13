@@ -1,44 +1,72 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useCollection } from "./collection-context";
+
+/** Prefetch the next page when the sentinel is this far below the viewport. */
+const PREFETCH_ROOT_MARGIN = "1800px";
+/** Auto-load when the sentinel is this far below the viewport. */
+const LOAD_ROOT_MARGIN = "400px";
 
 /**
  * Infinite scroll sentinel — triggers loadMore() when the element
  * becomes visible in the viewport. Falls back to a manual button
  * if IntersectionObserver is not available or the user prefers
- * reduced motion.
+ * reduced motion. Near-end prefetch warms the next page without
+ * committing (Lighthouse-safe: not on entry).
  */
 export function LoadMore() {
-  const { hasMore, isLoadingAfter, loadMore, currentPage } = useCollection();
+  const {
+    hasMore,
+    isLoadingAfter,
+    loadMore,
+    prefetchNextPage,
+    currentPage,
+  } = useCollection();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef(loadMore);
+  const prefetchRef = useRef(prefetchNextPage);
   const hasMoreRef = useRef(hasMore);
   const isLoadingAfterRef = useRef(isLoadingAfter);
+  const [autoScrollActive, setAutoScrollActive] = useState(false);
 
   // Keep observer callbacks current without writing refs during render
   // (eslint react-hooks/refs — "Cannot access refs during render").
   useEffect(() => {
     loadMoreRef.current = loadMore;
+    prefetchRef.current = prefetchNextPage;
     hasMoreRef.current = hasMore;
     isLoadingAfterRef.current = isLoadingAfter;
-  }, [loadMore, hasMore, isLoadingAfter]);
+  }, [loadMore, prefetchNextPage, hasMore, isLoadingAfter]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel || !hasMore) return;
+    if (!sentinel || !hasMore) {
+      setAutoScrollActive(false);
+      return;
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      setAutoScrollActive(false);
+      return;
+    }
 
     const prefersReducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    if (prefersReducedMotion) return;
+    if (prefersReducedMotion) {
+      setAutoScrollActive(false);
+      return;
+    }
+
+    setAutoScrollActive(true);
 
     // Re-bind only when the page advances (successful append) or hasMore
     // changes — NOT when isLoadingAfter flips. Re-observing on every failed
     // fetch caused a CORS/error retry storm that left the button stuck on
     // "Loading…".
-    const observer = new IntersectionObserver(
+    const loadObserver = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
         if (
@@ -50,13 +78,33 @@ export function LoadMore() {
         }
       },
       {
-        rootMargin: "400px",
+        rootMargin: LOAD_ROOT_MARGIN,
         threshold: 0,
       },
     );
 
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+    // Wider margin: warm the next page while the shopper is still scrolling,
+    // so Load More / auto-append feels instant. Does not fire on first paint
+    // unless the grid is shorter than the viewport + buffer.
+    const prefetchObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting && hasMoreRef.current) {
+          prefetchRef.current();
+        }
+      },
+      {
+        rootMargin: PREFETCH_ROOT_MARGIN,
+        threshold: 0,
+      },
+    );
+
+    loadObserver.observe(sentinel);
+    prefetchObserver.observe(sentinel);
+    return () => {
+      loadObserver.disconnect();
+      prefetchObserver.disconnect();
+    };
   }, [hasMore, currentPage]);
 
   if (!hasMore) return null;
@@ -66,15 +114,17 @@ export function LoadMore() {
       {/* Sentinel for IntersectionObserver */}
       <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
 
-      {/* Accessible fallback button */}
-      <Button
-        variant="outline"
-        onClick={loadMore}
-        disabled={isLoadingAfter}
-        className="w-full max-w-xs"
-      >
-        {isLoadingAfter ? "Loading…" : "Load More"}
-      </Button>
+      {/* Manual fallback when auto-scroll is off (reduced motion / no IO). */}
+      {!autoScrollActive && (
+        <Button
+          variant="outline"
+          onClick={loadMore}
+          disabled={isLoadingAfter}
+          className="w-full max-w-xs"
+        >
+          {isLoadingAfter ? "Loading…" : "Load More"}
+        </Button>
+      )}
     </div>
   );
 }
