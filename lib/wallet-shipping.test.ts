@@ -282,6 +282,29 @@ describe("cartPricedForDelivery", () => {
     ).toBe(true);
   });
 
+  it("is true on a SELECTED Local Pickup / Click & Collect rate", () => {
+    // Monolithic WooCommerce Apple Pay offers pickup in the sheet; commerce
+    // #681 emits it at $0. A selected pickup rate is priced for the session.
+    expect(
+      cartPricedForDelivery(
+        cart([{ ...pickupRow, selected: true }]),
+      ),
+    ).toBe(true);
+    expect(
+      cartPricedForDelivery(
+        cart([
+          {
+            rateId: "local_pickup:3",
+            name: "Local pickup",
+            price: "0",
+            taxes: "0",
+            selected: true,
+          },
+        ]),
+      ),
+    ).toBe(true);
+  });
+
   it("is false when the selected rate carries no price", () => {
     expect(
       cartPricedForDelivery(
@@ -432,19 +455,17 @@ describe("walletConfirmPlan", () => {
     });
   });
 
-  it("NEVER prices a Click & Collect cart", () => {
-    // Writing the sheet's shipping address to a cart on which the buyer chose
-    // to collect would convert a pickup order into a delivery one. The mount
-    // gate keeps the element off these carts; this is the same rule at the
-    // decision that would do the damage.
+  it("CONFIRMS a Click & Collect cart that already has pickup selected", () => {
+    // Local Pickup is $0 shipping — same as free delivery. The stage-1 floor
+    // only refuses when the cart bills shipping the session lacks; pickup
+    // bills nothing, so confirm is safe (monolithic WooCommerce behaviour).
     const plan = walletConfirmPlan({
       cart: cart([{ ...pickupRows[0]!, selected: true }, pickupRows[1]!]),
       cartShippingCost: 0,
-      sessionShippingMinorUnits: null,
+      sessionShippingMinorUnits: 0,
       sheetShippingAddress: sheet,
     });
-    expect(plan.action).toBe("refuse");
-    expect(plan).not.toMatchObject({ action: "price" });
+    expect(plan).toEqual({ action: "confirm" });
   });
 
   it("confirms a cart that needs no shipping, with no address in the sheet", () => {
@@ -602,12 +623,12 @@ describe("cartRateForStripeShippingOption", () => {
     ).toBeNull();
   });
 
-  it("refuses a PICKUP rate even when a mapping names one", () => {
-    // Honouring it would convert a delivery order into a Click & Collect one
-    // from inside a wallet sheet.
+  it("resolves a PICKUP rate when the mapping names one", () => {
+    // Local Pickup / pickup_location must be selectable in-sheet — same as
+    // monolithic WooCommerce Apple Pay / Google Pay (commerce #681).
     expect(
       cartRateForStripeShippingOption(mapping, packages, "shr_pickup"),
-    ).toBeNull();
+    ).toEqual({ packageId: "0", rateId: "pickup_location:1" });
   });
 
   it("refuses an absent id and an absent mapping", () => {
@@ -642,8 +663,9 @@ describe("walletMayWriteShipping", () => {
     expect(walletMayWriteShipping({})).toBe(false);
   });
 
-  it("refuses a cart on which the buyer CHOSE Click & Collect", () => {
-    expect(walletMayWriteShipping(pickup(true))).toBe(false);
+  it("allows a cart on which the buyer CHOSE Click & Collect", () => {
+    // Buyer may switch pickup locations or back to delivery inside the sheet.
+    expect(walletMayWriteShipping(pickup(true))).toBe(true);
   });
 
   it("allows a cart that merely OFFERS pickup — every cart's starting state", () => {

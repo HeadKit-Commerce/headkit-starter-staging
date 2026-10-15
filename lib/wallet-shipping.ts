@@ -59,11 +59,11 @@
  */
 
 import {
-  deliveryShippingRates,
-  hasSelectedPickupRate,
+  isPickupRate,
   isPricedRate,
   selectedDeliveryRate,
   type CartShippingPackageLike,
+  type CartShippingRateLike,
 } from "@/lib/shipping-rates";
 
 /** What the sheet is told when a wallet confirm must not be allowed through. */
@@ -289,34 +289,50 @@ export interface WalletCartState {
 }
 
 /**
- * Whether the cart is PRICED for delivery — i.e. whether commerce has a
- * shipping option to put on the Checkout Session.
+ * Whether the cart is PRICED for a wallet shipping sync — i.e. whether
+ * commerce has a shipping option to put on the Checkout Session.
  *
  * `true` on a cart that needs no shipping at all: there is nothing to price,
  * so it is not waiting on anything.
  *
- * A cart that needs shipping is priced only when it carries a SELECTED,
- * PRICED delivery rate. Both halves are load-bearing and neither is "are
- * there rates?":
+ * A cart that needs shipping is priced when it carries a SELECTED, PRICED
+ * rate — delivery OR Local Pickup / Click & Collect. Platform #681 puts the
+ * full menu on the session (pickup included at $0, selected first), matching
+ * monolithic WooCommerce Apple Pay / Google Pay behaviour. Both halves are
+ * load-bearing:
  *
- * - **Selected**, because commerce emits nothing until a rate is selected
- *   (platform #681) — an offered-but-unselected menu still produces
- *   `shipping_options: []`. Once selected, the full menu is sent with that
- *   rate first so Stripe auto-applies the buyer's choice.
- * - **Delivery**, because this store returns both Click & Collect rows on
- *   every cart, so a cart with no destination looks rate-bearing while having
- *   no delivery rate at all ({@link selectedDeliveryRate} excludes pickup).
- * - **Priced**, because `isPricedRate` is what separates a free rate
- *   (`price: "0"`, the `advanced_free_shipping` row an over-threshold cart
- *   selects — priced, and must count) from one WooCommerce has not costed.
+ * - **Selected**, because commerce emits nothing until a rate is selected —
+ *   an offered-but-unselected menu still produces `shipping_options: []`.
+ * - **Priced**, because `isPricedRate` separates a free rate (`price: "0"`,
+ *   including pickup and `advanced_free_shipping`) from one WooCommerce has
+ *   not costed.
+ *
+ * Unselected pickup rows on every cart (finding 3a) must NOT count: that is
+ * every cart's starting state and is not yet priced for the session.
  */
 export function cartPricedForDelivery(
   cart: WalletCartState | null | undefined,
 ): boolean {
   if (cart?.needsShipping === false) return true;
   if (cart?.needsShipping !== true) return false;
-  const selected = selectedDeliveryRate(cart.shippingRates);
+  const selected = selectedShippingRate(cart.shippingRates);
   return selected !== null && isPricedRate(selected);
+}
+
+/** The selected rate across packages, delivery or pickup, or `null`. */
+function selectedShippingRate(
+  packages: readonly CartShippingPackageLike[] | null | undefined,
+): (CartShippingRateLike & { packageId: string }) | null {
+  const delivery = selectedDeliveryRate(packages);
+  if (delivery) return delivery;
+  for (const pkg of packages ?? []) {
+    for (const rate of pkg.shippingRates ?? []) {
+      if (rate.selected && isPickupRate(rate.rateId)) {
+        return { ...rate, packageId: pkg.packageId };
+      }
+    }
+  }
+  return null;
 }
 
 /** What the confirm handler should do with a wallet authorisation. */
@@ -388,17 +404,13 @@ export interface WalletConfirmPlanState extends WalletConfirmState {
  *
  * 1. **An unknown cart refuses.** The plan cannot be made without one, and a
  *    refused payment is the cheap failure.
- * 2. **A Click & Collect cart refuses, and never prices.** Writing a shipping
- *    address to a cart on which the buyer chose to collect would turn a pickup
- *    order into a delivery one. `shouldMountExpressCheckout` already keeps the
- *    element off those carts; this is the same rule at the decision that would
- *    do the damage, because the two must not be able to disagree.
- * 3. **A cart already priced for delivery falls through to the stage-1 floor**
- *    ({@link walletConfirmRefusal}) — confirm when the session carries the
- *    cart's shipping, refuse when it has lost it. Unchanged behaviour, and no
- *    extra round trip on the path that was already correct.
- * 4. **An unpriced cart prices**, when the sheet gave a usable destination.
- * 5. **An unpriced cart with no usable destination refuses**, saying so.
+ * 2. **A cart already priced for shipping** (selected delivery OR Local
+ *    Pickup) falls through to the stage-1 floor ({@link walletConfirmRefusal})
+ *    — confirm when the amounts agree on presence, refuse when the session
+ *    lost paid shipping. Pickup at $0 confirms when the cart bills no
+ *    shipping, matching monolithic WooCommerce wallet checkout.
+ * 3. **An unpriced cart prices**, when the sheet gave a usable destination.
+ * 4. **An unpriced cart with no usable destination refuses**, saying so.
  */
 export function walletConfirmPlan(
   state: WalletConfirmPlanState,
@@ -411,12 +423,6 @@ export function walletConfirmPlan(
         reason: "fail",
         message: UNKNOWN_CART_MESSAGE,
       },
-    };
-  }
-  if (hasSelectedPickupRate(cart.shippingRates)) {
-    return {
-      action: "refuse",
-      refusal: { reason: "fail", message: PICKUP_MESSAGE },
     };
   }
   if (cartPricedForDelivery(cart)) {
@@ -440,8 +446,6 @@ export function walletConfirmPlan(
 const UNKNOWN_CART_MESSAGE =
   "We could not read your cart. Please reload the checkout page and try again.";
 
-const PICKUP_MESSAGE =
-  "Express checkout is not available for Click & Collect orders. Please continue on the checkout page.";
 
 /**
  * How a re-priced attempt is refused.
@@ -526,18 +530,18 @@ export interface WalletSelectableRate {
  * `shipping-options-step.tsx` re-syncs inline for before calling
  * `updateShippingOption`. So the lookup table is whatever the MOST RECENT sync
  * returned; a stale table resolves to a rate id WooCommerce still accepts and
- * silently selects the wrong delivery option.
+ * silently selects the wrong option.
  *
- * ## Three refusals, each its own reason
+ * ## Two refusals
  *
  * - **No mapping row** for that Stripe id: the table is stale or the option is
  *   one commerce did not create. Selecting a guess here is a wrong-price
  *   order, so the caller rejects the change and the sheet does not advance.
  * - **No cart rate** with that rate id: the cart moved under the sheet.
- * - **A PICKUP rate**, which {@link deliveryShippingRates} excludes. Commerce
- *   (#681) may list pickup in the sheet menu, but honouring it here would
- *   convert a delivery order into Click & Collect from inside a wallet —
- *   Express is not available for pickup by design, so the change is refused.
+ *
+ * Delivery AND Local Pickup / `pickup_location` rates are both selectable —
+ * platform #681 puts the full menu on the session, matching monolithic
+ * WooCommerce Apple Pay / Google Pay.
  *
  * It deliberately does NOT require the rate to be priced: `isPricedRate` is
  * the caller's post-write check, because WooCommerce re-prices on selection
@@ -553,28 +557,26 @@ export function cartRateForStripeShippingOption(
     (m) => m.stripeShippingRateId === stripeShippingRateId,
   );
   if (!row?.rateId) return null;
-  const rate = deliveryShippingRates(packages).find(
-    (r) => r.rateId === row.rateId,
-  );
-  if (!rate) return null;
-  return { packageId: rate.packageId, rateId: rate.rateId };
+  for (const pkg of packages ?? []) {
+    for (const rate of pkg.shippingRates ?? []) {
+      if (rate.rateId === row.rateId) {
+        return { packageId: pkg.packageId, rateId: rate.rateId };
+      }
+    }
+  }
+  return null;
 }
 
 /**
  * Whether the wallet's shipping events may write to this cart at all.
  *
- * The same two refusals {@link walletConfirmPlan} opens with, and for the same
- * reasons — an unknown cart cannot be priced, and writing a shipping address
- * or a delivery rate to a cart on which the buyer chose Click & Collect would
- * convert a pickup order into a delivery one. `shouldMountExpressCheckout`
- * already keeps the element off those carts; this is the same rule at the
- * decision that would do the damage, so the two cannot disagree.
+ * An unknown cart cannot be priced. A known cart — including one with Local
+ * Pickup already selected — may be written: the buyer can switch between
+ * delivery and pickup inside the sheet the same way monolithic WooCommerce
+ * Apple Pay / Google Pay does.
  */
 export function walletMayWriteShipping(
   cart: WalletCartState | null | undefined,
 ): boolean {
-  if (cart?.needsShipping !== true && cart?.needsShipping !== false) {
-    return false;
-  }
-  return !hasSelectedPickupRate(cart.shippingRates);
+  return cart?.needsShipping === true || cart?.needsShipping === false;
 }

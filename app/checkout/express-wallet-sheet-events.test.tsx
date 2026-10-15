@@ -44,7 +44,7 @@ import type {
  *   - a rate change whose option id is in no mapping REJECTS without touching
  *     the cart;
  *   - a failed sync REJECTS;
- *   - a Click & Collect cart REJECTS both events without touching the cart;
+ *   - a Local Pickup cart ACCEPTS rate changes (and address changes);
  *   - and a confirm on the cart those handlers left behind goes straight
  *     through `checkout.confirm` with no refusal and no second round trip.
  *
@@ -248,10 +248,11 @@ function cartWithRates(
   };
 }
 
-/** The mapping `/api/checkout/sync-line-items` returns for the two rates. */
+/** The mapping `/api/checkout/sync-line-items` returns for the rates. */
 const MAPPING = [
   { rateId: "flat_rate:8", stripeShippingRateId: "shr_standard" },
   { rateId: "flat_rate:9", stripeShippingRateId: "shr_express" },
+  { rateId: "pickup_location:1", stripeShippingRateId: "shr_pickup" },
 ];
 
 let container: HTMLDivElement | null = null;
@@ -620,23 +621,42 @@ describe("shippingratechange selects the WooCommerce rate behind the Stripe opti
   });
 });
 
-describe("Click & Collect is refused at the write, not only at the mount", () => {
-  it("rejects BOTH events without touching the cart", async () => {
-    // `shouldMountExpressCheckout` already keeps the element off a pickup
-    // cart; this is the same rule at the decision that would do the damage —
-    // writing a shipping address or a delivery rate would convert a pickup
-    // order into a delivery one. Mounted directly, bypassing that gate.
+describe("Local Pickup is selectable in the sheet", () => {
+  it("accepts a pickup rate change and re-syncs", async () => {
+    // Monolithic WooCommerce Apple Pay / Google Pay offer Local Pickup in the
+    // shipping picker. Commerce #681 puts pickup on the session; selecting it
+    // must select the cart rate and sync — not reject.
+    hoisted.cart = cartWithRates([...pickupRows, standard, express]);
+    hoisted.selectShipping.mockImplementation(async (_pkg: string, rateId: string) => ({
+      success: true,
+      cart: cartWithRates([
+        { ...pickupRows[0]!, selected: rateId === pickupRows[0]!.rateId },
+        { ...pickupRows[1]!, selected: false },
+        { ...standard, selected: false },
+        { ...express, selected: false },
+      ]),
+    }));
+
+    mount({ shippingOptionMapping: MAPPING });
+    const decision = await fireRateChange("shr_pickup");
+
+    expect(hoisted.selectShipping).toHaveBeenCalled();
+    expect(hoisted.selectShipping.mock.calls[0]?.[1]).toBe("pickup_location:1");
+    expect(decision).toEqual({ type: "accept" });
+  });
+
+  it("still allows address and rate changes when pickup is already selected", async () => {
     hoisted.cart = cartWithRates([
       { ...pickupRows[0]!, selected: true },
       pickupRows[1]!,
+      standard,
+      express,
     ]);
 
     mount({ shippingOptionMapping: MAPPING });
 
-    expect(await fireAddressChange()).toEqual({ type: "reject" });
-    expect(await fireRateChange("shr_standard")).toEqual({ type: "reject" });
-    expect(hoisted.updateCustomerAddress).not.toHaveBeenCalled();
-    expect(hoisted.selectShipping).not.toHaveBeenCalled();
+    expect(await fireRateChange("shr_standard")).toEqual({ type: "accept" });
+    expect(hoisted.selectShipping).toHaveBeenCalled();
   });
 });
 

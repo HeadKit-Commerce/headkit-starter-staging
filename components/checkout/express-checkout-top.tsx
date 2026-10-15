@@ -19,7 +19,6 @@ import {
   updateCustomerAddressAction,
 } from "@/lib/cart-actions";
 import { shippingDisplayTotal } from "@/lib/cart-prices";
-import { hasSelectedPickupRate } from "@/lib/shipping-rates";
 import {
   eceShippingRateId,
   type EceShippingAddressChangeEvent,
@@ -103,11 +102,14 @@ export type ExpressCheckoutCartState = WalletCartState;
  * https://docs.stripe.com/js/custom_checkout/create_payment_element
  *
  * **The cart.** A cart that needs shipping mounts the element whatever its
- * delivery state, EXCEPT when the buyer has chosen Click & Collect. The
- * undercharge an unpriced cart used to produce is closed INSIDE the sheet, by
- * the two preview shipping handlers below, with the confirm-time floor and
- * price-and-refuse fallback (`walletConfirmPlan`, `lib/wallet-shipping.ts`)
- * behind them for an account the preview is off for.
+ * delivery state — including when Local Pickup / Click & Collect is selected.
+ * Platform #681 puts pickup locations on the session shipping menu (at $0,
+ * selected first), so the wallet sheet can offer the same choice as monolithic
+ * WooCommerce Apple Pay / Google Pay. The undercharge an unpriced cart used
+ * to produce is closed INSIDE the sheet, by the two preview shipping handlers
+ * below, with the confirm-time floor and price-and-refuse fallback
+ * (`walletConfirmPlan`, `lib/wallet-shipping.ts`) behind them for an account
+ * the preview is off for.
  *
  * ## This is a DELIBERATE REVERSAL of the gate PR #273 shipped
  *
@@ -127,29 +129,18 @@ export type ExpressCheckoutCartState = WalletCartState;
  *   separate them, and the safe gate hid the button for the store's
  *   highest-value traffic.
  *
- * Pricing from the sheet's own address resolves both: the button is visible to
- * everyone, and the amount is made correct before anything is charged.
+ * Pricing from the sheet's own address (and in-sheet rate choice, including
+ * Local Pickup) resolves both: the button is visible to everyone, and the
+ * amount is made correct before anything is charged.
  *
- * ## Click & Collect stays out, and the reason is SHARPER than it was
+ * ## Local Pickup is in-sheet, like monolithic WooCommerce
  *
- * Captain's decision: Express is not available for pickup. Under the old gate
- * the hazard was that a pickup cart's `total_shipping` is 0 while the sheet
- * still collects a shipping address the finalize puts on the order, so
- * WooCommerce can bill delivery at finalize — an undercharge
- * `walletConfirmRefusal` cannot see. Now it is worse: every shipping write in
- * this file — both sheet handlers and the confirm-time fallback — would put a
- * delivery address or a delivery rate on the cart, converting a pickup order
- * into a delivery one outright. The gate reads `hasSelectedPickupRate`, and
- * `walletMayWriteShipping` / `walletConfirmPlan` refuse the same carts again at
- * the decisions that would do the damage — three copies on purpose, because
- * they must not be able to disagree.
- *
- * **Note what changed about the pickup rule, because the old test over-stated
- * it.** PR #273's gate also refused a cart carrying the two pickup rows with
- * NOTHING selected — but that is not a pickup cart, it is every cart's
- * starting state on this store (the rows are returned on every cart, finding
- * 3a), and refusing it is exactly what hid the button for everyone. Only a
- * SELECTED pickup rate means the buyer chose to collect.
+ * Core `local_pickup` and Blocks `pickup_location` rates appear in the
+ * wallet's shipping picker after commerce syncs the full menu (#681). Selecting
+ * one re-selects that rate on the cart and re-syncs; confirming a $0-shipping
+ * pickup cart is allowed. Keeping Express mounted while pickup is selected
+ * also stops the element from disappearing mid-sheet when the buyer picks a
+ * store in Apple Pay / Google Pay.
  *
  * A cart that needs no shipping at all (`needsShipping: false` — gift cards,
  * virtual products) mounts as it always did. There is no shipping to drop on
@@ -180,7 +171,7 @@ export function shouldMountExpressCheckout(
   if (!payCapableStep) return false;
   if (cart?.needsShipping === false) return true;
   if (cart?.needsShipping !== true) return false;
-  return !hasSelectedPickupRate(cart.shippingRates);
+  return true;
 }
 
 /**
@@ -334,12 +325,11 @@ export function shouldMountExpressCheckout(
  *
  * After an in-sheet address write + sync, commerce (#681) puts every available
  * rate on the session with the selected one first, so the sheet's shipping
- * picker offers the same menu as the on-page shipping-options step (capped at
- * Stripe's five-option limit). `shippingratechange` maps the Stripe id the
- * buyer picks back through `shippingOptionMapping` and re-selects that rate
- * on the cart. Pickup rows may appear in the menu; selecting one is refused
- * here so a wallet cannot convert a delivery order into Click & Collect
- * (Express stays unavailable for pickup by design).
+ * picker offers the same menu as monolithic WooCommerce Apple Pay / Google Pay
+ * (delivery and Local Pickup, capped at Stripe's five-option limit).
+ * `shippingratechange` maps the Stripe id the buyer picks back through
+ * `shippingOptionMapping` and re-selects that rate on the cart — pickup
+ * included.
  *
  * ## Interaction with ENG-784 — why `keepCheckoutSession: true` is SAFE here
  *

@@ -107,7 +107,7 @@ describe("shouldMountExpressCheckout", () => {
    * `261010-bs-applepay-shipping-callbacks` finding 3c). The undercharge is
    * now closed at CONFIRM instead (`walletConfirmPlan`, covered in
    * `lib/wallet-shipping.test.ts`), so the mount rule is narrow: mount unless
-   * the cart is unknown or the buyer chose Click & Collect.
+   * the cart is unknown.
    *
    * Every "mounts" case below is therefore a case the previous gate refused.
    * They are kept as positive assertions rather than deleted so that
@@ -237,11 +237,10 @@ describe("shouldMountExpressCheckout", () => {
     ).toBe(true);
   });
 
-  it("does NOT mount once a pickup rate is SELECTED", () => {
-    // Click & Collect stays closed — captain's decision, and under the confirm
-    // path the hazard is sharper than it was: that path writes the sheet's
-    // shipping address to the cart, which would convert a pickup order into a
-    // delivery one. `walletConfirmPlan` refuses the same carts again.
+  it("DOES mount once a pickup rate is SELECTED", () => {
+    // Local Pickup must stay available in Express — same as monolithic
+    // WooCommerce Apple Pay / Google Pay. Keeping the element mounted also
+    // stops it disappearing mid-sheet when the buyer picks a store.
     const selectedPickup = pickupRows[0]!.shippingRates.map((r, i) => ({
       ...r,
       selected: i === 0,
@@ -251,13 +250,13 @@ describe("shouldMountExpressCheckout", () => {
         CheckoutFormStepEnum.ADDRESS,
         shippingCart(selectedPickup),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldMountExpressCheckout(
         CheckoutFormStepEnum.CONTACT,
         shippingCart(selectedPickup),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("DOES mount when the pickup rows are merely offered — the half of the old rule that was wrong", () => {

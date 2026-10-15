@@ -38,7 +38,7 @@ import { walletConfirmRefusal } from "@/lib/wallet-shipping";
  *   - a cart already priced for delivery confirms with no round trip at all;
  *   - a failed write, a failed sync and a hung write each refuse rather than
  *     charge;
- *   - a Click & Collect cart never mounts, and never prices;
+ *   - a Local Pickup cart mounts and confirms at $0 shipping;
  *   - stage 1's floor is still wired and still fires on a desynced session.
  *
  * Both directions are required throughout. "Refuses" alone is satisfied by a
@@ -678,12 +678,10 @@ describe("a cart already priced for delivery confirms, with no round trip", () =
   });
 });
 
-describe("Click & Collect stays out, at BOTH decisions", () => {
-  it("never mounts once a pickup rate is selected", () => {
-    // Captain's decision: Express is not available for pickup. Under this
-    // change the hazard is sharper — the confirm path would write the sheet's
-    // shipping address to the cart and convert a pickup order into a delivery
-    // one.
+describe("Local Pickup / Click & Collect is available in Express", () => {
+  it("mounts once a pickup rate is selected", () => {
+    // Same as monolithic WooCommerce: Apple Pay / Google Pay stay available
+    // with Local Pickup selected, and the sheet can confirm a $0-shipping cart.
     hoisted.cart = cartWithRates([
       { ...pickupRows[0]!, selected: true },
       pickupRows[1]!,
@@ -691,18 +689,15 @@ describe("Click & Collect stays out, at BOTH decisions", () => {
 
     mount(CheckoutFormStepEnum.ADDRESS);
 
-    expect(hoisted.onConfirm).toBeNull();
+    expect(hoisted.onConfirm).not.toBeNull();
     expect(
       container?.querySelector('[data-testid="express-checkout-section"]'),
-    ).toBeNull();
-    // No dangling chrome: no label, no divider, no empty gap.
-    expect(container?.innerHTML ?? "x").toHaveLength(0);
+    ).not.toBeNull();
   });
 
   it("DOES mount when the pickup rows are merely offered", () => {
-    // The half of #273's gate that was wrong: an unselected pickup row is not
-    // a pickup cart, it is every cart's starting state on this store, and
-    // refusing it is what hid the button for everyone.
+    // An unselected pickup row is not a pickup cart, it is every cart's
+    // starting state on this store.
     hoisted.cart = cartWithRates(pickupRows);
 
     mount(CheckoutFormStepEnum.CONTACT);
@@ -710,14 +705,14 @@ describe("Click & Collect stays out, at BOTH decisions", () => {
     expect(hoisted.onConfirm).not.toBeNull();
   });
 
-  it("refuses, and does NOT price, if a pickup cart ever reaches confirm", async () => {
-    // The mount gate above is what keeps this unreachable; this is the same
-    // rule at the decision that would do the damage, so the two cannot
-    // disagree. Mounted directly, bypassing the host's gate.
+  it("CONFIRMS a pickup cart without re-pricing", async () => {
+    // Selected pickup is already priced ($0). Confirm should go through on
+    // the first tap — no address write, no second round trip.
     hoisted.cart = cartWithRates([
       { ...pickupRows[0]!, selected: true },
       pickupRows[1]!,
     ]);
+    hoisted.sessionShippingMinorUnits = 0;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -728,8 +723,8 @@ describe("Click & Collect stays out, at BOTH decisions", () => {
     await confirmAndSettle(event);
 
     expect(hoisted.updateCustomerAddress).not.toHaveBeenCalled();
-    expect(hoisted.confirm).not.toHaveBeenCalled();
-    expect(paymentFailed).toHaveBeenCalledTimes(1);
+    expect(hoisted.confirm).toHaveBeenCalledTimes(1);
+    expect(paymentFailed).not.toHaveBeenCalled();
   });
 });
 
