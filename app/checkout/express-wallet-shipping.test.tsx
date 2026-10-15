@@ -183,6 +183,41 @@ vi.mock("@/lib/cart-actions", () => ({
   },
 }));
 
+vi.mock("@/lib/checkout-stock", () => ({
+  ensureCheckoutStockAction: async () => ({
+    ok: true as const,
+    cart: {
+      needsShipping: true,
+      currency: { code: "AUD", symbol: "$", minorUnit: 2 },
+      totals: {
+        totalPrice: "41.95",
+        totalShipping: hoisted.cartTotalShipping,
+        totalShippingTax: hoisted.cartTotalShippingTax,
+      },
+      shippingRates: [
+        {
+          packageId: "0",
+          name: "Shipping",
+          shippingRates: [
+            {
+              rateId:
+                hoisted.cartTotalShipping === "0"
+                  ? "advanced_free_shipping"
+                  : "flat_rate:8",
+              name: "Standard Delivery",
+              price: hoisted.cartTotalShipping,
+              taxes: hoisted.cartTotalShippingTax,
+              selected: true,
+            },
+          ],
+        },
+      ],
+      items: [],
+    },
+  }),
+}));
+
+
 const { ExpressCheckoutTop } =
   await import("@/components/checkout/express-checkout-top");
 

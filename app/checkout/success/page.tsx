@@ -6,6 +6,7 @@ import {
   BILLING_ADDRESS_COOKIE,
   parseBillingAddressCookie,
 } from "@/lib/checkout-billing-cookie";
+import { isStockFinalizeError } from "@/lib/checkout-stock-detect";
 
 /**
  * Checkout return page: Stripe sends the shopper here (with only session_id)
@@ -43,6 +44,7 @@ type Disposition =
   | "expired" // session expired → /checkout/error?reason=session_expired
   | "cart_changed" // deliberately expired: cart drifted (ENG-784) → /checkout?error=cart_changed
   | "pending" // async payment processing (or paid but unresolved) → render UI
+  | "stock_unavailable" // paid but WC refused the order for stock → honest error
   | "error"; // session fetch threw → /checkout/error?reason=processing_error
 
 export default async function CheckoutSuccessPage({
@@ -197,6 +199,7 @@ export default async function CheckoutSuccessPage({
           phone: sessionShipping?.phone ?? "",
         };
 
+        let processCheckoutError: unknown = null;
         try {
           const checkout = await processCheckoutAction({
             paymentMethod: "headkit-payments",
@@ -208,38 +211,49 @@ export default async function CheckoutSuccessPage({
             orderId = checkout.orderId;
             orderKey = checkout.orderKey;
           }
-        } catch {
+        } catch (err) {
+          processCheckoutError = err;
           /* processCheckout failed — almost always woocommerce_rest_cart_empty: the
              Stripe webhook won the race, already placed the order, and emptied the
              cart. The webhook writes the real order_id/order_key back onto the session
-             metadata after creating the order, so poll the session below to resolve it. */
+             metadata after creating the order, so poll the session below to resolve it.
+             Stock refusals are the other common case: do NOT treat those as pending. */
         }
 
-        // Lost the create race (or our own POST hasn't reflected yet): poll the Stripe
-        // session metadata, which the webhook updates with the real order_id/order_key
-        // once it finishes creating the order. Bounded so we never hang the page.
-        if (!orderId || orderId === "0" || !orderKey) {
-          for (let attempt = 0; attempt < 6; attempt++) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            try {
-              const refreshed = await getCheckoutSessionAction(sessionId);
-              if (
-                refreshed.orderId &&
-                refreshed.orderId !== "0" &&
-                refreshed.orderKey
-              ) {
-                orderId = refreshed.orderId;
-                orderKey = refreshed.orderKey;
-                break;
+        // Stock refusal: no webhook will create an order for this cart. Surfacing
+        // the async processing UI here is the bug the confirm-time stock gate
+        // also prevents — keep this as a backstop when the race still charges.
+        if (isStockFinalizeError(processCheckoutError)) {
+          disposition = "stock_unavailable";
+        } else {
+          // Lost the create race (or our own POST hasn't reflected yet): poll the Stripe
+          // session metadata, which the webhook updates with the real order_id/order_key
+          // once it finishes creating the order. Bounded so we never hang the page.
+          if (!orderId || orderId === "0" || !orderKey) {
+            for (let attempt = 0; attempt < 6; attempt++) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              try {
+                const refreshed = await getCheckoutSessionAction(sessionId);
+                if (
+                  refreshed.orderId &&
+                  refreshed.orderId !== "0" &&
+                  refreshed.orderKey
+                ) {
+                  orderId = refreshed.orderId;
+                  orderKey = refreshed.orderKey;
+                  break;
+                }
+              } catch {
+                /* transient — keep polling */
               }
-            } catch {
-              /* transient — keep polling */
             }
           }
         }
       }
 
-      if (orderId && orderId !== "0" && orderKey) {
+      if (disposition === "stock_unavailable") {
+        // already set — do not fall through to pending
+      } else if (orderId && orderId !== "0" && orderKey) {
         disposition = "order";
         resolvedOrderId = orderId;
         resolvedOrderKey = orderKey;
@@ -268,6 +282,9 @@ export default async function CheckoutSuccessPage({
   }
   if (disposition === "cart_changed") {
     redirect("/checkout?error=cart_changed");
+  }
+  if (disposition === "stock_unavailable") {
+    redirect("/checkout/error?reason=stock_unavailable");
   }
   if (disposition === "error") {
     redirect("/checkout/error?reason=processing_error");

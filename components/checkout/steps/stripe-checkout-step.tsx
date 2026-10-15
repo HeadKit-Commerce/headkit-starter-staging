@@ -14,6 +14,8 @@ import { useCheckoutActions } from "@/app/checkout/checkout-actions-context";
 import { writeBillingAddressCookie } from "@/lib/checkout-billing-cookie";
 import { isCheckoutSessionDead } from "@/lib/checkout-session-status";
 import { buildCheckoutBillingAddressElementOptions } from "@/lib/checkout-address-seed";
+import { ensureCheckoutStockAction } from "@/lib/checkout-stock";
+import { useCartContext } from "@/components/headkit-ui/cart-context";
 
 interface StripePaymentStepProps {
   /**
@@ -147,6 +149,7 @@ export function StripePaymentStep({
 }: StripePaymentStepProps) {
   const checkoutState = useCheckout();
   const { actions } = useCheckoutActions();
+  const { setCartData } = useCartContext();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [billingElementComplete, setBillingElementComplete] = useState(false);
@@ -188,6 +191,18 @@ export function StripePaymentStep({
     setIsSubmitting(true);
     setError(null);
     try {
+      // Same stock gate as Express: page-load validation is stale by Pay time.
+      const stock = await ensureCheckoutStockAction();
+      if (!stock.ok) {
+        if (stock.cart) setCartData(stock.cart);
+        setError(stock.message);
+        if (stock.sessionExpired && onSessionExpired) {
+          onSessionExpired();
+        }
+        return;
+      }
+      if (stock.cart) setCartData(stock.cart);
+
       if (showBillingSameAsShipping) {
         const distinct = isDistinctBilling(lastBillingValue, shippingAddress);
 
@@ -324,6 +339,7 @@ export function StripePaymentStep({
   }, [
     checkoutState,
     actions,
+    setCartData,
     showBillingSameAsShipping,
     billingElementComplete,
     lastBillingValue,

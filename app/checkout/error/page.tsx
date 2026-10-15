@@ -10,6 +10,8 @@ const getErrorMessage = (reason?: string): string => {
       return "Your cart is empty. Add items to your cart to continue.";
     case "stock_correction_empty":
       return "Some items were out of stock and removed. Your cart is now empty.";
+    case "stock_unavailable":
+      return "An item in your order went out of stock before we could complete it. If a payment was taken it will be refunded — please review your cart and try again.";
     case "invalid_session":
       return "We couldn't prepare your checkout session. Please try again.";
     case "session_creation_failed":

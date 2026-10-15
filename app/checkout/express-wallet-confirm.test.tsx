@@ -188,6 +188,23 @@ vi.mock("@/lib/cart-actions", () => ({
     hoisted.updateCustomerAddress(...args),
 }));
 
+
+vi.mock("@/lib/checkout-stock", () => ({
+  ensureCheckoutStockAction: async () => {
+    if (!hoisted.cart) {
+      return {
+        ok: false,
+        message: "We could not read your cart. Please reload the checkout page and try again.",
+        cartEmpty: true,
+        cart: null,
+        sessionExpired: false,
+      };
+    }
+    return { ok: true, cart: hoisted.cart };
+  },
+}));
+
+
 const { ExpressCheckoutTop, shouldMountExpressCheckout } =
   await import("@/components/checkout/express-checkout-top");
 
@@ -448,7 +465,8 @@ describe("an unpriced cart is PRICED from the sheet's address, and the attempt r
     expect(container?.textContent ?? "").toContain(String(refusal?.message));
 
     // 6. and the page now agrees with the cart.
-    expect(hoisted.setCartData).toHaveBeenCalledTimes(1);
+    // Stock gate + reprice both refresh the page cart.
+    expect(hoisted.setCartData).toHaveBeenCalled();
   });
 
   it("REMOUNTS Stripe's element, so no stale sheet can re-authorise", async () => {

@@ -18,6 +18,7 @@ import {
   selectShippingAction,
   updateCustomerAddressAction,
 } from "@/lib/cart-actions";
+import { ensureCheckoutStockAction } from "@/lib/checkout-stock";
 import { shippingDisplayTotal } from "@/lib/cart-prices";
 import {
   eceShippingRateId,
@@ -768,63 +769,90 @@ export function ExpressCheckoutTop({
     }
     const { checkout } = checkoutState;
 
-    // `checkout` IS the session (the hook's value spreads
-    // `StripeCheckoutSession` over the actions), so this reads the live
-    // session rather than a render-time copy.
-    const plan = walletConfirmPlan({
-      cart: cartData,
-      cartShippingCost: shippingDisplayTotal(cartData),
-      sessionShippingMinorUnits:
-        checkout.shipping?.shippingOption.minorUnitsAmount ?? null,
-      sheetShippingAddress: event.shippingAddress,
-    });
-
-    if (plan.action === "refuse") {
-      refuse(event, plan.refusal);
-      return;
-    }
-
-    if (plan.action === "price") {
-      // No session id means the cart could be priced and the session could
-      // not, which is the one state that must not be entered: it would leave
-      // the session below the cart with nothing able to raise it. Refuse
-      // WITHOUT mutating anything.
-      if (!sessionId || repricingRef.current) {
-        refuse(event, walletRepriceRefusal(null));
-        return;
-      }
-      repricingRef.current = true;
-      setError(null);
-      void withTimeout(
-        repriceFromSheet(checkout, plan.destination),
-        REPRICE_TIMEOUT_MS,
-        () => walletRepriceRefusal(null),
-      )
-        .catch(() => walletRepriceRefusal(null))
-        .then((refusal) => {
-          repricingRef.current = false;
-          refuse(event, refusal);
-          setElementKey((key) => key + 1);
-        });
-      return;
-    }
-
-    setError(null);
-    void checkout
-      .confirm({ expressCheckoutConfirmEvent: event })
-      .then(async (result) => {
-        if (result.type === "error") {
-          event.paymentFailed({ reason: "fail" });
-          if (await recoverIfSessionDead()) return;
-          setError(result.error.message ?? "Payment failed. Please try again.");
+    // Stock gate BEFORE any Stripe charge. Page-load validation is stale by
+    // the time a wallet sheet confirms; without this, OOS carts pay Stripe
+    // then land on the async "payment is processing" dead-end.
+    void ensureCheckoutStockAction()
+      .then((stock) => {
+        if (!stock.ok) {
+          if (stock.cart) setCartData(stock.cart);
+          refuse(event, { reason: "fail", message: stock.message });
+          if (stock.sessionExpired && onSessionExpired) {
+            onSessionExpired();
+          }
+          return;
         }
+        if (stock.cart) setCartData(stock.cart);
+
+        // `checkout` IS the session (the hook's value spreads
+        // `StripeCheckoutSession` over the actions), so this reads the live
+        // session rather than a render-time copy.
+        const plan = walletConfirmPlan({
+          cart: stock.cart,
+          cartShippingCost: shippingDisplayTotal(stock.cart),
+          sessionShippingMinorUnits:
+            checkout.shipping?.shippingOption.minorUnitsAmount ?? null,
+          sheetShippingAddress: event.shippingAddress,
+        });
+
+        if (plan.action === "refuse") {
+          refuse(event, plan.refusal);
+          return;
+        }
+
+        if (plan.action === "price") {
+          // No session id means the cart could be priced and the session could
+          // not, which is the one state that must not be entered: it would leave
+          // the session below the cart with nothing able to raise it. Refuse
+          // WITHOUT mutating anything.
+          if (!sessionId || repricingRef.current) {
+            refuse(event, walletRepriceRefusal(null));
+            return;
+          }
+          repricingRef.current = true;
+          setError(null);
+          void withTimeout(
+            repriceFromSheet(checkout, plan.destination),
+            REPRICE_TIMEOUT_MS,
+            () => walletRepriceRefusal(null),
+          )
+            .catch(() => walletRepriceRefusal(null))
+            .then((refusal) => {
+              repricingRef.current = false;
+              refuse(event, refusal);
+              setElementKey((key) => key + 1);
+            });
+          return;
+        }
+
+        setError(null);
+        void checkout
+          .confirm({ expressCheckoutConfirmEvent: event })
+          .then(async (result) => {
+            if (result.type === "error") {
+              event.paymentFailed({ reason: "fail" });
+              if (await recoverIfSessionDead()) return;
+              setError(
+                result.error.message ?? "Payment failed. Please try again.",
+              );
+            }
+          })
+          .catch(async (err: unknown) => {
+            event.paymentFailed({ reason: "fail" });
+            if (await recoverIfSessionDead()) return;
+            setError(
+              err instanceof Error
+                ? err.message
+                : "An unexpected error occurred.",
+            );
+          });
       })
-      .catch(async (err: unknown) => {
-        event.paymentFailed({ reason: "fail" });
-        if (await recoverIfSessionDead()) return;
-        setError(
-          err instanceof Error ? err.message : "An unexpected error occurred.",
-        );
+      .catch(() => {
+        refuse(event, {
+          reason: "fail",
+          message:
+            "We could not verify stock for this order. Please try again.",
+        });
       });
   };
 

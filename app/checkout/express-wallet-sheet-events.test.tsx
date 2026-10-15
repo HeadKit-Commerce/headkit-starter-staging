@@ -189,6 +189,22 @@ vi.mock("@/lib/cart-actions", () => ({
   selectShippingAction: (...args: unknown[]) => hoisted.selectShipping(...args),
 }));
 
+vi.mock("@/lib/checkout-stock", () => ({
+  ensureCheckoutStockAction: async () => {
+    if (!hoisted.cart) {
+      return {
+        ok: false,
+        message: "We could not read your cart. Please reload the checkout page and try again.",
+        cartEmpty: true,
+        cart: null,
+        sessionExpired: false,
+      };
+    }
+    return { ok: true, cart: hoisted.cart };
+  },
+}));
+
+
 const { ExpressCheckoutTop } =
   await import("@/components/checkout/express-checkout-top");
 
