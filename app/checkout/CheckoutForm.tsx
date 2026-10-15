@@ -28,7 +28,6 @@ import {
   ExpressCheckoutTop,
   shouldMountExpressCheckout,
 } from "@/components/checkout/express-checkout-top";
-// ExpressCheckoutTop mounts OUTSIDE CheckoutElementsProvider (PI Elements).
 import { useCartContext } from "@/components/headkit-ui/cart-context";
 import type { CheckoutSessionProp } from "@/app/checkout/checkout-page-content";
 import {
@@ -36,6 +35,7 @@ import {
   useCheckoutActions,
 } from "@/app/checkout/checkout-actions-context";
 import { getFullCartAction, selectShippingAction } from "@/lib/cart-actions";
+import { restoreDeliveryRateAfterPickup } from "@/lib/restore-delivery-rate";
 import { personalSavedAddressInput } from "@/lib/checkout-address-seed";
 import type { AddressInput } from "@headkit/sdk";
 import { useDebugRegister } from "@headkit/sdk/debug";
@@ -572,6 +572,26 @@ function CheckoutSteps({
       const runGetCart = async () => {
         fetchedCart = await getFullCartAction();
         if (fetchedCart) setCartData(fetchedCart);
+        // Switching back to Ship to home leaves WooCommerce's pickup rate
+        // SELECTED — the address write above does not displace it — which
+        // keeps `shouldMountExpressCheckout` false for the rest of the
+        // checkout and across a refresh. `lib/restore-delivery-rate.ts` owns
+        // the rule and its three no-op cases; it answers null (and makes no
+        // call) on a cart that already has a delivery rate selected.
+        if (data.deliveryMethod === DeliveryStepEnum.SHIPPING_TO_HOME) {
+          const restored = await restoreDeliveryRateAfterPickup(
+            fetchedCart,
+            formData.shippingRateId,
+            {
+              selectShipping: (packageId, rateId) =>
+                selectShippingAction(packageId, rateId, {
+                  keepCheckoutSession: true,
+                }),
+              onCart: setCartData,
+            },
+          );
+          if (restored) fetchedCart = restored;
+        }
       };
       if (actions) {
         const updateResult = await actions.runServerUpdate(runGetCart);
@@ -723,8 +743,28 @@ function CheckoutSteps({
 
   return (
     <>
-      {/* Express is mounted OUTSIDE CheckoutElementsProvider (see CheckoutForm
-          root) on a Payment Intents Elements tree — not here. */}
+      {/* Express/wallet checkout (Apple Pay / Google Pay / Link) — the single
+          ExpressCheckoutElement instance, mounted at the top through Contact,
+          Delivery, Address, and Payment. Checkout Session Payment Element also
+          keeps wallets on `auto`, so Apple Pay can appear in both places
+          (Shopify / Stripe hosted checkout). Stripe allows only ONE ECE per
+          CheckoutProvider. Rendered from CheckoutSteps so confirm-time
+          dead-session can reach handleSessionExpired (ENG-784).
+          The cart is passed because the step alone is NOT the gate: a cart on
+          which the buyer chose Click & Collect may not mount this at all, and
+          an unknown cart may not either. The shipping-less-total undercharge
+          (live order 283750) is closed IN THE SHEET, by Stripe's private-preview
+          `shippingaddresschange` / `shippingratechange` handlers, with the
+          confirm-time floor kept behind them for an account where that preview
+          is off. `shouldMountExpressCheckout` owns the mount rule and
+          `express-checkout-top.tsx`'s head owns both sequences. */}
+      {shouldMountExpressCheckout(currentStep, cartData) ? (
+        <ExpressCheckoutTop
+          sessionId={sessionId}
+          onSessionExpired={handleSessionExpired}
+          {...(shippingOptionMapping?.length ? { shippingOptionMapping } : {})}
+        />
+      ) : null}
       <div className="space-y-2">
         {/* Step 1: Contact */}
         <AccordionWrapper
@@ -1083,18 +1123,9 @@ export function CheckoutForm({
     );
   }
 
-  const showExpress =
-    !!cartData &&
-    shouldMountExpressCheckout(CheckoutFormStepEnum.CONTACT, cartData);
-
   return (
     <div className="px-[20px] md:px-[40px] mx-auto grid grid-cols-12 gap-[20px]">
       <div className="order-2 md:order-1 col-span-12 md:col-span-6">
-        {/* PI Express — OUTSIDE CheckoutElementsProvider so it does not wait
-            on useCheckout() and can use shippingaddresschange. */}
-        {showExpress && cartData ? (
-          <ExpressCheckoutTop stripePromise={stripePromise} cart={cartData} />
-        ) : null}
         <CheckoutElementsProvider
           key={checkoutSession.sessionId}
           stripe={stripePromise}

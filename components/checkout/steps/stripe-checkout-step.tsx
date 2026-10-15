@@ -371,9 +371,13 @@ export function StripePaymentStep({
               name: "never",
             },
           },
-          // Express (Payment Intents ECE) owns Apple Pay / Google Pay on this
-          // page. Hide wallets here so buttons are not duplicated.
-          wallets: { applePay: "never", googlePay: "never" },
+          // Checkout Session wallets default to `auto` (show when the session
+          // has card and the platform supports them). Same as Shopify / Stripe
+          // hosted checkout: Apple Pay / Google Pay stay in the Payment Element
+          // while Express also shows them at the top of the page. Stripe allows
+          // only ONE ExpressCheckoutElement per CheckoutProvider — that is the
+          // top instance; this is Payment Element wallets, not a second ECE.
+          wallets: { applePay: "auto", googlePay: "auto" },
         }}
       />
       {showBillingSameAsShipping && !hideBillingElement && (
