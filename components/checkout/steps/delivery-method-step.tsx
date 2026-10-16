@@ -25,6 +25,10 @@ import {
   isValidCheckoutPhone,
   CHECKOUT_PHONE_MESSAGE,
 } from "@/components/checkout/utils";
+import {
+  countryRequiresState,
+  resolveStateForCountry,
+} from "@/lib/checkout-address-state";
 import { updateCustomerAddressAction } from "@/lib/cart-actions";
 import {
   buildCheckoutShippingAddressElementOptions,
@@ -82,7 +86,12 @@ const deliverySchema = z
           path: ["shippingAddress", "city"],
         });
       }
-      if (!addr?.state?.trim()) {
+      // Only countries that actually collect a state may demand one. NZ does
+      // not (WooCommerce labels it an optional "Region" and the Stripe address
+      // element renders no State field for it), so an unconditional
+      // requirement here stranded every NZ shopper on an error with no field to
+      // satisfy it. See lib/checkout-address-state.ts.
+      if (countryRequiresState(addr?.country) && !addr?.state?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "State is required",
@@ -265,7 +274,12 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                 line1: shippingToUse.line1 ?? "",
                 line2: shippingToUse.line2,
                 city: shippingToUse.city ?? "",
-                state: shippingToUse.state ?? "",
+                // Last line of defence: whatever we hold, the state that leaves
+                // this step belongs to the country beside it or is empty.
+                state: resolveStateForCountry(
+                  shippingToUse.country,
+                  shippingToUse.state,
+                ),
                 country: shippingToUse.country ?? "",
                 postalCode: shippingToUse.postalCode ?? "",
                 phone,
@@ -288,7 +302,9 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
           ? {
               line1: loc.address?.trim() || loc.name,
               city: loc.city?.trim() || "Pickup",
-              state: loc.state?.trim() || "",
+              // Same rule as Ship to Home: a pickup location configured with a
+              // state from another country must not travel with its own.
+              state: resolveStateForCountry(country, loc.state),
               postal_code: loc.postcode?.trim() || defaultPostcode,
               country,
             }
@@ -590,6 +606,45 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                 key={`${deliveryMethod}:${shippingContacts ? "seeded" : "empty"}`}
                 options={stripeShippingOptions}
                 onChange={(event) => {
+                  // The element is the authority on country+state and already
+                  // clears its own state when the country changes, so mirror
+                  // those two on EVERY event — not only on `complete`. Copying
+                  // them only when complete left the previous country's state in
+                  // the form through the incomplete transition, and the submit
+                  // below pushes the form's value back out to the Stripe session
+                  // and to WooCommerce: that is how an AU `VIC` reached
+                  // `update-customer` beside country NZ and came back
+                  // `invalid_state` (production, 2026-10-16). The remaining
+                  // fields stay gated on `complete` so a half-typed address is
+                  // never mirrored.
+                  // An event reporting NO country carries no authority — the
+                  // element has told us nothing to mirror — and writing "" from
+                  // it would wipe a seeded country the shopper can still see in
+                  // the element, stranding them on "Country is required". A
+                  // stale state is covered on the way out regardless.
+                  const liveCountry = event.value?.address?.country ?? "";
+                  const liveState = resolveStateForCountry(
+                    liveCountry,
+                    event.value?.address?.state,
+                  );
+                  if (
+                    liveCountry &&
+                    (form.getValues("shippingAddress.country") !==
+                      liveCountry ||
+                      form.getValues("shippingAddress.state") !== liveState)
+                  ) {
+                    form.setValue("shippingAddress.country", liveCountry, {
+                      shouldValidate: true,
+                    });
+                    form.setValue("shippingAddress.state", liveState, {
+                      shouldValidate: true,
+                    });
+                    setLastShippingValue((prev) =>
+                      prev
+                        ? { ...prev, country: liveCountry, state: liveState }
+                        : prev,
+                    );
+                  }
                   if (event.complete && event.value) {
                     const { address, firstName, lastName, name } = event.value;
                     const first = (name?.split(" ")?.[0] || firstName) ?? "";
@@ -603,7 +658,7 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                       line1: addr.line1 ?? "",
                       line2: addr.line2 ?? "",
                       city: addr.city ?? "",
-                      state: addr.state ?? "",
+                      state: resolveStateForCountry(addr.country, addr.state),
                       country: addr.country ?? "",
                       postalCode: addr.postal_code ?? "",
                       phone: existingPhone,

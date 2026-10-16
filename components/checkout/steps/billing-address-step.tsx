@@ -23,25 +23,46 @@ import {
   isValidCheckoutPhone,
   CHECKOUT_PHONE_MESSAGE,
 } from "@/components/checkout/utils";
+import {
+  countryRequiresState,
+  resolveStateForCountry,
+} from "@/lib/checkout-address-state";
 import { PhoneInput } from "@/components/ui/phone-input-lazy";
 import { useCheckoutActions } from "@/app/checkout/checkout-actions-context";
 
-const addressSchema = z.object({
-  billingAddress: z.object({
-    firstName: z.string().min(1, "First Name is required"),
-    lastName: z.string().min(1, "Last Name is required"),
-    line1: z.string().min(1, "Address Line 1 is required"),
-    line2: z.string().optional(),
-    city: z.string().min(1, "City is required"),
-    state: z.string().min(1, "State is required"),
-    country: z.string().min(1, "Country is required"),
-    postalCode: z.string().min(1, "Postal Code is required"),
-    phone: z
-      .string()
-      .min(1, "Phone is required")
-      .refine(isValidCheckoutPhone, CHECKOUT_PHONE_MESSAGE),
-  }),
-});
+const addressSchema = z
+  .object({
+    billingAddress: z.object({
+      firstName: z.string().min(1, "First Name is required"),
+      lastName: z.string().min(1, "Last Name is required"),
+      line1: z.string().min(1, "Address Line 1 is required"),
+      line2: z.string().optional(),
+      city: z.string().min(1, "City is required"),
+      state: z.string(),
+      country: z.string().min(1, "Country is required"),
+      postalCode: z.string().min(1, "Postal Code is required"),
+      phone: z
+        .string()
+        .min(1, "Phone is required")
+        .refine(isValidCheckoutPhone, CHECKOUT_PHONE_MESSAGE),
+    }),
+  })
+  .superRefine((data, ctx) => {
+    // Only countries that actually collect a state may demand one — the Stripe
+    // billing element renders no State field for NZ, so an unconditional
+    // `min(1)` here is an error no shopper can clear.
+    // See lib/checkout-address-state.ts.
+    if (
+      countryRequiresState(data.billingAddress.country) &&
+      !data.billingAddress.state.trim()
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "State is required",
+        path: ["billingAddress", "state"],
+      });
+    }
+  });
 
 interface BillingAddressStepProps {
   enableStripe: boolean;
@@ -112,7 +133,12 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
             line1: billingToUse.line1 ?? "",
             line2: billingToUse.line2,
             city: billingToUse.city ?? "",
-            state: billingToUse.state ?? "",
+            // Last line of defence: the state that leaves this step belongs to
+            // the country beside it, or is empty.
+            state: resolveStateForCountry(
+              billingToUse.country,
+              billingToUse.state,
+            ),
             country: billingToUse.country ?? "",
             postalCode: billingToUse.postalCode ?? "",
             phone,
@@ -182,6 +208,39 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
             key={billingContacts ? "seeded" : "empty"}
             options={billingElementOptions}
             onChange={(event) => {
+              // The element owns country+state and clears its own state when the
+              // country changes, so mirror those two on EVERY event rather than
+              // only on `complete`: an incomplete transition used to leave the
+              // previous country's state in the form, which onSubmit then pushed
+              // back out over Stripe's correct empty value (the `invalid_state`
+              // refusal of 2026-10-16 on the delivery step's twin).
+              // An event reporting NO country carries no authority — the
+              // element has told us nothing to mirror — and writing "" from
+              // it would wipe a seeded country the shopper can still see in
+              // the element, stranding them on "Country is required". A
+              // stale state is covered on the way out regardless.
+              const liveCountry = event.value?.address?.country ?? "";
+              const liveState = resolveStateForCountry(
+                liveCountry,
+                event.value?.address?.state,
+              );
+              if (
+                liveCountry &&
+                (form.getValues("billingAddress.country") !== liveCountry ||
+                  form.getValues("billingAddress.state") !== liveState)
+              ) {
+                form.setValue("billingAddress.country", liveCountry, {
+                  shouldValidate: true,
+                });
+                form.setValue("billingAddress.state", liveState, {
+                  shouldValidate: true,
+                });
+                setLastBillingValue((prev) =>
+                  prev
+                    ? { ...prev, country: liveCountry, state: liveState }
+                    : prev,
+                );
+              }
               if (event.complete && event.value) {
                 const { address, phone, firstName, lastName, name } =
                   event.value;
@@ -194,7 +253,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
                   line1: addr.line1 ?? "",
                   line2: addr.line2 ?? "",
                   city: addr.city ?? "",
-                  state: addr.state ?? "",
+                  state: resolveStateForCountry(addr.country, addr.state),
                   country: addr.country ?? "",
                   postalCode: addr.postal_code ?? "",
                   phone: phone ?? "",
