@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ComponentType,
+} from "react";
 import { getStripePromise } from "@/lib/stripe-js-singleton";
 import {
   Elements,
@@ -34,6 +41,18 @@ const VALID_CURRENCIES = [
 ] as const;
 
 type ValidCurrency = (typeof VALID_CURRENCIES)[number];
+
+/**
+ * The element emits `loaderror` (Stripe logs "Unhandled paymentMethodMessaging
+ * Element loaderror" when nothing listens) and react-stripe-js wires
+ * `onLoadError` for every element type, but @stripe/react-stripe-js types this
+ * element's props with `onReady` only.
+ */
+const MessagingElement = PaymentMethodMessagingElement as ComponentType<
+  ComponentProps<typeof PaymentMethodMessagingElement> & {
+    onLoadError?: () => void;
+  }
+>;
 
 /**
  * Minimum painted height, in px, that counts as a real BNPL message rather than
@@ -271,6 +290,18 @@ export function PaymentMethodMessaging({
     );
   }, [gate, near, publishableKey, stripeAccountId]);
 
+  /**
+   * True once Stripe has reported `loaderror` for the element — a request it
+   * rejected, e.g. a buyer country no BNPL provider serves (measured from a
+   * Thai IP: "unsupported country code: th"). Stripe has destroyed the element
+   * by then, but react-stripe-js still holds it and forwards the next options
+   * change to it, so the first new `amount` threw "This Element has already
+   * been destroyed" from a passive effect — on checkout that is the error
+   * screen, reached by any total change (a shipping rate, a stock correction:
+   * rehearsal S1). A failed badge is therefore unmounted and never updated.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
+
   const appearance = useMemo(() => buildCheckoutAppearance(), []);
   // Same pairing as checkout: the appearance names the brand family, this is
   // what lets the Stripe iframe load it. Without it the badge renders in the
@@ -296,7 +327,7 @@ export function PaymentMethodMessaging({
       data-testid="bnpl-messaging"
       className={painted ? "mb-6" : undefined}
     >
-      {stripePromise && hasAmount ? (
+      {stripePromise && hasAmount && !loadFailed ? (
         <Elements
           stripe={stripePromise}
           options={{
@@ -309,11 +340,12 @@ export function PaymentMethodMessaging({
               the minor amount. Each provider's own minimum and maximum are
               Stripe's to enforce: an amount outside every eligible provider's
               range renders nothing, which `painted` already collapses. */}
-          <PaymentMethodMessagingElement
+          <MessagingElement
             options={{
               amount: Math.round(price * 100),
               currency: normalizedCurrency,
             }}
+            onLoadError={() => setLoadFailed(true)}
           />
         </Elements>
       ) : null}

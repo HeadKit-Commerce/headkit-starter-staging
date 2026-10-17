@@ -376,7 +376,13 @@ function CheckoutPageBody({
   useEffect(() => {
     toggleCart(false);
     window.scrollTo(0, 0);
-    if (initialCart && !cartData) {
+    // The server render's cart is the one checkout entry CORRECTED (C1,
+    // `correctCartAtEntry` in page.tsx), so it replaces whatever the context
+    // already holds — e.g. a cart carried over from client navigation, read
+    // before the correction. Adopting it only into an empty context showed the
+    // removed line, its total and the old badge count beside the "has been
+    // removed" alert (rehearsal S2; see also `CartCountSync`).
+    if (initialCart) {
       setCartData(initialCart);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
