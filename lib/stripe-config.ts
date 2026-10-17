@@ -68,7 +68,10 @@ export interface StorefrontStripeConfig {
   publishableKey: string;
   /** Connect account id. Empty string in platform/direct mode. */
   accountId: string;
-  /** False unless the store explicitly opted in. */
+  /**
+   * False unless commerce says the badge can show: a Connect store's dashboard
+   * toggle, or — in direct mode — the enterprise store's own Stripe account.
+   */
   bnplMessagingEnabled: boolean;
 }
 

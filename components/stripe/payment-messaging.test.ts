@@ -8,7 +8,8 @@ import { describe, expect, it, vi } from "vitest";
 // singleton reads is optional, and unset is the platform default.
 vi.mock("@/lib/env", () => ({ env: {} }));
 
-const { shouldRenderMessaging } = await import("./payment-messaging");
+const { shouldRenderMessaging, messagingStripeLoadOptions } =
+  await import("./payment-messaging");
 
 const base = {
   publishableKey: "pk_test_1",
@@ -42,10 +43,54 @@ describe("shouldRenderMessaging", () => {
     expect(shouldRenderMessaging({ ...base, disabled: true })).toBe(false);
   });
 
-  it("does not render without a Connect account id", () => {
-    expect(shouldRenderMessaging({ ...base, stripeAccountId: "" })).toBe(false);
+  // Direct mode: an enterprise store's own publishable key with no account.
+  it("renders in direct mode (own key, no Connect account)", () => {
+    expect(shouldRenderMessaging({ ...base, stripeAccountId: "" })).toBe(true);
+    expect(shouldRenderMessaging({ ...base, stripeAccountId: null })).toBe(
+      true,
+    );
     expect(shouldRenderMessaging({ ...base, stripeAccountId: undefined })).toBe(
+      true,
+    );
+  });
+
+  // What keeps a Shopify / no-Stripe store from loading Stripe.js is the
+  // answer commerce gives it — no key, toggle off — not the missing account.
+  it("does not render for the no-Stripe answer (no key, no account, off)", () => {
+    expect(
+      shouldRenderMessaging({
+        ...base,
+        publishableKey: "",
+        stripeAccountId: "",
+        enabled: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRenderMessaging({
+        ...base,
+        publishableKey: "",
+        stripeAccountId: "",
+      }),
+    ).toBe(false);
+  });
+
+  it("does not render for a malformed account id", () => {
+    expect(shouldRenderMessaging({ ...base, stripeAccountId: "bogus" })).toBe(
       false,
     );
+  });
+});
+
+describe("messagingStripeLoadOptions", () => {
+  it("passes stripeAccount for a Connect store", () => {
+    expect(messagingStripeLoadOptions("acct_1")).toEqual({
+      stripeAccount: "acct_1",
+    });
+  });
+
+  it("passes no stripeAccount in direct mode", () => {
+    expect(messagingStripeLoadOptions("")).toEqual({});
+    expect(messagingStripeLoadOptions(null)).toEqual({});
+    expect(messagingStripeLoadOptions(undefined)).toEqual({});
   });
 });

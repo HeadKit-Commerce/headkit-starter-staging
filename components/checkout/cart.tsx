@@ -27,7 +27,7 @@ export interface CartBnplMessaging {
    */
   publishableKey: string;
   stripeAccountId?: string | null;
-  /** The store's `bnplMessagingEnabled` dashboard toggle. */
+  /** Commerce's `bnplMessagingEnabled` (see `lib/stripe-config.ts`). */
   enabled: boolean;
 }
 

@@ -56,27 +56,54 @@ export interface PaymentMethodMessagingProps {
   /** ISO 4217 currency code. */
   currency: string;
   publishableKey: string;
-  /** Connect account id. Required for direct-charge platforms — see below. */
+  /**
+   * Connect account id (`acct_…`), or empty for DIRECT mode — an enterprise
+   * store whose `publishableKey` is its own account's key. See below.
+   */
   stripeAccountId?: string | null | undefined;
-  /** The store's dashboard toggle. */
+  /**
+   * Commerce's `bnplMessagingEnabled`: the dashboard toggle for a Connect
+   * store, the store's own account's BNPL availability in direct mode.
+   */
   enabled: boolean;
   /** True when the product cannot be bought (out of stock). */
   disabled?: boolean;
 }
 
-/** Pure gate, exported for test. Cheap checks only — no Stripe involvement. */
+/**
+ * Pure gate, exported for test. Cheap checks only — no Stripe involvement.
+ *
+ * An EMPTY account id is direct mode, not "no Stripe": commerce answers an
+ * enterprise store with its own publishable key and no account, and sets
+ * `enabled` from that account's own payment method configuration. What keeps a
+ * Shopify / hosted-checkout store from downloading Stripe.js is `enabled` plus
+ * an empty `publishableKey` — commerce answers both for such a store, and the
+ * dashboard-api fallback can never set `enabled` without a Connect account. A
+ * NON-empty id that is not an `acct_` is malformed and still renders nothing.
+ */
 export function shouldRenderMessaging(a: {
   publishableKey: string;
   currency: string;
   enabled: boolean;
   disabled?: boolean;
-  /** Required so Shopify / no-Connect stores never download Stripe.js. */
   stripeAccountId?: string | null | undefined;
 }): boolean {
   if (!a.enabled || a.disabled) return false;
   if (!a.publishableKey) return false;
-  if (!a.stripeAccountId?.startsWith("acct_")) return false;
+  if (a.stripeAccountId && !a.stripeAccountId.startsWith("acct_")) return false;
   return isValidCurrency(a.currency.toUpperCase());
+}
+
+/**
+ * The `loadStripe` options for the badge, exported for test. Connect passes
+ * `stripeAccount`; direct mode passes NOTHING, because the key's own account is
+ * the merchant and a `stripeAccount` there would ask Stripe for a connected
+ * account that does not exist.
+ */
+export function messagingStripeLoadOptions(
+  stripeAccountId: string | null | undefined,
+): { stripeAccount?: string } {
+  return stripeAccountId ? { stripeAccount: stripeAccountId } : {};
 }
 
 /**
@@ -95,10 +122,14 @@ export function shouldRenderMessaging(a: {
  *    optional in `StripePaymentMethodMessagingElementOptions`, so it is simply
  *    omitted rather than passed as `undefined`.
  *
- * 2. `stripeAccount` IS passed. Commerce creates DIRECT charges on the connected
- *    account, and Stripe requires direct-charge platforms to identify the
- *    account that renders this element. Without it the badge would describe the
- *    PLATFORM's payment methods, not the merchant's.
+ * 2. `stripeAccount` is passed for a CONNECT store. Commerce creates DIRECT
+ *    charges on the connected account, and Stripe requires direct-charge
+ *    platforms to identify the account that renders this element. Without it
+ *    the badge would describe the PLATFORM's payment methods, not the
+ *    merchant's. In DIRECT mode (an enterprise store on its own keys) it is
+ *    omitted: the publishable key already belongs to the merchant's account,
+ *    and that account's own default payment method configuration is what the
+ *    badge reflects — see {@link messagingStripeLoadOptions}.
  *
  * `countryCode` is deliberately omitted — it is optional and Stripe infers the
  * buyer's country, which is more accurate than anything we could pass.
@@ -234,9 +265,10 @@ export function PaymentMethodMessaging({
 
   const stripePromise = useMemo(() => {
     if (!gate || !near) return null;
-    return getStripePromise(publishableKey, {
-      ...(stripeAccountId ? { stripeAccount: stripeAccountId } : {}),
-    });
+    return getStripePromise(
+      publishableKey,
+      messagingStripeLoadOptions(stripeAccountId),
+    );
   }, [gate, near, publishableKey, stripeAccountId]);
 
   const appearance = useMemo(() => buildCheckoutAppearance(), []);
@@ -273,6 +305,10 @@ export function PaymentMethodMessaging({
             currency: normalizedCurrency.toLowerCase(),
           }}
         >
+          {/* Every VALID_CURRENCIES member is two-decimal in Stripe, so ×100 is
+              the minor amount. Each provider's own minimum and maximum are
+              Stripe's to enforce: an amount outside every eligible provider's
+              range renders nothing, which `painted` already collapses. */}
           <PaymentMethodMessagingElement
             options={{
               amount: Math.round(price * 100),

@@ -118,8 +118,8 @@ interface CheckoutPageContentProps {
   isAuthenticated?: boolean;
   allowedCountries?: string[];
   /**
-   * The store's `bnplMessagingEnabled` dashboard toggle, read server-side in
-   * page.tsx. Only the TOGGLE travels: the publishable key and Connect account
+   * Commerce's `bnplMessagingEnabled` (see `lib/stripe-config.ts`), read
+   * server-side in page.tsx. Only the FLAG travels: the publishable key and account
    * the badge renders against come from the checkout session, which is the
    * account the shopper is actually paying through.
    */
