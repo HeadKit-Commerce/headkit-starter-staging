@@ -38,12 +38,20 @@ import { useClientTheme } from "@/components/headkit-ui/client-theme-provider";
 import { formatPrice, getStoreCurrency } from "@/lib/utils";
 import { cartItemsDisplayTotal } from "@/lib/cart-prices";
 import { buildViewCartFromCart, pushGa4Ecommerce } from "@/lib/ga4-ecommerce";
+import { StockAlertList } from "./stock-alert-list";
 
 const GIFT_MESSAGE_DEBOUNCE_MS = 400;
 
 export function CartDrawer() {
-  const { cartData, optimisticCart, setCartData, cartOpen, toggleCart } =
-    useCartContext();
+  const {
+    cartData,
+    optimisticCart,
+    setCartData,
+    cartOpen,
+    toggleCart,
+    bagAlerts,
+    setBagAlerts,
+  } = useCartContext();
   const isQuoteMode = useIsQuoteMode();
   const theme = useClientTheme();
   const packagingTheme = theme.cart?.packaging;
@@ -288,7 +296,15 @@ export function CartDrawer() {
     ) : null;
 
   return (
-    <Sheet open={cartOpen} onOpenChange={(open) => toggleCart(open)}>
+    <Sheet
+      open={cartOpen}
+      onOpenChange={(open) => {
+        toggleCart(open);
+        // The stock alerts belong to the visit checkout sent the shopper here
+        // on; closing the bag dismisses them.
+        if (!open && bagAlerts.length > 0) setBagAlerts([]);
+      }}
+    >
       <SheetContent className="headkit-cart-drawer flex h-full min-h-0 flex-col overflow-hidden bg-brand-bg">
         <SheetHeader className="shrink-0">
           <SheetTitle className="mt-3 text-left">
@@ -296,6 +312,16 @@ export function CartDrawer() {
           </SheetTitle>
           <SheetDescription hidden />
         </SheetHeader>
+        {bagAlerts.length > 0 && (
+          <div className="shrink-0 px-4 pb-2">
+            <StockAlertList
+              alerts={bagAlerts}
+              onDismiss={(index) =>
+                setBagAlerts(bagAlerts.filter((_, i) => i !== index))
+              }
+            />
+          </div>
+        )}
 
         <CartDrawerRegions
           scroll={scroll}

@@ -25,6 +25,8 @@ import { cartNeedsAttention } from "@/lib/cart-issues";
 import { Input } from "@/components/ui/input";
 import { CartChangedBanner } from "@/components/checkout/cart-changed-banner";
 import type { Step } from "@/app/checkout/CheckoutForm";
+import { StockAlertsProvider } from "@/components/checkout/stock-alerts";
+import type { StockAlert } from "@/lib/stock-hold";
 function CheckoutErrorHandler({
   onError,
 }: {
@@ -124,9 +126,29 @@ interface CheckoutPageContentProps {
    * account the shopper is actually paying through.
    */
   bnplMessagingEnabled?: boolean;
+  /**
+   * The per-item alerts for lines the checkout page removed or reduced at
+   * entry (checkout plan v3 §2, checkpoint C1). Shown above the steps.
+   */
+  initialStockAlerts?: StockAlert[];
 }
 
+/**
+ * The checkout UI, inside the stock-alert area every checkpoint reports into
+ * (components/checkout/stock-alerts.tsx).
+ */
 export function CheckoutPageContent({
+  initialStockAlerts = [],
+  ...props
+}: CheckoutPageContentProps) {
+  return (
+    <StockAlertsProvider initialAlerts={initialStockAlerts}>
+      <CheckoutPageBody {...props} />
+    </StockAlertsProvider>
+  );
+}
+
+function CheckoutPageBody({
   initialCart,
   checkoutSession: initialCheckoutSession,
   pickupLocations: pickupLocationsFromApi = [],
@@ -136,7 +158,7 @@ export function CheckoutPageContent({
   isAuthenticated = false,
   allowedCountries = ["AU", "NZ"],
   bnplMessagingEnabled = false,
-}: CheckoutPageContentProps) {
+}: Omit<CheckoutPageContentProps, "initialStockAlerts">) {
   const router = useRouter();
   const { cartData, setCartData, toggleCart } = useCartContext();
   const [showCart, setShowCart] = useState(false);

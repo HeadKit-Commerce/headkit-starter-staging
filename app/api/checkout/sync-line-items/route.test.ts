@@ -159,7 +159,7 @@ describe("sync-line-items dead-session signal (ENG-784, D7)", () => {
 });
 
 describe("sync-line-items pre-payment stock gate", () => {
-  it("409 {ok:false, code: CART_ITEM_UNAVAILABLE} when commerce refuses an unavailable line", async () => {
+  it("409 {ok:false, code: CART_ITEM_UNAVAILABLE, issues} when commerce refuses an unavailable line", async () => {
     stubCookies({});
     sdk.payments.syncCheckoutSessionLineItems.mockRejectedValue(
       new GraphQLError([
@@ -167,7 +167,7 @@ describe("sync-line-items pre-payment stock gate", () => {
           message: "no longer available",
           extensions: {
             code: "CART_ITEM_UNAVAILABLE",
-            issues: [{ code: "OUT_OF_STOCK", itemKey: "k" }],
+            issues: [{ code: "OUT_OF_STOCK", itemKey: "k", available: 0 }],
           },
         },
       ]),
@@ -176,9 +176,12 @@ describe("sync-line-items pre-payment stock gate", () => {
     const res = await POST(postRequest({ sessionId: "cs_open" }));
 
     expect(res.status).toBe(409);
+    // The issues travel with the code, so checkout corrects the named lines in
+    // place (checkout plan v3 §2.2) — only the server can still read them.
     expect(await res.json()).toEqual({
       ok: false,
       code: "CART_ITEM_UNAVAILABLE",
+      issues: [{ code: "OUT_OF_STOCK", itemKey: "k", available: 0 }],
     });
     // Decided from the code alone — no session status read needed.
     expect(sdk.payments.getCheckoutSession).not.toHaveBeenCalled();

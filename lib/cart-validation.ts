@@ -2,6 +2,7 @@ import type { CartItem } from "@headkit/sdk";
 import { removeCartItemAction, updateCartItemAction } from "./cart-actions";
 import { decodeHtmlEntities } from "./utils";
 import { stripTitleMarkers } from "./title-emphasis";
+import { lineDisplayName, type StockAlert } from "./stock-hold";
 
 /** Backorder stock status constant matching WooCommerce/provider values. */
 const STOCK_STATUS_BACKORDER = "onbackorder";
@@ -129,4 +130,27 @@ export async function autoCorrectCart(
       message: "Failed to update cart. Please try again.",
     };
   }
+}
+
+/**
+ * One alert per line the entry auto-correct removed or reduced (checkout plan
+ * v3 §2, checkpoint C1), naming the line with its variation as the alert
+ * sentence wants it ("Product – Value, Value").
+ */
+export function stockAlertsFromValidation(
+  issues: ReadonlyArray<ValidationIssue>,
+  items: ReadonlyArray<CartItem>,
+): StockAlert[] {
+  return issues.map((issue) => {
+    const line = items.find((i) => i.key === issue.itemKey);
+    const name = line
+      ? lineDisplayName({
+          ...line,
+          name: stripTitleMarkers(decodeHtmlEntities(line.name)),
+        })
+      : issue.itemName;
+    return issue.action === "remove"
+      ? { kind: "removed", name }
+      : { kind: "reduced", name, quantity: issue.availableStock ?? 0 };
+  });
 }

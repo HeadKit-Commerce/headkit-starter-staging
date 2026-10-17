@@ -14,6 +14,11 @@ import { useCheckoutActions } from "@/app/checkout/checkout-actions-context";
 import { writeBillingAddressCookie } from "@/lib/checkout-billing-cookie";
 import { isCheckoutSessionDead } from "@/lib/checkout-session-status";
 import { buildCheckoutBillingAddressElementOptions } from "@/lib/checkout-address-seed";
+import {
+  holdCheckoutStockAction,
+  releaseCheckoutStockAction,
+} from "@/app/checkout/actions";
+import { useStockRefusal } from "@/components/checkout/stock-alerts";
 
 interface StripePaymentStepProps {
   /**
@@ -100,6 +105,13 @@ function isDistinctBilling(
   );
 }
 
+/** Fire-and-forget release request for a Checkout Session's hold. */
+function releaseHold(sessionId: string | undefined): void {
+  if (sessionId) {
+    void releaseCheckoutStockAction({ checkoutSessionId: sessionId });
+  }
+}
+
 /** Wait for React to commit an unmount before Stripe confirm() (ENG-801). */
 async function waitForBillingUnmount(): Promise<void> {
   await new Promise<void>((resolve) => {
@@ -147,6 +159,7 @@ export function StripePaymentStep({
 }: StripePaymentStepProps) {
   const checkoutState = useCheckout();
   const { actions } = useCheckoutActions();
+  const handleStockRefusal = useStockRefusal();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [billingElementComplete, setBillingElementComplete] = useState(false);
@@ -292,8 +305,23 @@ export function StripePaymentStep({
         }
       }
 
+      // Checkpoint C3 (checkout plan v3 §1): reserve the cart's stock in
+      // WooCommerce BEFORE confirming. Nothing is confirmed unless the hold
+      // answers held or not-required; a refused line is corrected in place
+      // with an alert, and a hold that could not be placed asks the shopper to
+      // try again. Either way the shopper stays here, uncharged.
+      const hold = await holdCheckoutStockAction(sessionId);
+      if (hold.status === "refused" || hold.status === "unavailable") {
+        await handleStockRefusal(hold);
+        return;
+      }
+
       const result = await checkout.confirm();
       if (result.type === "error") {
+        // Ask commerce to release the hold. It reads the live PaymentIntent
+        // and releases only when this attempt has really ended — a 3D Secure
+        // challenge still open is not a failure (plan v3 §1.6).
+        releaseHold(sessionId);
         if (
           sessionId &&
           onSessionExpired &&
@@ -305,6 +333,7 @@ export function StripePaymentStep({
         setError(result.error.message ?? "Payment failed. Please try again.");
       }
     } catch (err) {
+      releaseHold(sessionId);
       if (
         sessionId &&
         onSessionExpired &&
@@ -331,6 +360,7 @@ export function StripePaymentStep({
     sessionId,
     onSessionExpired,
     onConfirmingChange,
+    handleStockRefusal,
   ]);
 
   if (checkoutState.type === "loading") {

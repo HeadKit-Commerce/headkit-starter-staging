@@ -21,6 +21,14 @@ import type {
   CartFieldsFragment,
   ExpireCheckoutSessionReason,
 } from "@headkit/sdk";
+import {
+  holdOutcomeFromError,
+  holdRefusalFromError,
+  type CartCorrection,
+  type HoldOutcome,
+  type StockHoldPayments,
+} from "@/lib/stock-hold";
+import { removeCartItemAction, updateCartItemAction } from "@/lib/cart-actions";
 
 /**
  * Checkout mutations and queries. All checkout operations from the frontend
@@ -99,16 +107,104 @@ export async function createCheckoutSessionAction(
  * Used only by the Payment Intents Express Checkout Element — Payment Element
  * stays on Checkout Sessions. Amount is the authoritative cart total after
  * in-sheet shipping updates.
+ *
+ * On a stock-hold store commerce reserves the cart's stock first (checkout plan
+ * v3 §1.2) and refuses the intent when it cannot. That refusal comes back as a
+ * value, not a throw: a Server Action error reaches the browser without its
+ * GraphQL code in production, and the wallet needs to know WHICH lines to
+ * correct. Any other failure still throws, as before.
  */
-export async function createPaymentIntentAction() {
+export async function createPaymentIntentAction(): Promise<
+  { ok: true; clientSecret: string } | { ok: false; hold: HoldOutcome }
+> {
   const cartToken = await getCartToken();
   if (!cartToken) throw new Error("No active cart session.");
   const authToken = getAuthToken(await cookies());
-  return createServerHeadkit(
-    cartToken,
-    undefined,
-    authToken,
-  ).payments.createIntent();
+  try {
+    const intent = await createServerHeadkit(
+      cartToken,
+      undefined,
+      authToken,
+    ).payments.createIntent();
+    return { ok: true, clientSecret: intent.clientSecret };
+  } catch (err) {
+    const hold = holdRefusalFromError(err);
+    if (hold) return { ok: false, hold };
+    throw err;
+  }
+}
+
+/**
+ * Reserves the cart's stock in WooCommerce immediately before a payment is
+ * confirmed (checkout plan v3 §1, the Pay click). Returns the outcome as a
+ * value; the caller confirms ONLY on "held" or "not_required". Every failure
+ * that is not a stock refusal is "unavailable": the hold fails closed.
+ *
+ * A storefront built against an SDK without the hold answers "not_required",
+ * which is exactly what it did before the hold existed.
+ */
+export async function holdCheckoutStockAction(
+  checkoutSessionId?: string,
+): Promise<HoldOutcome> {
+  const cartToken = await getCartToken();
+  if (!cartToken) return { status: "unavailable" };
+  const authToken = getAuthToken(await cookies());
+  const payments = createServerHeadkit(cartToken, undefined, authToken)
+    .payments as unknown as StockHoldPayments;
+  if (typeof payments.holdCheckoutStock !== "function") {
+    return { status: "not_required" };
+  }
+  try {
+    const result = await payments.holdCheckoutStock(checkoutSessionId);
+    return { status: result.status === "HELD" ? "held" : "not_required" };
+  } catch (err) {
+    return holdOutcomeFromError(err);
+  }
+}
+
+/**
+ * Asks commerce to release the cart's hold after a payment attempt, by its
+ * Checkout Session or its PaymentIntent. Commerce reads the live PaymentIntent
+ * and releases only when the attempt has ended (plan v3 §1.6); this action
+ * never decides that. Fire-and-forget: every failure is swallowed, and an
+ * unreleased hold lapses on its own within minutes.
+ */
+export async function releaseCheckoutStockAction(
+  input: { checkoutSessionId: string } | { paymentIntentId: string },
+): Promise<void> {
+  try {
+    const cartToken = await getCartToken();
+    if (!cartToken) return;
+    const authToken = getAuthToken(await cookies());
+    const payments = createServerHeadkit(cartToken, undefined, authToken)
+      .payments as unknown as StockHoldPayments;
+    await payments.releaseCheckoutStock?.(input);
+  } catch {
+    // Swallowed by design — see docblock.
+  }
+}
+
+/**
+ * Applies the corrections a refusal calls for — removes unavailable lines,
+ * reduces short ones — WITHOUT expiring the Checkout Session, so the shopper
+ * stays on checkout and the session is re-synced to the corrected cart.
+ * Returns the corrected cart, or null when a correction failed.
+ */
+export async function correctCartAction(
+  corrections: ReadonlyArray<CartCorrection>,
+): Promise<CartFieldsFragment | null> {
+  let cart: CartFieldsFragment | null = null;
+  for (const c of corrections) {
+    const result =
+      c.action === "remove"
+        ? await removeCartItemAction(c.itemKey, { keepCheckoutSession: true })
+        : await updateCartItemAction(c.itemKey, c.quantity, {
+            keepCheckoutSession: true,
+          });
+    if (!result.success) return null;
+    cart = result.cart;
+  }
+  return cart;
 }
 
 /**

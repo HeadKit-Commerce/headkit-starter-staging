@@ -7,6 +7,7 @@ import {
   CART_ITEM_UNAVAILABLE,
   isCartItemUnavailableError,
 } from "@/lib/cart-issues";
+import { holdRefusalFromError } from "@/lib/stock-hold";
 
 /**
  * POST /api/checkout/sync-line-items
@@ -52,14 +53,20 @@ export async function POST(request: Request) {
       shippingOptionMapping: result.shippingOptionMapping ?? null,
     });
   } catch (err) {
-    // The store now reports a cart line it will not sell; commerce expired the
-    // session and refused (CART_ITEM_UNAVAILABLE). 409 like a dead session, but
-    // with the code, so CheckoutForm reloads /checkout — where the line is
-    // removed or flagged — instead of running the one-shot auto-recreate,
-    // which the same gate would refuse.
+    // The store now reports a cart line it will not sell; commerce refused
+    // (CART_ITEM_UNAVAILABLE). 409 like a dead session, but with the code and
+    // the issues, so CheckoutForm corrects the named lines in place and shows
+    // one alert per item (checkout plan v3 §2.2) instead of running the
+    // one-shot auto-recreate, which the same gate would refuse. Read here
+    // because only the server still sees the GraphQL extensions.
     if (isCartItemUnavailableError(err)) {
+      const refusal = holdRefusalFromError(err);
       return NextResponse.json(
-        { ok: false, code: CART_ITEM_UNAVAILABLE },
+        {
+          ok: false,
+          code: CART_ITEM_UNAVAILABLE,
+          issues: refusal?.status === "refused" ? refusal.issues : [],
+        },
         { status: 409 },
       );
     }

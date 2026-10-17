@@ -25,7 +25,10 @@ import {
 import {
   createPaymentIntentAction,
   processCheckoutAction,
+  releaseCheckoutStockAction,
 } from "@/app/checkout/actions";
+import { useStockRefusal } from "@/components/checkout/stock-alerts";
+import { paymentIntentIdFromClientSecret } from "@/lib/stock-hold";
 import { hasSelectedPickupRate } from "@/lib/shipping-rates";
 import {
   decodeExpressShippingRateId,
@@ -72,6 +75,7 @@ function ExpressCheckoutPiInner({
   const elements = useElements();
   const router = useRouter();
   const { cartData, setCartData } = useCartContext();
+  const handleStockRefusal = useStockRefusal();
   const [hasWallet, setHasWallet] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,9 +209,17 @@ function ExpressCheckoutPiInner({
         await syncAmountFromCart(addrResult.cart);
       }
 
+      // createPaymentIntent places the stock hold on a stock-hold store
+      // (checkout plan v3 §1.2) and refuses the intent when the cart cannot be
+      // held: close the sheet uncharged, correct the cart in place, alert.
       let clientSecret: string;
       try {
         const intent = await createPaymentIntentAction();
+        if (!intent.ok) {
+          event.paymentFailed({ reason: "fail" });
+          await handleStockRefusal(intent.hold);
+          return;
+        }
         clientSecret = intent.clientSecret;
       } catch (err) {
         event.paymentFailed({ reason: "fail" });
@@ -216,6 +228,15 @@ function ExpressCheckoutPiInner({
         );
         return;
       }
+      const paymentIntentId = paymentIntentIdFromClientSecret(clientSecret);
+      // Ask commerce to release the hold after a failed attempt. It decides on
+      // the live intent, so a status this component calls "not completed"
+      // (requires_action, requires_capture) keeps its hold (plan v3 §1.6).
+      const releaseHold = () => {
+        if (paymentIntentId) {
+          void releaseCheckoutStockAction({ paymentIntentId });
+        }
+      };
 
       const { error: confirmError, paymentIntent } =
         await stripe.confirmPayment({
@@ -229,6 +250,7 @@ function ExpressCheckoutPiInner({
 
       if (confirmError) {
         event.paymentFailed({ reason: "fail" });
+        releaseHold();
         setError(confirmError.message ?? "Payment failed.");
         return;
       }
@@ -236,6 +258,7 @@ function ExpressCheckoutPiInner({
       const pi = paymentIntent;
       if (!pi || (pi.status !== "succeeded" && pi.status !== "processing")) {
         event.paymentFailed({ reason: "fail" });
+        releaseHold();
         setError("Payment was not completed.");
         return;
       }
@@ -323,6 +346,7 @@ function ExpressCheckoutPiInner({
       setCartData,
       syncAmountFromCart,
       router,
+      handleStockRefusal,
     ],
   );
 

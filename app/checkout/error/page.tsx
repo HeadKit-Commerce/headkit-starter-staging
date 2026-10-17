@@ -3,6 +3,15 @@
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
+import { useCartContext } from "@/components/headkit-ui/cart-context";
+
+/**
+ * Stock refusals never end on this screen (checkout plan v3 §2.3): checkout
+ * corrects the cart in place, and leaves only for the bag. These reasons can
+ * still arrive from an old link or a storefront tab opened before the change,
+ * so they are forwarded to the bag with the generic alert.
+ */
+const STOCK_REASONS = new Set(["item_unavailable", "stock_correction_empty"]);
 
 const getErrorMessage = (reason?: string): string => {
   switch (reason) {
@@ -55,6 +64,14 @@ function ErrorContent() {
   const [showDetails, setShowDetails] = useState(false);
 
   const reason = searchParams.get("reason") ?? undefined;
+  const { setBagAlerts, toggleCart } = useCartContext();
+  const toBag = reason !== undefined && STOCK_REASONS.has(reason);
+  useEffect(() => {
+    if (!toBag) return;
+    setBagAlerts([{ kind: "unnamed" }]);
+    toggleCart(true);
+    router.replace("/");
+  }, [toBag, setBagAlerts, toggleCart, router]);
   const errorDetails =
     searchParams.get("error") ?? searchParams.get("message") ?? undefined;
   const errorMessage = getErrorMessage(reason);
@@ -67,6 +84,8 @@ function ErrorContent() {
       parsedError = errorDetails;
     }
   }
+
+  if (toBag) return null;
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">

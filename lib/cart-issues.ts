@@ -29,6 +29,11 @@ export interface CartIssueLike {
   message?: string | null;
   itemKey?: string | null;
   productName?: string | null;
+  /**
+   * How many units of the line the store can sell now — what the line is
+   * reduced to (0: removed). Absent from an older gateway or SDK.
+   */
+  available?: number | null;
 }
 
 /**

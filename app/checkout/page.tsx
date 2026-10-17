@@ -1,11 +1,15 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { validateCartStock, autoCorrectCart } from "@/lib/cart-validation";
+import { correctCartAtEntry, type EntryCart } from "@/lib/checkout-stock-entry";
 import {
   hasBlockingCartIssues,
   isCartItemUnavailableError,
 } from "@/lib/cart-issues";
-import { createCheckoutSessionAction } from "./actions";
+import { bagUrl, type StockAlert } from "@/lib/stock-hold";
+import {
+  createCheckoutSessionAction,
+  type CheckoutSessionResult,
+} from "./actions";
 import { CheckoutPageContent } from "./checkout-page-content";
 import type { CartFieldsFragment } from "@headkit/sdk";
 import { getFullCartAction } from "@/lib/cart-actions";
@@ -86,33 +90,16 @@ export default async function CheckoutPage({
     redirect(shopifyCheckout);
   }
 
-  // Server-side stock validation — auto-correct before showing the page.
-  const validation = validateCartStock(cart.items);
-  let stockCorrectionMessage: string | null = null;
-
-  // Commerce marks a line WooCommerce reports as sold out (or no longer
-  // purchasable) with stockStatus "outofstock", so it lands here and is removed
-  // before any payment is set up (lib/cart-issues.ts).
-  if (!validation.isValid) {
-    const correction = await autoCorrectCart(validation.issues);
-    stockCorrectionMessage = correction.success
-      ? validation.message
-      : correction.message;
-
-    // Re-fetch the cart after corrections.
-    cart = await getFullCartAction();
-
-    if (!cart || cart.itemsCount === 0) {
-      redirect("/checkout/error?reason=stock_correction_empty");
-    }
-  }
+  // Checkpoint C1: correct the cart before showing the page.
+  const stockAlerts: StockAlert[] = [];
+  cart = await correctCartAtEntry(cart, stockAlerts);
 
   // The store still reports a line it will not sell that could not be tied to
-  // one cart line (so the auto-correct above could not remove it). Commerce
-  // would refuse the payment anyway; send the shopper to fix the cart instead
-  // of to a generic session failure.
+  // one cart line, so nothing above could correct it, and commerce refuses a
+  // payment session for it. The bag is where the shopper can act on it: each
+  // line there carries its own issue (components/headkit-ui/cart-item.tsx).
   if (hasBlockingCartIssues(cart)) {
-    redirect("/checkout/error?reason=item_unavailable");
+    redirect(bagUrl([...stockAlerts, { kind: "unnamed" }]));
   }
 
   const returnUrl = `${process.env.NEXT_PUBLIC_FRONTEND_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
@@ -183,46 +170,72 @@ export default async function CheckoutPage({
   // /checkout/error. Same classifier, same condition, decided one level up.
   const offlineOnly = isOfflineOnlyCart(cart.paymentMethods);
   if (!isSettledFreeCart && !offlineOnly) {
-    try {
-      // Only request shipping-address collection when the cart actually needs
-      // shipping. For digital/no-shipping carts the session must NOT require a
-      // shipping address (the billing-only UI never sets one → confirm() would fail).
-      const shippingCountries = cart.needsShipping ? ["AU", "NZ"] : [];
-      // ENG-801: no email at create — see comment above `customerEmail`.
-      const session = await createCheckoutSessionAction(
-        returnUrl,
-        undefined,
-        shippingCountries,
-        successBaseUrl,
-      );
-      if (
-        !session.clientSecret ||
-        !session.sessionId ||
-        !session.publishableKey
-      ) {
-        redirect("/checkout/error?reason=invalid_session");
+    // Only request shipping-address collection when the cart actually needs
+    // shipping. For digital/no-shipping carts the session must NOT require a
+    // shipping address (the billing-only UI never sets one → confirm() would fail).
+    // ENG-801: no email at create — see comment above `customerEmail`.
+    const createSession = async (
+      forCart: EntryCart,
+    ): Promise<
+      | { ok: true; session: CheckoutSessionResult }
+      | { ok: false; error: unknown }
+    > => {
+      try {
+        const session = await createCheckoutSessionAction(
+          returnUrl,
+          undefined,
+          forCart.needsShipping ? ["AU", "NZ"] : [],
+          successBaseUrl,
+        );
+        return { ok: true, session };
+      } catch (error) {
+        return { ok: false, error };
       }
-      checkoutSession = {
-        clientSecret: session.clientSecret,
-        sessionId: session.sessionId,
-        publishableKey: session.publishableKey,
-        stripeAccountId: session.stripeAccountId ?? null,
-        testMode: session.testMode === true,
-        shippingOptionMapping: session.shippingOptionMapping ?? null,
-      };
-    } catch (error) {
-      // Stock changed between the cart read above and the session create:
-      // commerce refused BEFORE any payment (CART_ITEM_UNAVAILABLE).
-      if (isCartItemUnavailableError(error)) {
-        redirect("/checkout/error?reason=item_unavailable");
+    };
+
+    let created = await createSession(cart);
+    // Stock changed between the cart read above and the session create:
+    // commerce refused BEFORE any payment (CART_ITEM_UNAVAILABLE). Correct the
+    // cart again and try once more; redirect() stays outside any try, where its
+    // control-flow throw cannot be caught.
+    if (!created.ok && isCartItemUnavailableError(created.error)) {
+      const latest = await getFullCartAction();
+      if (!latest || latest.itemsCount === 0) {
+        redirect(bagUrl([...stockAlerts, { kind: "unnamed" }]));
       }
-      const message = error instanceof Error ? error.message : String(error);
+      cart = await correctCartAtEntry(latest, stockAlerts);
+      created = await createSession(cart);
+    }
+    if (!created.ok) {
+      if (isCartItemUnavailableError(created.error)) {
+        redirect(bagUrl([...stockAlerts, { kind: "unnamed" }]));
+      }
+      const message =
+        created.error instanceof Error
+          ? created.error.message
+          : String(created.error);
       const params = new URLSearchParams({
         reason: "session_creation_failed",
         message,
       });
       redirect(`/checkout/error?${params.toString()}`);
     }
+    const session = created.session;
+    if (
+      !session.clientSecret ||
+      !session.sessionId ||
+      !session.publishableKey
+    ) {
+      redirect("/checkout/error?reason=invalid_session");
+    }
+    checkoutSession = {
+      clientSecret: session.clientSecret,
+      sessionId: session.sessionId,
+      publishableKey: session.publishableKey,
+      stripeAccountId: session.stripeAccountId ?? null,
+      testMode: session.testMode === true,
+      shippingOptionMapping: session.shippingOptionMapping ?? null,
+    };
   }
 
   let pickupLocations: Array<{
@@ -295,27 +308,8 @@ export default async function CheckoutPage({
       {/* Cart changed banner (ENG-784: session expired mid-redirect because
           the cart drifted; nothing was charged) */}
       {cartChanged && <CartChangedBanner />}
-      {/* Stock correction banner */}
-      {stockCorrectionMessage && (
-        <div className="mx-auto max-w-6xl px-4 pt-6">
-          <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-            <svg
-              className="mt-0.5 h-4 w-4 shrink-0 text-amber-500"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                fillRule="evenodd"
-                d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="text-sm text-amber-800">{stockCorrectionMessage}</p>
-          </div>
-        </div>
-      )}
       <CheckoutPageContent
+        initialStockAlerts={stockAlerts}
         initialCart={cart as unknown as CartFieldsFragment}
         checkoutSession={checkoutSession}
         pickupLocations={pickupLocations}

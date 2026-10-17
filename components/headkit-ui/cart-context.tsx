@@ -3,6 +3,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useState,
   useOptimistic,
   useTransition,
@@ -10,6 +11,11 @@ import {
   type ReactNode,
 } from "react";
 import type { CartFieldsFragment } from "@headkit/sdk";
+import {
+  BAG_ALERTS_PARAM,
+  bagAlertsFromSearch,
+  type StockAlert,
+} from "@/lib/stock-hold";
 
 type CartData = CartFieldsFragment;
 
@@ -28,6 +34,12 @@ interface CartContextValue {
   optimisticUpdateQuantity: (key: string, quantity: number) => void;
   optimisticRemoveItem: (key: string) => void;
   startCartTransition: (fn: () => Promise<void>) => void;
+  /**
+   * Alerts the bag shows when checkout sent the shopper here because a stock
+   * correction emptied the cart (lib/stock-hold.ts). Empty otherwise.
+   */
+  bagAlerts: StockAlert[];
+  setBagAlerts: (alerts: StockAlert[]) => void;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -78,6 +90,27 @@ export function CartProvider({
   );
   const [cartOpen, setCartOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [bagAlerts, setBagAlerts] = useState<StockAlert[]>([]);
+
+  // A server redirect from /checkout (a correction emptied the cart at checkout
+  // entry) arrives as a full page load carrying ?bag_alerts=. Read it from
+  // window.location in a mount effect, never through useSearchParams: this
+  // provider is mounted by the root layout, and a request-time read there would
+  // turn every route dynamic. Client-side checkout corrections set the alerts
+  // directly instead (this provider outlives client navigation).
+  useEffect(() => {
+    const alerts = bagAlertsFromSearch(window.location.search);
+    if (alerts.length === 0) return;
+    setBagAlerts(alerts);
+    setCartOpen(true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete(BAG_ALERTS_PARAM);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, []);
 
   const [optimisticCart, addOptimistic] = useOptimistic<
     CartData | null,
@@ -127,6 +160,8 @@ export function CartProvider({
         optimisticUpdateQuantity,
         optimisticRemoveItem,
         startCartTransition,
+        bagAlerts,
+        setBagAlerts,
       }}
     >
       {children}

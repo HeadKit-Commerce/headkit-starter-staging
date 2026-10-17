@@ -12,6 +12,10 @@ import type { Stripe } from "@stripe/stripe-js";
 import { getStripePromise } from "@/lib/stripe-js-singleton";
 import { CART_ITEM_UNAVAILABLE } from "@/lib/cart-issues";
 import {
+  issuesFromSyncBody,
+  useStockRefusal,
+} from "@/components/checkout/stock-alerts";
+import {
   CheckoutElementsProvider,
   useCheckout,
 } from "@stripe/react-stripe-js/checkout";
@@ -336,6 +340,7 @@ function CheckoutSteps({
   // Uses Route Handler to avoid Server Action revalidation.
   // Parse response for shippingOptionMapping — Stripe recreates shipping rate IDs on sync.
   const { actions } = useCheckoutActions();
+  const handleStockRefusal = useStockRefusal();
   useEffect(() => {
     if (!sessionId || !cartData?.totals?.totalPrice || !actions) return;
     // Never sync on the contact step — email/cart mutations there can 409 and
@@ -359,13 +364,16 @@ function CheckoutSteps({
           const body = (await res.json().catch(() => null)) as {
             code?: string;
           } | null;
-          // A cart line the store will not sell: reload checkout, which
-          // removes or flags it before setting up a new payment
-          // (lib/cart-issues.ts). Not the auto-recreate — that would be
-          // refused by the same gate.
+          // A cart line the store will not sell (checkpoint C2): correct the
+          // named lines in place and show one alert per item — the corrected
+          // cart re-runs this effect and re-syncs the session (checkout plan
+          // v3 §2.2). Not the auto-recreate — that would be refused by the
+          // same gate.
           if (body?.code === CART_ITEM_UNAVAILABLE) {
-            // Already on /checkout: a full reload re-runs its server render.
-            window.location.reload();
+            await handleStockRefusal({
+              status: "refused",
+              issues: issuesFromSyncBody(body),
+            });
             return;
           }
           handleSessionExpired();
@@ -388,6 +396,7 @@ function CheckoutSteps({
     actions,
     onSyncComplete,
     handleSessionExpired,
+    handleStockRefusal,
     currentStep,
   ]);
 
