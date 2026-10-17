@@ -14,6 +14,8 @@ import { useCheckoutActions } from "@/app/checkout/checkout-actions-context";
 import { writeBillingAddressCookie } from "@/lib/checkout-billing-cookie";
 import { isCheckoutSessionDead } from "@/lib/checkout-session-status";
 import { buildCheckoutBillingAddressElementOptions } from "@/lib/checkout-address-seed";
+import { ensureCheckoutStockAction } from "@/lib/checkout-stock";
+import { useCartContext } from "@/components/headkit-ui/cart-context";
 
 interface StripePaymentStepProps {
   /**
@@ -147,6 +149,7 @@ export function StripePaymentStep({
 }: StripePaymentStepProps) {
   const checkoutState = useCheckout();
   const { actions } = useCheckoutActions();
+  const { setCartData } = useCartContext();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [billingElementComplete, setBillingElementComplete] = useState(false);
@@ -188,6 +191,18 @@ export function StripePaymentStep({
     setIsSubmitting(true);
     setError(null);
     try {
+      // Same stock gate as Express: page-load validation is stale by Pay time.
+      const stock = await ensureCheckoutStockAction();
+      if (!stock.ok) {
+        if (stock.cart) setCartData(stock.cart);
+        setError(stock.message);
+        if (stock.sessionExpired && onSessionExpired) {
+          onSessionExpired();
+        }
+        return;
+      }
+      if (stock.cart) setCartData(stock.cart);
+
       if (showBillingSameAsShipping) {
         const distinct = isDistinctBilling(lastBillingValue, shippingAddress);
 
@@ -324,6 +339,7 @@ export function StripePaymentStep({
   }, [
     checkoutState,
     actions,
+    setCartData,
     showBillingSameAsShipping,
     billingElementComplete,
     lastBillingValue,
@@ -371,9 +387,13 @@ export function StripePaymentStep({
               name: "never",
             },
           },
-          // Express (Payment Intents ECE) owns Apple Pay / Google Pay on this
-          // page. Hide wallets here so buttons are not duplicated.
-          wallets: { applePay: "never", googlePay: "never" },
+          // Checkout Session wallets default to `auto` (show when the session
+          // has card and the platform supports them). Same as Shopify / Stripe
+          // hosted checkout: Apple Pay / Google Pay stay in the Payment Element
+          // while Express also shows them at the top of the page. Stripe allows
+          // only ONE ExpressCheckoutElement per CheckoutProvider — that is the
+          // top instance; this is Payment Element wallets, not a second ECE.
+          wallets: { applePay: "auto", googlePay: "auto" },
         }}
       />
       {showBillingSameAsShipping && !hideBillingElement && (

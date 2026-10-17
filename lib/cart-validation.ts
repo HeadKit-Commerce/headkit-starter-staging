@@ -93,29 +93,34 @@ export function validateCartStock(items: CartItem[]): CartValidationResult {
 /**
  * Auto-corrects a cart by removing out-of-stock items and reducing quantities
  * for items with insufficient stock. Runs server-side only.
+ *
+ * `keepCheckoutSession` defaults to `true` for `/checkout` SSR (runs before
+ * the session is minted — expiring would race the create). Confirm-time
+ * callers pass `false` so ENG-784 expires the live session under a drifted
+ * basket (see {@link ensureCheckoutStockAction}).
  */
 export async function autoCorrectCart(
   issues: ValidationIssue[],
+  opts?: { keepCheckoutSession?: boolean },
 ): Promise<AutoCorrectResult> {
   if (issues.length === 0) {
     return { success: true, message: "Cart is valid" };
   }
 
+  const keepCheckoutSession = opts?.keepCheckoutSession !== false;
+
   try {
     const toReduce = issues.filter((i) => i.action === "reduce");
     const toRemove = issues.filter((i) => i.action === "remove");
 
-    // keepCheckoutSession: this runs during /checkout SSR BEFORE the session
-    // is created/registered — expiring here would race the mint. The freshly
-    // created session snapshots the already-corrected cart (ENG-784).
     for (const issue of toReduce) {
       await updateCartItemAction(issue.itemKey, issue.availableStock!, {
-        keepCheckoutSession: true,
+        keepCheckoutSession,
       });
     }
 
     for (const issue of toRemove) {
-      await removeCartItemAction(issue.itemKey, { keepCheckoutSession: true });
+      await removeCartItemAction(issue.itemKey, { keepCheckoutSession });
     }
 
     return {
