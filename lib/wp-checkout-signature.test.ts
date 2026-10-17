@@ -12,11 +12,13 @@ import { beforeAll, describe, expect, it } from "vitest";
  * marks an order paid on the word of the finalize request, and
  * `POST /wp-json/wc/store/v1/checkout` is public — so an unsigned request with
  * `payment_status=paid` produces a Processing order with no money taken. The
- * `reproduction_unsigned_paid` shape is exactly that request. This release only
- * LOGS it (the order is still paid, as before, and now carries an ERROR line
- * and an order note); when enforcement becomes the default its expected outcome
- * flips from `paid_and_logged` to `downgraded`, which `enforced_unsigned`
- * already demonstrates.
+ * `reproduction_unsigned_paid` shape is exactly that request. Theme 0.4.79
+ * only LOGGED it; since 0.4.83 (checkout plan v3, PR A2) enforcement is the
+ * default, so it is `downgraded` — an ERROR line, an order note, no
+ * `payment_complete()`, and `process_payment` answering `pending`, which the
+ * Store API returns as 202 Accepted and commerce reads as "order created,
+ * payment pending". Option `headkit_checkout_signature_enforce` = `no` is the
+ * per-store way back to log-only, pinned by the `log_only_*` scenarios.
  *
  * The harness runs the REAL hook closure and the REAL gateway class from an
  * unmodified `inc/headkit-payment.php` against recording shims
@@ -111,20 +113,22 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     }
   });
 
-  it("still pays an unsigned paid finalize, and now logs and notes it (log-only release)", () => {
-    // The reproduction. When enforcement becomes the default this flips to
-    // "downgraded" — change it deliberately, together with the default.
+  it("downgrades an unsigned paid finalize to pending by default, and logs and notes it", () => {
+    // The reproduction. 0.4.79 had this at "paid_and_logged"; enforcement is
+    // the default from 0.4.83.
     const got = scenario("reproduction_unsigned_paid");
-    expect(got.outcome).toBe("paid_and_logged");
-    expect(got.orderStatus).toBe("processing");
-    expect(got.paymentCompleteCalls).toBe(1);
+    expect(got.outcome).toBe("downgraded");
+    expect(got.orderStatus).toBe("pending");
+    expect(got.paymentCompleteCalls).toBe(0);
+    // process_payment's "pending" is the Store API's 202 Accepted.
+    expect(got.result).toBe("pending");
     expect(got.signature).toBe("missing_signature");
     expect(got.signatureErrors).toHaveLength(1);
     expect(got.signatureErrors[0]).toMatch(/order=\d+ /);
     expect(got.signatureErrors[0]).toContain("reason=missing_signature");
-    expect(got.signatureErrors[0]).toContain("action=log_only");
+    expect(got.signatureErrors[0]).toContain("action=downgraded_to_pending");
     expect(got.notes.join("\n")).toContain(
-      "without a valid HeadKit signature (reason: missing_signature)",
+      "without a valid HeadKit signature (reason: missing_signature). The paid status was NOT accepted",
     );
   });
 
@@ -142,16 +146,19 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     ["tampered_body", "bad_signature"],
     ["no_token_on_site", "no_secret"],
     ["unsigned_paypal_paid", "missing_signature"],
-  ])("logs %s as %s and leaves today's behaviour unchanged", (name, reason) => {
+  ])("downgrades %s (reason %s) and logs it", (name, reason) => {
     const got = scenario(name);
-    expect(got.outcome).toBe("paid_and_logged");
+    expect(got.outcome).toBe("downgraded");
+    expect(got.result).toBe("pending");
+    expect(got.paymentCompleteCalls).toBe(0);
     expect(got.signature).toBe(reason);
     expect(got.signatureErrors[0]).toContain(`reason=${reason}`);
+    expect(got.signatureErrors[0]).toContain("action=downgraded_to_pending");
   });
 
   it("treats a status from the $_POST fallback as unsigned", () => {
     const got = scenario("post_fallback_paid");
-    expect(got.outcome).toBe("paid_and_logged");
+    expect(got.outcome).toBe("downgraded");
     expect(got.signatureErrors[0]).toContain("reason=unsigned_post_fallback");
   });
 
@@ -159,7 +166,7 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     // The verdict is stored WITH the status: a signed POST that carries no
     // payment_status keeps the earlier unsigned PUT's verdict.
     const got = scenario("unsigned_put_then_signed_post");
-    expect(got.outcome).toBe("paid_and_logged");
+    expect(got.outcome).toBe("downgraded");
     expect(got.signature).toBe("missing_signature");
   });
 
@@ -172,8 +179,8 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     },
   );
 
-  it.each(["enforced_unsigned", "enforced_by_filter"])(
-    "downgrades an unsigned paid finalize to pending once enforcement is switched on (%s)",
+  it.each(["enforced_unsigned", "enforce_option_empty", "enforced_by_filter"])(
+    "downgrades an unsigned paid finalize to pending under an explicit or botched switch (%s)",
     (name) => {
       const got = scenario(name);
       expect(got.outcome).toBe("downgraded");
@@ -184,7 +191,26 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
   );
 
   it("still pays a signed finalize under enforcement", () => {
+    expect(scenario("signed_valid").outcome).toBe("paid");
     expect(scenario("enforced_signed_valid").outcome).toBe("paid");
+  });
+
+  it.each(["log_only_by_option", "log_only_by_filter"])(
+    "restores 0.4.79's log-only behaviour per store (%s)",
+    (name) => {
+      const got = scenario(name);
+      expect(got.outcome).toBe("paid_and_logged");
+      expect(got.orderStatus).toBe("processing");
+      expect(got.paymentCompleteCalls).toBe(1);
+      expect(got.signatureErrors[0]).toContain("action=log_only");
+      expect(got.notes.join("\n")).toContain(
+        "Confirm the payment in Stripe or PayPal before fulfilling",
+      );
+    },
+  );
+
+  it("pays a signed finalize when log-only is chosen", () => {
+    expect(scenario("log_only_signed_valid").outcome).toBe("paid");
   });
 
   it("verifies commerce's pinned cross-language vector and the ±300 s window", () => {
