@@ -6,10 +6,17 @@
  * Dashboard-api is the fallback for older commerce revisions that
  * lack the field (unknown-field gqlgen → executeRequest throws).
  *
- * Commerce answering with an empty accountId is authoritative: the
- * store has no Connect account (Shopify). Do not fall back to
- * dashboard in that case — leftover dashboard keys would load Stripe.js
- * on a hosted-checkout store.
+ * Commerce's answer is authoritative and is read by its publishable key:
+ *   - empty publishableKey → no Stripe credentials the storefront may use
+ *     (Shopify / hosted checkout, or an enterprise store whose own keys are
+ *     not configured) → disabled. Do not fall back to dashboard in that case —
+ *     leftover dashboard keys would load Stripe.js on a hosted-checkout store.
+ *   - real publishableKey + acct_… → Connect.
+ *   - real publishableKey + EMPTY accountId → DIRECT mode: an enterprise store
+ *     charging through its own Stripe account. Load Stripe.js with that key and
+ *     no Stripe-Account. (An empty accountId used to be read as "Shopify" and
+ *     disabled everything, which kept every non-checkout Stripe.js surface dark
+ *     on a store that does take Stripe payments.)
  *
  * The dashboard fallback still mirrors the resilience contract in
  * `branding.ts`: dashboard-api revisions lag the starter, and gqlgen
@@ -137,7 +144,7 @@ async function fetchDashboardStripeConfig(): Promise<StorefrontStripeConfig> {
 export async function fetchStripeConfig(): Promise<StorefrontStripeConfig> {
   const commerce = await fetchCommerceStripeConfig();
   if (commerce !== null) {
-    if (commerce.accountId === "") {
+    if (commerce.publishableKey === "") {
       return DISABLED_STRIPE_CONFIG;
     }
     return commerce;

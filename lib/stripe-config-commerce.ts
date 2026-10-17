@@ -4,7 +4,9 @@ import type { StorefrontStripeConfig } from "./stripe-config";
 /**
  * Commerce ConfigForStore keys. `null` means commerce is unavailable
  * (older revision, transport error) and the dashboard fallback should run.
- * An empty accountId is a successful answer — no Connect — not a miss.
+ * An empty accountId is a successful answer, not a miss: with a publishable key
+ * it is direct mode (an enterprise store's own account), without one it means
+ * no Stripe — `fetchStripeConfig` tells the two apart.
  *
  * The query is inlined rather than imported from `@headkit/sdk` so the
  * mirrored starter still type-checks against the currently published SDK

@@ -45,9 +45,11 @@ import {
  * GitHub against the target, then run this suite; each breakpoint polls until
  * its own external effect lands on the store doc, in pipeline order.
  *
- * SECURITY RIDERS: the store payload must never leak secretKeyEnc, and the
- * persisted environmentVariables map must carry only the public names —
- * HEADKIT_PRIVATE_KEY / HEADKIT_NPM_TOKEN must be absent (12-08 contract).
+ * SECURITY RIDERS: the store payload must never leak secretKeyEnc, it must
+ * never carry environment-variable VALUES (dashboard-api returns only
+ * `environmentVariableNames`), and the persisted env map must carry only the
+ * public names — HEADKIT_PRIVATE_KEY / HEADKIT_NPM_TOKEN must be absent
+ * (12-08 contract).
  */
 
 interface GitConnectionDoc {
@@ -79,7 +81,8 @@ interface StoreDoc {
   commerceConnection?: CommerceConnectionDoc;
   vercelProjectID?: string;
   lastDeploymentID?: string;
-  environmentVariables?: Record<string, string>;
+  /** Keys of the store's persisted env map; the API never returns values. */
+  environmentVariableNames?: string[];
 }
 
 interface ApiEnvelope {
@@ -180,7 +183,7 @@ function redactedSummary(store: StoreDoc): Record<string, unknown> {
     ),
     vercelProjectID: store.vercelProjectID ?? "",
     lastDeploymentID: store.lastDeploymentID ?? "",
-    envNames: Object.keys(store.environmentVariables ?? {}),
+    envNames: store.environmentVariableNames ?? [],
   };
 }
 
@@ -193,7 +196,7 @@ function redactedSummary(store: StoreDoc): Record<string, unknown> {
 let envBeforeDeployViolations = 0;
 function recordEnvBeforeDeployObservation(store: StoreDoc): void {
   if (!store.lastDeploymentID) return;
-  const names = Object.keys(store.environmentVariables ?? {});
+  const names = store.environmentVariableNames ?? [];
   const missing = REQUIRED_PUBLIC_ENV_NAMES.filter((n) => !names.includes(n));
   if (missing.length > 0) envBeforeDeployViolations += 1;
 }
@@ -238,6 +241,10 @@ test.describe("signup → live store provisioning (6 QA breakpoints)", () => {
     expect(
       raw.includes("secretKeyEnc"),
       "store payload must never serialize secretKeyEnc",
+    ).toBe(false);
+    expect(
+      raw.includes('"environmentVariables"'),
+      "store payload must never serialize the environment-variable map (its values are secrets)",
     ).toBe(false);
   });
 
@@ -334,7 +341,7 @@ test.describe("signup → live store provisioning (6 QA breakpoints)", () => {
       "vercelProjectID must be recorded",
     ).toBeTruthy();
 
-    const envNames = Object.keys(store.environmentVariables ?? {});
+    const envNames = store.environmentVariableNames ?? [];
     for (const name of REQUIRED_PUBLIC_ENV_NAMES) {
       expect(
         envNames,

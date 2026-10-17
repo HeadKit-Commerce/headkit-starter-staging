@@ -167,6 +167,43 @@ describe("fetchStripeConfig", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  // An enterprise store charges through its OWN Stripe account: commerce
+  // answers with the store's publishable key and NO Connect account. That is
+  // direct mode, not the Shopify case, and must not be disabled.
+  it("returns direct mode for an enterprise store (real key, empty accountId)", async () => {
+    fetchCommerceStripeConfig.mockResolvedValue(
+      commerceConfig({
+        publishableKey: "pk_live_merchant_own",
+        accountId: "",
+        bnplMessagingEnabled: false,
+      }),
+    );
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchStripeConfig()).resolves.toEqual({
+      publishableKey: "pk_live_merchant_own",
+      accountId: "",
+      bnplMessagingEnabled: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("stays disabled on an empty key even if commerce names an account", async () => {
+    fetchCommerceStripeConfig.mockResolvedValue(
+      commerceConfig({
+        publishableKey: "",
+        accountId: "acct_orphan",
+        bnplMessagingEnabled: true,
+      }),
+    );
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchStripeConfig()).resolves.toEqual(DISABLED_STRIPE_CONFIG);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("falls back to dashboard-api when commerce is unavailable", async () => {
     fetchCommerceStripeConfig.mockResolvedValue(null);
     const fetchMock = vi.fn().mockResolvedValue(
