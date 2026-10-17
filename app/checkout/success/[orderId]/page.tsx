@@ -28,6 +28,7 @@ import {
 } from "@/lib/checkout-billing-cookie";
 import { getBranding } from "@/lib/branding";
 import { normalizeCheckoutMode } from "@/lib/checkout-mode";
+import { stockShortfallNotice } from "@/lib/stock-shortfall";
 
 interface Props {
   params: Promise<{ orderId: string }>;
@@ -437,6 +438,13 @@ export default async function Page({ params, searchParams }: Props) {
     ? null
     : buildPurchaseFromOrder(order, shippingCost, getStoreCurrency());
 
+  // Items that sold out after payment (checkout plan v3 §3): the theme
+  // refunded them and the order carries the record. Null for every order
+  // without one, which renders exactly as before.
+  const shortfallNotice = isQuoteMode
+    ? null
+    : stockShortfallNotice(order.stockShortfall, currency);
+
   const hasShippingMethod = shippingLines.length > 0;
   const hasShippingAddress =
     !isPickupOrder &&
@@ -463,6 +471,17 @@ export default async function Page({ params, searchParams }: Props) {
           </h1>
         </div>
 
+        {shortfallNotice && (
+          <div
+            role="alert"
+            data-testid="stock-shortfall-notice"
+            className="col-span-12 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900"
+          >
+            <p className="font-bold">{shortfallNotice.title}</p>
+            <p>{shortfallNotice.body}</p>
+          </div>
+        )}
+
         {/* Left column — order info */}
         <div className="col-span-12 md:col-span-7 grid grid-cols-7">
           <div className="col-span-12 md:col-start-1 md:col-span-5">
@@ -470,7 +489,9 @@ export default async function Page({ params, searchParams }: Props) {
               <p className="font-extrabold text-3xl">
                 {isQuoteMode
                   ? "Your quote request was submitted."
-                  : "Your order is confirmed."}
+                  : shortfallNotice?.fullyRefunded
+                    ? "Your order could not be fulfilled."
+                    : "Your order is confirmed."}
               </p>
               <p className="text-lg">
                 {isQuoteMode
