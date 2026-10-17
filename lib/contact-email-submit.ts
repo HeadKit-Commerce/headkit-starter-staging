@@ -27,8 +27,11 @@ export interface ContactSubmitInput {
  *                        First entry on an email-less session is NOT a change.
  *   (b) "advance"      — the email is unchanged, a prefill exists, AND the
  *                        session already carries an email: Stripe forbids
- *                        `updateEmail` with an unchanged email, so just move
- *                        to the next step.
+ *                        `updateEmail` with an unchanged email, so the
+ *                        session is left alone. The component still pushes
+ *                        the email to the CART (checkout plan v3 §4.4: the
+ *                        store's Klaviyo Started Checkout fires from
+ *                        WooCommerce's update-customer route).
  *   (c) "update-email" — everything else: push the email onto the session
  *                        (`actions.updateEmail`) and the cart before advancing.
  *

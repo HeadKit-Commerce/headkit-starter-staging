@@ -438,6 +438,30 @@ export async function updateCustomerAddressAction(
 }
 
 /**
+ * Refill the cart from a Klaviyo abandoned-checkout link (checkout plan v3
+ * §4.5). `rebuildKey` is the link's `wck_rebuild_cart` value; the store
+ * rebuilds the cart this cookie names (or a new one) and the cookie is pointed
+ * at the result by withCartRetry. It is a cart mutation like any other, so an
+ * open checkout session for the old contents is expired first (ENG-784).
+ */
+export async function rebuildCartFromKlaviyoAction(
+  rebuildKey: string,
+): Promise<CartActionResult> {
+  try {
+    const cart = await withCartRetry((sdk) =>
+      sdk.cart.rebuildFromKlaviyo(rebuildKey),
+    );
+    return { success: true, cart };
+  } catch (err) {
+    const message = sanitizeCartErrorMessage(
+      err instanceof Error ? err.message : "",
+      "Failed to rebuild cart",
+    );
+    return { success: false, error: message };
+  }
+}
+
+/**
  * Delete the httpOnly `hk-cart-token` cookie. Called from signOut
  * (auth-context.tsx): the WP theme resolves the WP user from the Cart-Token
  * itself (session identity unification — see

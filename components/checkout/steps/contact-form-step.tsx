@@ -155,8 +155,18 @@ const ContactFormStep: React.FC<ContactFormStepProps> = ({
       }
 
       // Scene 2: email prefilled from cart and Stripe already has email.
-      // When email unchanged, do NOT call updateEmail (Stripe forbids it). Just advance.
+      // When email unchanged, do NOT call updateEmail (Stripe forbids it).
+      // The cart still gets the email (checkout plan v3 §4.4): the store sends
+      // Klaviyo's Started Checkout from WooCommerce's update-customer route,
+      // so a returning shopper who never retypes their email would otherwise
+      // never start a checkout as far as Klaviyo knows. Best effort — a failed
+      // push never holds the shopper on this step.
       if (decision === "advance") {
+        const pushed = await updateCustomerAddressAction(
+          { billingAddress: { email: data.email } },
+          { keepCheckoutSession: true },
+        ).catch(() => null);
+        if (pushed?.success) setCartData(pushed.cart);
         maybeSubscribe(data);
         await onNext(data);
         return;
