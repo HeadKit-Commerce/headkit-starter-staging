@@ -17,6 +17,10 @@ import { beforeAll, describe, expect, it } from "vitest";
  * an admin retry after a timeout sends the SAME key (WooCommerce deletes the
  * failed refund, so the refund's own id would change on retry).
  *
+ * A gateway refund that converts to 0 or less is refused before any HTTP call:
+ * both endpoints read an amount of 0 as a refund of the WHOLE payment, and
+ * WooCommerce accepts a 0.00 refund and still calls the gateway.
+ *
  * `php` is preinstalled on `ubuntu-latest`. This SKIPS on a developer machine
  * without it and FAILS in CI.
  */
@@ -28,6 +32,7 @@ const HARNESS = resolve(
 
 interface WireCall {
   ok: boolean;
+  error: string | null;
   url: string | null;
   body: Record<string, unknown> | null;
 }
@@ -132,6 +137,29 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     expect(got.url).toMatch(/\/woocommerce\/refund-paypal$/);
     expect(got.body?.amount).toBe(1999);
     expect(got.body).not.toHaveProperty("idempotency_key");
+  });
+
+  it.each([
+    "stripe_zero",
+    "stripe_null",
+    "stripe_sub_cent",
+    "stripe_negative",
+    "jpy_sub_yen",
+    "paypal_zero",
+  ])(
+    "refuses %s before any refund call (0 would refund the whole payment)",
+    (name) => {
+      const got = wire(name);
+      expect(got.ok).toBe(false);
+      expect(got.error).toBe("invalid_refund_amount");
+      expect(got.url).toBeNull();
+    },
+  );
+
+  it("still refunds the smallest real amount", () => {
+    const got = wire("stripe_one_cent");
+    expect(got.ok).toBe(true);
+    expect(got.body?.amount).toBe(1);
   });
 
   it("sends the same key on an admin retry and a new one after a completed refund", () => {
