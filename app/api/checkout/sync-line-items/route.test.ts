@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GraphQLError } from "@headkit/sdk";
 
 /**
  * `/api/checkout/sync-line-items` must build the SDK with the shopper's auth
@@ -154,5 +155,32 @@ describe("sync-line-items dead-session signal (ENG-784, D7)", () => {
     const res = await POST(postRequest({ sessionId: "cs_unknown" }));
 
     expect(res.status).toBe(500);
+  });
+});
+
+describe("sync-line-items pre-payment stock gate", () => {
+  it("409 {ok:false, code: CART_ITEM_UNAVAILABLE} when commerce refuses an unavailable line", async () => {
+    stubCookies({});
+    sdk.payments.syncCheckoutSessionLineItems.mockRejectedValue(
+      new GraphQLError([
+        {
+          message: "no longer available",
+          extensions: {
+            code: "CART_ITEM_UNAVAILABLE",
+            issues: [{ code: "OUT_OF_STOCK", itemKey: "k" }],
+          },
+        },
+      ]),
+    );
+
+    const res = await POST(postRequest({ sessionId: "cs_open" }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      ok: false,
+      code: "CART_ITEM_UNAVAILABLE",
+    });
+    // Decided from the code alone — no session status read needed.
+    expect(sdk.payments.getCheckoutSession).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { Stripe } from "@stripe/stripe-js";
 import { getStripePromise } from "@/lib/stripe-js-singleton";
+import { CART_ITEM_UNAVAILABLE } from "@/lib/cart-issues";
 import {
   CheckoutElementsProvider,
   useCheckout,
@@ -355,6 +356,18 @@ function CheckoutSteps({
         // return (nothing to sync against a dead session). All other
         // failures stay swallowed as transient below.
         if (res.status === 409) {
+          const body = (await res.json().catch(() => null)) as {
+            code?: string;
+          } | null;
+          // A cart line the store will not sell: reload checkout, which
+          // removes or flags it before setting up a new payment
+          // (lib/cart-issues.ts). Not the auto-recreate — that would be
+          // refused by the same gate.
+          if (body?.code === CART_ITEM_UNAVAILABLE) {
+            // Already on /checkout: a full reload re-runs its server render.
+            window.location.reload();
+            return;
+          }
           handleSessionExpired();
           return;
         }

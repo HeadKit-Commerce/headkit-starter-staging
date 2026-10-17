@@ -8,6 +8,8 @@ const getErrorMessage = (reason?: string): string => {
   switch (reason) {
     case "empty_cart":
       return "Your cart is empty. Add items to your cart to continue.";
+    case "item_unavailable":
+      return "An item in your cart is no longer available. Open your cart, remove it, and try again.";
     case "stock_correction_empty":
       return "Some items were out of stock and removed. Your cart is now empty.";
     case "invalid_session":

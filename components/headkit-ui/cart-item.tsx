@@ -22,6 +22,7 @@ import { InstantLink } from "@/components/headkit-ui/instant-link";
 import { useIsQuoteMode } from "@/components/checkout/checkout-mode-provider";
 import { GiftCardDetails } from "@/components/checkout/gift-card-details";
 import { AddonDetails } from "@/components/checkout/addon-details";
+import { issueForLine, lineIssueMessage } from "@/lib/cart-issues";
 import type { CartFieldsFragment } from "@headkit/sdk";
 
 type CartItem = CartFieldsFragment["items"][number];
@@ -74,6 +75,10 @@ export function CartItemRow({
     getFloatVal(item.prices.price) < getFloatVal(item.prices.regularPrice);
 
   const isOutOfStock = item.stockStatus?.toLowerCase() === "outofstock";
+  // The store already says it will not sell this line as it stands (sold out
+  // while it sat in the cart, say). Checkout is refused until it is removed or
+  // reduced, so say so on the line itself — see lib/cart-issues.ts.
+  const lineIssue = issueForLine(cartData, item);
   const isOnBackorder = item.stockStatus?.toLowerCase() === "onbackorder";
   const isAtStockLimit =
     !isOnBackorder &&
@@ -298,6 +303,25 @@ export function CartItemRow({
           )}
         </div>
       </div>
+      {lineIssue && (
+        <div
+          role="alert"
+          data-testid="cart-item-unavailable"
+          className="flex items-center justify-between gap-3 rounded-[3px] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          <span>{lineIssueMessage(lineIssue)}</span>
+          {removeable && (
+            <button
+              type="button"
+              onClick={handleRemove}
+              disabled={loading}
+              className="shrink-0 cursor-pointer font-semibold underline disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      )}
 
       {item.giftCard && <GiftCardDetails giftCard={item.giftCard} />}
       {/* Gift card first, add-ons second: a line can legitimately carry both,

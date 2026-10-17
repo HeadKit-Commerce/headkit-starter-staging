@@ -3,6 +3,10 @@ import { cookies } from "next/headers";
 import { getCartToken } from "@/lib/cart";
 import { getAuthToken } from "@/lib/auth-cookie";
 import { createServerHeadkit } from "@/lib/sdk.server";
+import {
+  CART_ITEM_UNAVAILABLE,
+  isCartItemUnavailableError,
+} from "@/lib/cart-issues";
 
 /**
  * POST /api/checkout/sync-line-items
@@ -48,6 +52,17 @@ export async function POST(request: Request) {
       shippingOptionMapping: result.shippingOptionMapping ?? null,
     });
   } catch (err) {
+    // The store now reports a cart line it will not sell; commerce expired the
+    // session and refused (CART_ITEM_UNAVAILABLE). 409 like a dead session, but
+    // with the code, so CheckoutForm reloads /checkout — where the line is
+    // removed or flagged — instead of running the one-shot auto-recreate,
+    // which the same gate would refuse.
+    if (isCartItemUnavailableError(err)) {
+      return NextResponse.json(
+        { ok: false, code: CART_ITEM_UNAVAILABLE },
+        { status: 409 },
+      );
+    }
     // ENG-784 (D7): a sync failure against a session another tab expired must
     // be distinguishable from a transient error — but by SERVER-SIDE status
     // retrieve, never by sniffing Stripe error strings. Non-open status →

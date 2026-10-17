@@ -1,6 +1,10 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { validateCartStock, autoCorrectCart } from "@/lib/cart-validation";
+import {
+  hasBlockingCartIssues,
+  isCartItemUnavailableError,
+} from "@/lib/cart-issues";
 import { createCheckoutSessionAction } from "./actions";
 import { CheckoutPageContent } from "./checkout-page-content";
 import type { CartFieldsFragment } from "@headkit/sdk";
@@ -86,9 +90,14 @@ export default async function CheckoutPage({
   const validation = validateCartStock(cart.items);
   let stockCorrectionMessage: string | null = null;
 
+  // Commerce marks a line WooCommerce reports as sold out (or no longer
+  // purchasable) with stockStatus "outofstock", so it lands here and is removed
+  // before any payment is set up (lib/cart-issues.ts).
   if (!validation.isValid) {
     const correction = await autoCorrectCart(validation.issues);
-    stockCorrectionMessage = correction.message;
+    stockCorrectionMessage = correction.success
+      ? validation.message
+      : correction.message;
 
     // Re-fetch the cart after corrections.
     cart = await getFullCartAction();
@@ -96,6 +105,14 @@ export default async function CheckoutPage({
     if (!cart || cart.itemsCount === 0) {
       redirect("/checkout/error?reason=stock_correction_empty");
     }
+  }
+
+  // The store still reports a line it will not sell that could not be tied to
+  // one cart line (so the auto-correct above could not remove it). Commerce
+  // would refuse the payment anyway; send the shopper to fix the cart instead
+  // of to a generic session failure.
+  if (hasBlockingCartIssues(cart)) {
+    redirect("/checkout/error?reason=item_unavailable");
   }
 
   const returnUrl = `${process.env.NEXT_PUBLIC_FRONTEND_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
@@ -194,6 +211,11 @@ export default async function CheckoutPage({
         shippingOptionMapping: session.shippingOptionMapping ?? null,
       };
     } catch (error) {
+      // Stock changed between the cart read above and the session create:
+      // commerce refused BEFORE any payment (CART_ITEM_UNAVAILABLE).
+      if (isCartItemUnavailableError(error)) {
+        redirect("/checkout/error?reason=item_unavailable");
+      }
       const message = error instanceof Error ? error.message : String(error);
       const params = new URLSearchParams({
         reason: "session_creation_failed",

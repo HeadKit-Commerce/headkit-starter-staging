@@ -5,8 +5,14 @@ import { useCartContext } from "@/components/headkit-ui/cart-context";
 import { clearCartTokenAction } from "@/lib/cart-actions";
 import type { CartFieldsFragment } from "@headkit/sdk";
 
+// `issues` is spread in rather than written inline: the starter is also
+// type-checked against the PUBLISHED SDK, whose CartFieldsFragment may predate
+// the field, and a spread property is not excess-checked (lib/cart-issues.ts).
+const NO_CART_ISSUES = { issues: [] };
+
 /** Minimal empty cart shape used when the server cart is unavailable after checkout. */
 export const EMPTY_CART: CartFieldsFragment = {
+  ...NO_CART_ISSUES,
   __typename: "Cart",
   token: "",
   itemsCount: 0,

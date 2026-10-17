@@ -21,6 +21,7 @@ import {
   updateCustomerAction,
 } from "@/app/checkout/actions";
 import { getFullCartAction } from "@/lib/cart-actions";
+import { cartNeedsAttention } from "@/lib/cart-issues";
 import { Input } from "@/components/ui/input";
 import { CartChangedBanner } from "@/components/checkout/cart-changed-banner";
 import type { Step } from "@/app/checkout/CheckoutForm";
@@ -196,12 +197,28 @@ export function CheckoutPageContent({
       // otherwise the recreated session would require a shipping address that the
       // billing-only UI never sets, breaking confirm().
       const shippingCountries = cartData?.needsShipping ? allowedCountries : [];
-      const session = await createCheckoutSessionAction(
-        returnUrl,
-        undefined,
-        shippingCountries,
-        successBaseUrl,
-      );
+      let session: Awaited<ReturnType<typeof createCheckoutSessionAction>>;
+      try {
+        session = await createCheckoutSessionAction(
+          returnUrl,
+          undefined,
+          shippingCountries,
+          successBaseUrl,
+        );
+      } catch (err) {
+        // Commerce refuses a session for a cart the store will not sell
+        // (CART_ITEM_UNAVAILABLE), but a Server Action error arrives here
+        // without its code in production — so re-read the cart and, if it
+        // needs the shopper's attention, reload checkout, which removes or
+        // flags the line (lib/cart-issues.ts).
+        const latest = await getFullCartAction().catch(() => null);
+        if (cartNeedsAttention(latest)) {
+          // Already on /checkout: a full reload re-runs its server render.
+          window.location.reload();
+          return;
+        }
+        throw err;
+      }
       if (
         !session.clientSecret ||
         !session.sessionId ||

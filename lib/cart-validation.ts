@@ -79,9 +79,12 @@ export function validateCartStock(items: CartItem[]): CartValidationResult {
     return { isValid: true, issues: [], message: null };
   }
 
+  const only = issues[0]!;
   const message =
     issues.length === 1
-      ? `"${issues[0]!.itemName}" is no longer available in the requested quantity. Your cart has been updated.`
+      ? only.action === "remove"
+        ? `"${only.itemName}" is no longer available and has been removed from your cart.`
+        : `"${only.itemName}" is no longer available in the requested quantity. Your cart has been updated.`
       : `${issues.length} items in your cart are no longer available in the requested quantities. Your cart has been updated.`;
 
   return { isValid: false, issues, message };
