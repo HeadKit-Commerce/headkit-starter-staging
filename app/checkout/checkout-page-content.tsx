@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useState, Suspense } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  Suspense,
+} from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CheckoutForm } from "@/app/checkout/CheckoutForm";
@@ -16,11 +22,11 @@ import type { CartFieldsFragment } from "@headkit/sdk";
 import {
   createCheckoutSessionAction,
   getCheckoutAction,
-  registerActiveCheckoutSessionAction,
   expireCheckoutSessionAction,
   updateCustomerAction,
 } from "@/app/checkout/actions";
 import { getFullCartAction } from "@/lib/cart-actions";
+import { registerActiveCheckoutSession } from "@/lib/register-checkout-session";
 import { cartNeedsAttention } from "@/lib/cart-issues";
 import { Input } from "@/components/ui/input";
 import { CartChangedBanner } from "@/components/checkout/cart-changed-banner";
@@ -195,6 +201,29 @@ function CheckoutPageBody({
   // ?error=cart_changed URL variant renders the same banner from page.tsx.
   const [showCartChangedNotice, setShowCartChangedNotice] = useState(false);
 
+  // ENG-784 mechanism 1: record the ACTIVE session in the httpOnly
+  // hk-checkout-session cookie so any cart mutation outside checkout expires
+  // it before mutating. Through a Route Handler (see
+  // `lib/register-checkout-session.ts`): the Server Action this used to be
+  // re-rendered /checkout and created a second, orphaned Stripe session on
+  // every view. Best-effort: a failed registration only disables mechanism 1;
+  // mechanism 2 (amount verification at manual capture) still protects the
+  // charge. One registration per session id, so the supersede path below can
+  // wait for the same request the mount effect started.
+  const registration = useRef<{
+    sessionId: string;
+    done: Promise<void>;
+  } | null>(null);
+  const registerSession = useCallback((sessionId: string): Promise<void> => {
+    if (registration.current?.sessionId !== sessionId) {
+      registration.current = {
+        sessionId,
+        done: registerActiveCheckoutSession(sessionId).catch(() => {}),
+      };
+    }
+    return registration.current.done;
+  }, []);
+
   const activeSessionIdForSupersede = checkoutSession?.sessionId ?? null;
   const refreshSession = useCallback(
     async (
@@ -270,11 +299,17 @@ function CheckoutPageBody({
       // UI — expire it deliberately (SUPERSEDED) so it can never race the new
       // one. Fire-and-forget: the action swallows expire failures internally
       // (mechanism 2 backstops) and only clears the tracking cookie when it
-      // still points at the superseded session.
+      // still points at the superseded session. It waits for the NEW
+      // session's registration first: the action reads the cookie its request
+      // carried, so an expire sent before the registration landed would see
+      // the old id, delete the cookie, and leave the new session unprotected.
       if (previousSessionId && previousSessionId !== session.sessionId) {
-        expireCheckoutSessionAction(previousSessionId, "SUPERSEDED").catch(
-          () => {},
-        );
+        const newSessionId = session.sessionId;
+        void registerSession(newSessionId)
+          .then(() =>
+            expireCheckoutSessionAction(previousSessionId, "SUPERSEDED"),
+          )
+          .catch(() => {});
       }
     },
     [
@@ -284,6 +319,7 @@ function CheckoutPageBody({
       cartData?.needsShipping,
       activeSessionIdForSupersede,
       setCartData,
+      registerSession,
     ],
   );
 
@@ -388,17 +424,14 @@ function CheckoutPageBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ENG-784 mechanism 1: register the ACTIVE session in the httpOnly
-  // hk-checkout-session cookie so any cart mutation outside checkout expires
-  // it before mutating. Client-invoked because `cookies().set()` is illegal
-  // during an RSC render. Zero-total checkouts have no session → no-op.
-  // Best-effort: a failed registration only disables mechanism 1; mechanism 2
-  // (amount verification at manual capture) still protects the charge.
+  // Register the active session (see `registerSession`). From an effect
+  // because `cookies().set()` is illegal during an RSC render. Zero-total
+  // checkouts have no session → no-op.
   const activeSessionId = checkoutSession?.sessionId;
   useEffect(() => {
     if (!activeSessionId) return;
-    registerActiveCheckoutSessionAction(activeSessionId).catch(() => {});
-  }, [activeSessionId]);
+    void registerSession(activeSessionId);
+  }, [activeSessionId, registerSession]);
 
   const activeSessionIdForRestore = checkoutSession?.sessionId;
   const restoreForActiveSession =

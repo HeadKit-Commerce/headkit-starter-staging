@@ -5,7 +5,6 @@ import { getCartToken } from "@/lib/cart";
 import { getAuthToken } from "@/lib/auth-cookie";
 import { createServerHeadkit } from "@/lib/sdk.server";
 import {
-  setCheckoutSessionCookie,
   getCheckoutSessionCookie,
   deleteCheckoutSessionCookie,
 } from "@/lib/checkout-session-cookie";
@@ -34,6 +33,11 @@ import { removeCartItemAction, updateCartItemAction } from "@/lib/cart-actions";
  * Checkout mutations and queries. All checkout operations from the frontend
  * should go through these server actions (not API routes). Flow: Client →
  * Server Action → SDK → GraphQL Gateway.
+ *
+ * Except anything that only WRITES A COOKIE from the checkout page: a cookie
+ * written by a Server Action re-renders the calling route, which on /checkout
+ * re-runs the whole server path and creates another Stripe session. Session
+ * registration is therefore `POST /api/checkout/active-session`.
  */
 
 export type CheckoutSessionResult =
@@ -205,19 +209,6 @@ export async function correctCartAction(
     cart = result.cart;
   }
   return cart;
-}
-
-/**
- * Records the given Stripe Checkout Session as the shopper's ACTIVE session
- * (ENG-784 mechanism 1). Client-invoked by design: `cookies().set()` is
- * illegal during an RSC render, so the checkout page registers the session
- * from a client effect after mount. Zero-total checkouts have no session and
- * register nothing.
- */
-export async function registerActiveCheckoutSessionAction(
-  sessionId: string,
-): Promise<void> {
-  await setCheckoutSessionCookie(sessionId);
 }
 
 /**

@@ -10,10 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * mutation runs. Expire failures never block the mutation (mechanism 2 —
  * amount verification at manual capture — backstops).
  *
- * Also covers the checkout actions: registerActiveCheckoutSessionAction sets
- * the cookie with the locked attributes (httpOnly / lax / 45-min maxAge, in
- * lockstep with the Stripe session expires_at) and
- * expireCheckoutSessionAction expires via the SDK and clears the cookie.
+ * Also covers expireCheckoutSessionAction, which expires via the SDK and
+ * clears the cookie. The cookie is SET by `POST /api/checkout/active-session`
+ * (its attributes are asserted in that route's test), not by an action.
  *
  * Mocks the boundaries (next/headers cookies, @/lib/cart, @/lib/sdk.server)
  * per the node-vitest style used by cart-actions.auth.test.ts — no network.
@@ -69,7 +68,6 @@ function stubCookies(values: Record<string, string>): void {
 
 let sdk: ReturnType<typeof fakeSdk>;
 let addToCartAction: typeof import("./cart-actions").addToCartAction;
-let registerActiveCheckoutSessionAction: typeof import("../app/checkout/actions").registerActiveCheckoutSessionAction;
 let expireCheckoutSessionAction: typeof import("../app/checkout/actions").expireCheckoutSessionAction;
 
 beforeEach(async () => {
@@ -80,8 +78,6 @@ beforeEach(async () => {
   const cartMod = await import("./cart-actions");
   addToCartAction = cartMod.addToCartAction;
   const checkoutMod = await import("../app/checkout/actions");
-  registerActiveCheckoutSessionAction =
-    checkoutMod.registerActiveCheckoutSessionAction;
   expireCheckoutSessionAction = checkoutMod.expireCheckoutSessionAction;
 });
 
@@ -155,20 +151,7 @@ describe("withCartRetry expire-before-mutate (ENG-784 mechanism 1)", () => {
   });
 });
 
-describe("checkout session register/expire actions (ENG-784)", () => {
-  it("registerActiveCheckoutSessionAction sets the httpOnly/lax/45-min cookie", async () => {
-    await registerActiveCheckoutSessionAction("cs_new");
-
-    expect(cookieSetMock).toHaveBeenCalledWith({
-      name: "hk-checkout-session",
-      value: "cs_new",
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 45 * 60,
-    });
-  });
-
+describe("checkout session expire action (ENG-784)", () => {
   it("expireCheckoutSessionAction expires via the SDK and clears the cookie", async () => {
     stubCookies({ "hk-checkout-session": "cs_old" });
 

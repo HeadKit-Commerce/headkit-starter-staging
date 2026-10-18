@@ -29,10 +29,12 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/app/checkout/actions", () => ({
   createCheckoutSessionAction: vi.fn(),
   getCheckoutAction: vi.fn(),
-  registerActiveCheckoutSessionAction: vi.fn(async () => undefined),
   expireCheckoutSessionAction: vi.fn(async () => undefined),
   updateCustomerAction: vi.fn(),
   correctCartAction: vi.fn(),
+}));
+vi.mock("@/lib/register-checkout-session", () => ({
+  registerActiveCheckoutSession: vi.fn(async () => undefined),
 }));
 vi.mock("@/lib/cart-actions", () => ({
   getFullCartAction: vi.fn(async () => null),
