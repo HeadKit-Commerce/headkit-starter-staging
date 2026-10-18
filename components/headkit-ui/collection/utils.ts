@@ -410,7 +410,6 @@ export function deriveFilterValues(
   return vals;
 }
 
-
 /**
  * Resolve the active search term after hydration.
  * Prefer `?q=` from the URL; fall back to the server prop (usually empty on

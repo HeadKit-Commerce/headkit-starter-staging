@@ -568,9 +568,7 @@ export async function CollectionRoute({
         filterSlug={filterSlug}
         categoryBasePath={categoryBasePath}
         preferHeaderLcp={preferHeaderLcp}
-        defaultCollectionSort={
-          branding.defaultCollectionSort as SortKeyType
-        }
+        defaultCollectionSort={branding.defaultCollectionSort as SortKeyType}
       />
     </>
   );

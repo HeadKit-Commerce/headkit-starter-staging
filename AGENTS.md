@@ -984,7 +984,6 @@ the declarations live in `lib/env.ts`.
   `onClick` behave as they do on a real click, and the component stays renderable with no
   app-router context.
 
-
 ### `images.minimumCacheTTL` is env-driven, and there is one escape from it
 
 Unset by default, which means Next's 4 h. `NEXT_IMAGE_MINIMUM_CACHE_TTL` raises it per store.
