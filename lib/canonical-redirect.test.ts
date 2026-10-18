@@ -18,9 +18,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * any of this at all. A 308 is a STATUS LINE, and the only thing that observes
  * one is a request to a built, running app — `e2e/canonical-url-308.spec.ts`
  * owns that half, including the two query-preservation cases. It also says
- * nothing about `app/products/[...slug]/page.tsx` and
- * `app/collections/[...slug]/page.tsx` still redirecting for a request with NO
- * query: that is the same e2e spec's original four cases.
+ * nothing about `app/collections/[...slug]/page.tsx` still redirecting for a
+ * request with NO query: that is the same e2e spec's original cases.
  */
 
 const getCategory = vi.fn();
@@ -140,6 +139,24 @@ describe("the canonical 308 preserves the query string", () => {
     expect(url.searchParams.get("utm_source")).toBe("klaviyo");
   });
 
+  it("resolves a flat PRODUCT URL with NO query too", async () => {
+    // The route cannot be trusted with this one: an unbuilt slug is served
+    // from its PPR fallback shell, so its own `permanentRedirect` lands after
+    // a committed 200 (see `isCanonicalRedirectCandidate`).
+    getCachedProduct.mockResolvedValue(nestedProduct());
+
+    const redirect = await proxyRedirect(
+      `${ORIGIN}/products/abus-steelochain-5805c-110cm`,
+    );
+
+    expect(redirect).not.toBeNull();
+    const url = new URL(redirect!);
+    expect(url.pathname).toBe(
+      "/shop/equipment/locks/abus-steelochain-5805c-110cm",
+    );
+    expect(url.search, "nothing is invented when nothing was sent").toBe("");
+  });
+
   it("preserves a repeated and an empty parameter verbatim", async () => {
     getCategory.mockResolvedValue(nestedCategory());
 
@@ -170,7 +187,7 @@ describe("the canonical 308 preserves the query string", () => {
 });
 
 describe("what the proxy deliberately leaves to the route", () => {
-  it("does not look up a request with no query string", async () => {
+  it("does not look up a COLLECTION request with no query string", async () => {
     expect(
       await proxyRedirect(`${ORIGIN}/collections/locks`),
       "with nothing to preserve, the route's own 308 is already correct",

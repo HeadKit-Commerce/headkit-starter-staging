@@ -9,10 +9,13 @@ import { canonicalRedirectForPath } from "@/lib/canonical-redirect";
  * already reaches its other per-store value the same way
  * (`/api/posts-base-path`). This endpoint is the difference between the two:
  * that one is fetched on EVERY page request, which is why it carries two values
- * rather than having a second endpoint. This one is fetched only for a request
- * that is BOTH in a consolidating route family AND carrying a query string —
- * the narrow case where a 308 would otherwise throw a campaign's `gclid`,
- * `utm_*` or `_kx` away (issue #74) — so it costs nothing on ordinary traffic.
+ * rather than having a second endpoint. This one is fetched only for a flat
+ * product URL, or for a flat collection URL carrying a query string — the case
+ * where a 308 would otherwise throw a campaign's `gclid`, `utm_*` or `_kx` away
+ * (issue #74). Flat product URLs come with or without a query, because the
+ * product route cannot set a real 308 for a slug it did not prerender (see
+ * `isCanonicalRedirectCandidate`); every shopper link already names the nested
+ * URL, so that traffic is legacy and crawler links that redirect anyway.
  *
  * WHAT IT COSTS WHEN IT IS HIT. Nothing at the WordPress origin that the
  * request was not already going to pay. Both decision functions resolve through

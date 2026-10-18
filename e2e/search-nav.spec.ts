@@ -61,8 +61,16 @@ test.describe("Search + navigation (P1-26..P1-30, P1-36, P1-39)", () => {
       page.getByRole("heading", { name: "Classic Tee" }).first(),
       "/search results page did not list the seeded product",
     ).toBeVisible({ timeout: 20_000 });
-    // Results header copy renders the query + count.
-    await expect(page.getByText(/Search results for/i).first()).toBeVisible();
+    // The header is the static "Search" shell (#671 stopped reading `?q=` on
+    // the server, so there is no query-specific "Search results for" title);
+    // the query reaches the grid on mount, and its count line tracks it.
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Search" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/Viewing \d+ of \d+ products/).first(),
+      "the filtered grid's count line is missing",
+    ).toBeVisible();
   });
 
   test("P1-27: junk query shows the no-results state (drawer AND /search page)", async ({
