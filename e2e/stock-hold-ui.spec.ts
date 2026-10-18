@@ -16,6 +16,7 @@ import {
 } from "./helpers";
 import {
   HOLD,
+  STORE_API_URL,
   cartWith,
   eventually,
   holdCheckoutStock,
@@ -272,6 +273,51 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
       summary.locator("p", { hasText: /^Hold Last Unit$/ }),
       "the removed line is gone from the summary on the same load",
     ).toHaveCount(0);
+  });
+
+  test("B6 — a line another shopper's hold leaves short at checkout entry is reduced with its alert; paying completes the reduced quantity", async ({
+    page,
+  }) => {
+    const mine = await cartWith(api, { [HOLD.three]: 3 }, { address: false });
+    const theirs = await cartWith(api, { [HOLD.three]: 1 }, { address: false });
+    expect(
+      (await holdCheckoutStock(api, theirs)).data?.commerce.holdCheckoutStock
+        .status,
+    ).toBe("HELD");
+
+    // Theme 0.4.85: a plain cart read no longer rewrites the line to what the
+    // hold leaves; it stays 3 and reports the 2 that are left.
+    const read = await api.get(`${STORE_API_URL}/cart`, {
+      headers: { "Cart-Token": mine },
+    });
+    expect(read.status()).toBe(200);
+    const [line] = (
+      (await read.json()) as {
+        items: { quantity: number; quantity_limits: { maximum: number } }[];
+      }
+    ).items;
+    expect(line?.quantity, "the read did not clamp the line").toBe(3);
+    expect(line?.quantity_limits.maximum, "what the hold leaves").toBe(2);
+
+    await openCheckout(page, mine);
+    await expect(
+      page
+        .getByText(
+          "Unfortunately only 2 × Hold Three are available. Your cart has been updated. You have not been charged.",
+        )
+        .first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveURL(/\/checkout$/);
+    await expectNoErrorScreen(page);
+
+    await walkToPayment(page, "hold-b6@example.com");
+    await fillCard(page, CARD_OK);
+    await payAndAwaitSuccess(page);
+    const { orderId } = await awaitOrderConfirmation(page);
+    const order = wooOrder(orderId);
+    expect(order.status).toBe("processing");
+    expect(order.lineQty).toEqual({ [HOLD.three]: 2 });
+    expect(stockOf(HOLD.three), "only the 2 paid for were sold").toBe(1);
   });
 
   test("bag emptied by the correction: the bag with the alert, never the error page (case 29)", async ({

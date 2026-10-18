@@ -73,12 +73,26 @@ interface SafetyResult {
   calls: string[];
 }
 
+interface ReadLine {
+  quantity: number;
+  maximum: number;
+  error: string;
+}
+
+interface ReadResult {
+  /** The cart response's lines, keyed by cart item key. */
+  lines: Record<string, ReadLine>;
+  /** The quantities left in the cart session afterwards. */
+  session: Record<string, number>;
+}
+
 interface HarnessOutput {
   minutes: Record<string, number>;
   scenarios: Record<string, Scenario>;
   pin: { heldOrderId: number; cases: Record<string, PinResult> };
   cancel: Record<string, boolean>;
   safety: Record<string, SafetyResult>;
+  read: Record<string, ReadResult | number>;
   registration: {
     updateCallbackNamespace: string;
     endpointDataNamespace: string;
@@ -419,7 +433,58 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     );
   });
 
-  it("registers the cart/extensions callback, the cart extension and its four hooks", () => {
+  describe("a cart READ never silently clamps a line other shoppers' holds leave short (manual test B6)", () => {
+    const read = (name: string): ReadResult =>
+      pick(run().read, name) as ReadResult;
+    const PARTIAL = "woocommerce_rest_product_partially_out_of_stock";
+
+    // The line keeps its quantity, so the storefront sees it short: the
+    // maximum (commerce's stockQuantity) is what the holds leave, and the
+    // cart error is the one commerce maps to INSUFFICIENT_STOCK.
+    it.each([
+      ["get_partial_hold", 2, 1],
+      ["get_partial_hold_again", 2, 1],
+      ["get_items_route_partial_hold", 2, 1],
+      ["get_three_one_held", 3, 2],
+      ["get_over_raw_stock_and_held", 2, 1],
+    ])(
+      "%s: quantity %i kept, maximum %i, reported short",
+      (name, quantity, maximum) => {
+        const got = read(name);
+        expect(got.lines.item1).toEqual({ quantity, maximum, error: PARTIAL });
+        expect(got.session.item1).toBe(quantity);
+      },
+    );
+
+    it.each([
+      "post_update_item_partial_hold",
+      "post_add_item_partial_hold",
+      "post_extensions_partial_hold",
+      "post_checkout_partial_hold",
+      "get_checkout_route_partial_hold",
+    ])("%s still clamps to what the holds leave, as before", (name) => {
+      const got = read(name);
+      expect(got.lines.item1).toEqual({ quantity: 1, maximum: 1, error: "" });
+      expect(got.session.item1).toBe(1);
+    });
+
+    it.each([
+      ["get_fully_held", { quantity: 1, maximum: 1, error: PARTIAL }],
+      ["get_no_hold", { quantity: 2, maximum: 2, error: "" }],
+      ["get_over_raw_stock", { quantity: 1, maximum: 1, error: "" }],
+      ["get_own_draft_holds", { quantity: 2, maximum: 2, error: "" }],
+      ["get_backorder", { quantity: 2, maximum: 9999, error: "" }],
+    ])("%s is unchanged", (name, line) => {
+      expect(read(name).lines.item1).toEqual(line);
+    });
+
+    it("never raises a product's add-to-cart limit, nor a limit read outside normalize_cart()", () => {
+      expect(pick(run().read, "filter_without_cart_item")).toBe(1);
+      expect(pick(run().read, "filter_outside_normalize")).toBe(1);
+    });
+  });
+
+  it("registers the cart/extensions callback, the cart extension and its five hooks", () => {
     expect(run().registration).toEqual({
       updateCallbackNamespace: "headkit-stock-hold",
       endpointDataNamespace: "headkit-stock-hold",
@@ -431,6 +496,7 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
         woocommerce_store_api_checkout_update_customer_from_request: 1,
         woocommerce_cancel_unpaid_order: 1,
         woocommerce_store_api_checkout_order_processed: 1,
+        woocommerce_store_api_product_quantity_limit: 1,
       },
     });
   });
