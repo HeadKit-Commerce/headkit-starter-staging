@@ -138,6 +138,11 @@ function SearchQueryShell() {
  * Unfiltered page 1, cached with the shop catalog. A query is not part of
  * this shell: `CollectionProvider` refetches when `?q=` is present, and
  * `SearchQueryShell` keeps this grid hidden until that fetch commits.
+ *
+ * `productFilter` here is the store-wide set, which is right for bare
+ * `/search` (the whole catalogue) and wrong for a query. `scopedSearchFacets`
+ * makes a query's filter bar show skeletons and then the options counted over
+ * the products the query matched (`/api/search-filters`), never these.
  * Scoped as `shop` so product and shop-landing invalidation cover it without
  * a new route-tag union member.
  */
@@ -158,6 +163,7 @@ async function SearchProductsShell() {
         productFilter={productFilter}
         initialPage={1}
         itemsPerPage={PER_PAGE}
+        scopedSearchFacets
       />
     </div>
   );

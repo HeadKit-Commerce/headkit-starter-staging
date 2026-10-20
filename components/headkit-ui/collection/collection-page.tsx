@@ -26,6 +26,9 @@ interface CollectionPageProps {
   initialBrands?: string[];
   /** Leaf category featured image already owns LCP — do not priority grid cards. */
   preferHeaderLcp?: boolean;
+  /** `/search`: filter options counted over the query's matches. See
+   *  `CollectionProviderProps.scopedSearchFacets`. */
+  scopedSearchFacets?: boolean;
 }
 
 /** The identity-bearing half of `CollectionPageProps` — everything that decides
@@ -98,6 +101,7 @@ export function CollectionPage({
   initialFilterValues,
   initialBrands,
   preferHeaderLcp = false,
+  scopedSearchFacets = false,
 }: CollectionPageProps) {
   const swatchImagesEnabled = experimentalSwatchImagesEnabled();
   return (
@@ -134,6 +138,7 @@ export function CollectionPage({
         categoryBasePath={categoryBasePath}
         initialFilterValues={initialFilterValues}
         initialBrands={initialBrands}
+        scopedSearchFacets={scopedSearchFacets}
       >
         <div
           className="headkit-collection flex flex-col gap-4"

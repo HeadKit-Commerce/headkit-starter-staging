@@ -15,9 +15,19 @@ import type {
   ProductSummaryFieldsFragment,
   ProductFilters,
 } from "@headkit/sdk";
-import { listCollectionProducts } from "@/lib/collection-actions";
+import {
+  listCollectionProducts,
+  listSearchProducts,
+  type CollectionPageResult,
+} from "@/lib/collection-actions";
 import { useCatalogDisplay } from "@/components/headkit-ui/catalog-display-provider";
 import { nextSearchHold } from "./search-hold";
+import {
+  fetchSearchFacets,
+  SEARCH_FACETS_TIMEOUT_MS,
+  type FacetStatus,
+  type SearchFacetsState,
+} from "./search-facets";
 import {
   buildProductListFilter,
   deriveFilterValues,
@@ -49,7 +59,12 @@ interface CollectionContextType {
   loadPrevious: () => void;
   /** Warm the next page without committing — near-end prefetch (not on entry). */
   prefetchNextPage: () => void;
+  /** The options the filter bar renders: the route's own, or, on a search
+   *  with scoped facets, the ones counted over the search's matches. */
   productFilter: ProductFilters;
+  /** Whether the filter bar shows {@link productFilter}, skeletons, or
+   *  nothing. See `SearchFacetsState`. Always `static` outside `/search`. */
+  facetStatus: FacetStatus;
   /** True on /new — sort default is newest-first, not branding. */
   isNew: boolean;
   /** Search query on /search — empty sort means relevance (closest match). */
@@ -78,6 +93,10 @@ interface CollectionProviderProps {
   /** Brand values decoded from the URL path by the server component (06.1). When
    *  present, seeds `filterValues.brands` so the brand sidebar hydrates checked. */
   initialBrands?: string[] | undefined;
+  /** `/search`: count the filter options over the products the query
+   *  matched (`/api/search-filters`) instead of showing `productFilter`'s
+   *  store-wide ones. See `SearchFacetsState` for the loading contract. */
+  scopedSearchFacets?: boolean | undefined;
 }
 
 const CollectionContext = createContext<CollectionContextType | null>(null);
@@ -113,6 +132,7 @@ export function CollectionProvider({
   categoryBasePath,
   initialFilterValues,
   initialBrands,
+  scopedSearchFacets = false,
 }: CollectionProviderProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -221,6 +241,90 @@ export function CollectionProvider({
   const searchTermRef = useRef(search ?? "");
   const [activeSearch, setActiveSearch] = useState(search ?? "");
 
+  // Scoped search facets. `facetTermRef` names the term whose matched IDs have
+  // been asked for, so exactly ONE grid fetch per term carries them (the
+  // first); `facetAbortRef` is the in-flight filter read, aborted by the
+  // timeout, a newer term, or unmount.
+  const [searchFacets, setSearchFacets] = useState<SearchFacetsState>(() =>
+    scopedSearchFacets && (search ?? "").trim()
+      ? { status: "loading" }
+      : { status: "static" },
+  );
+  const facetTermRef = useRef<string | null>(null);
+  const facetAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      const controller = facetAbortRef.current;
+      facetAbortRef.current = null;
+      controller?.abort();
+    },
+    [],
+  );
+
+  /** Turn one term's matched IDs into its filter options (or none). */
+  const loadSearchFacets = useCallback((term: string, ids: number[] | null) => {
+    if (searchTermRef.current !== term) return;
+    if (ids === null) {
+      // Not an Atlas search: there is no ID scope, so the route's own
+      // options are the answer — shown now, for the first time.
+      setSearchFacets({ status: "static" });
+      return;
+    }
+    if (ids.length === 0) {
+      setSearchFacets({ status: "hidden" });
+      return;
+    }
+    facetAbortRef.current?.abort();
+    const controller = new AbortController();
+    facetAbortRef.current = controller;
+    const timer = setTimeout(
+      () => controller.abort(),
+      SEARCH_FACETS_TIMEOUT_MS,
+    );
+    const current = (): boolean =>
+      facetAbortRef.current === controller && searchTermRef.current === term;
+    void fetchSearchFacets(ids, controller.signal)
+      .then((filters) => {
+        if (current() && !controller.signal.aborted) {
+          setSearchFacets({ status: "ready", filters });
+        }
+      })
+      .catch(() => {
+        if (current()) setSearchFacets({ status: "hidden" });
+      })
+      .finally(() => clearTimeout(timer));
+  }, []);
+
+  /**
+   * One grid page. The first fetch for a search term also reads the term's
+   * matched IDs (`listSearchProducts`) and starts the scoped filter read from
+   * them, so the options cost no second search. Every other fetch is the
+   * plain `listCollectionProducts`.
+   */
+  const listPage = useCallback(
+    async (
+      filter: ReturnType<typeof buildProductListFilter>,
+      page: number,
+    ): Promise<CollectionPageResult> => {
+      const term = searchTermRef.current;
+      if (!scopedSearchFacets || !term || facetTermRef.current === term) {
+        return listCollectionProducts(filter, page, itemsPerPage);
+      }
+      facetTermRef.current = term;
+      try {
+        const result = await listSearchProducts(filter, page, itemsPerPage);
+        loadSearchFacets(term, result.matchedProductIds);
+        return result;
+      } catch (error) {
+        if (searchTermRef.current === term) {
+          setSearchFacets({ status: "hidden" });
+        }
+        throw error;
+      }
+    },
+    [scopedSearchFacets, itemsPerPage, loadSearchFacets],
+  );
+
   const hasMore = products.length < totalProducts;
 
   const clearPrefetch = useCallback(() => {
@@ -322,11 +426,7 @@ export function CollectionProvider({
       }
 
       try {
-        const result = await listCollectionProducts(
-          buildListFilter(filterValues),
-          page,
-          itemsPerPage,
-        );
+        const result = await listPage(buildListFilter(filterValues), page);
 
         // Empty "after" page means we've exhausted the list — clamp the total
         // so hasMore flips false and the sentinel stops firing.
@@ -375,7 +475,7 @@ export function CollectionProvider({
     },
     [
       filterValues,
-      itemsPerPage,
+      listPage,
       syncUrl,
       buildListFilter,
       commitProducts,
@@ -405,11 +505,7 @@ export function CollectionProvider({
       try {
         const filter = buildListFilter(filterValues);
         for (let page = 2; page <= targetPage; page++) {
-          const result = await listCollectionProducts(
-            filter,
-            page,
-            itemsPerPage,
-          );
+          const result = await listPage(filter, page);
           if (result.products.length === 0) {
             commitTotalProducts(productsCountRef.current);
             break;
@@ -430,7 +526,7 @@ export function CollectionProvider({
     },
     [
       filterValues,
-      itemsPerPage,
+      listPage,
       buildListFilter,
       commitProducts,
       commitCurrentPage,
@@ -598,6 +694,14 @@ export function CollectionProvider({
     if (searchChanged) {
       searchTermRef.current = nextSearch;
       setActiveSearch(nextSearch);
+      if (scopedSearchFacets) {
+        // Skeletons from the first frame the bar is visible: the hold keeps
+        // the catalog (store-wide options included) off screen until this
+        // term's first fetch commits, so nothing store-wide is ever shown.
+        setSearchFacets(
+          nextSearch.trim() ? { status: "loading" } : { status: "static" },
+        );
+      }
     }
     let filtersChanged = false;
     setFilterValues((current) => {
@@ -725,7 +829,11 @@ export function CollectionProvider({
         loadMore,
         loadPrevious,
         prefetchNextPage,
-        productFilter,
+        productFilter:
+          searchFacets.status === "ready"
+            ? searchFacets.filters
+            : productFilter,
+        facetStatus: searchFacets.status,
         isNew: Boolean(isNew),
         search: activeSearch,
       }}

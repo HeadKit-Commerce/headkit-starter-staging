@@ -15,22 +15,35 @@ interface BrandFilterProps {
 /**
  * Brand facet (multi-select, URL-synced via collection-context `brands[]`).
  *
- * Brand options are NOT part of `ProductFilters` — they come from
- * `headkit.brands.list()` (commerce BrandsDomain). The UI/URL carry a
+ * Brand options are NOT part of `ProductFilters` on an un-scoped listing —
+ * they come from `headkit.brands.list()` (commerce BrandsDomain). On a search
+ * with scoped facets (`facetStatus === "ready"`) they are
+ * `productFilter.brands`, the brands of the matched products. The UI/URL carry a
  * multi-select array (D-02); per Open Q1 = single-ok, only the first selected
  * brand maps to the backend `ProductListFilter.brand` (see utils.ts).
  */
 export function BrandFilter({
   gridClassName = FACET_DRAWER_GRID_CLASS,
 }: BrandFilterProps = {}) {
-  const { filterValues, setFilterValues } = useCollection();
-  const [brands, setBrands] = useState<BrandSummary[]>([]);
+  const { filterValues, setFilterValues, productFilter, facetStatus } =
+    useCollection();
+  const [storeBrands, setStoreBrands] = useState<BrandSummary[]>([]);
+  // Scoped facets (a search's matches) carry their own brand list, counted
+  // over those products — the store's full list is exactly the wrong answer
+  // there, so it is not even fetched.
+  const scoped = facetStatus === "ready";
+  const brands: Pick<BrandSummary, "slug" | "name">[] = scoped
+    ? (productFilter.brands ?? []).flatMap((b) =>
+        b?.slug && b.name ? [{ slug: b.slug, name: b.name }] : [],
+      )
+    : storeBrands;
 
   useEffect(() => {
+    if (scoped) return;
     let active = true;
     void listFilterBrands()
       .then((next) => {
-        if (active) setBrands(next);
+        if (active) setStoreBrands(next);
       })
       .catch(() => {
         // Non-fatal: brand facet simply renders empty if the list fails.
@@ -38,7 +51,7 @@ export function BrandFilter({
     return () => {
       active = false;
     };
-  }, []);
+  }, [scoped]);
 
   if (brands.length === 0) {
     return (
