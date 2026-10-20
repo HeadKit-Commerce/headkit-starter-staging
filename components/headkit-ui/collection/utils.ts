@@ -155,7 +155,7 @@ export function buildProductListFilter(
     featured?: boolean;
     search?: string;
     brandSlug?: string;
-    /** In-stock toggle (mapped onto the filter for server-side filtering). */
+    /** In-stock toggle; `filterValues.instock` (`?instock=true`) also sets it. */
     instock?: boolean;
     /** Price lower bound; coerced to a numeric string before mapping. */
     minPrice?: string;
@@ -194,9 +194,9 @@ export function buildProductListFilter(
   if (options.isNew) filter.isNew = true;
   if (options.featured) filter.featured = true;
   if (options.search) filter.search = options.search;
-  // NOTE: in-stock has no ProductListFilter field in the commerce schema; it
-  // remains a client-side grid filter (existing behavior). `options.instock`
-  // is accepted for call-site symmetry but intentionally not mapped here.
+  // In stock OR on backorder (commerce `inStock`). Sent only when on: a
+  // gateway that predates the field rejects the whole query for it.
+  if (options.instock ?? filterValues.instock) filter.inStock = true;
 
   const sortMap: Record<SortKeyType, { orderby: string; order: string }> = {
     FEATURED: { orderby: "menu_order", order: "asc" },

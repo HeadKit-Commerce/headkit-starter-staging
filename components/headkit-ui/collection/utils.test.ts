@@ -8,6 +8,7 @@ import {
   decodeFilterSlug,
   buildBreadcrumbFromCategory,
   buildProductListFilter,
+  normalizeFilterKey,
   DEFAULT_FILTER_VALUES,
   type FilterValues,
   collectionPathFromCategory,
@@ -431,6 +432,40 @@ describe("buildBreadcrumbFromCategory", () => {
         current: true,
       },
     ]);
+  });
+});
+
+describe("buildProductListFilter inStock", () => {
+  // The "In Stock" switch wrote `?instock=true` and the grid did not change,
+  // because nothing mapped it onto the commerce filter.
+  it("maps the in-stock switch onto the commerce filter", () => {
+    expect(buildProductListFilter(fv({ instock: true })).inStock).toBe(true);
+  });
+
+  it("maps it on a category and on a search alike", () => {
+    expect(
+      buildProductListFilter(fv({ instock: true }), {
+        categorySlug: "road-bikes",
+      }),
+    ).toMatchObject({ category: "road-bikes", inStock: true });
+    expect(
+      buildProductListFilter(fv({ instock: true }), { search: "helmet" }),
+    ).toMatchObject({ search: "helmet", inStock: true });
+  });
+
+  it("omits the key entirely when the switch is off", () => {
+    // Absent, not `false`: an older gateway rejects the unknown input field,
+    // so the switched-off request must stay byte-identical to before.
+    expect("inStock" in buildProductListFilter(fv({}))).toBe(false);
+    expect(
+      "inStock" in buildProductListFilter(fv({}), { categorySlug: "a" }),
+    ).toBe(false);
+  });
+
+  it("gives the two states different catalog cache keys", () => {
+    expect(normalizeFilterKey(buildProductListFilter(fv({})))).not.toBe(
+      normalizeFilterKey(buildProductListFilter(fv({ instock: true }))),
+    );
   });
 });
 

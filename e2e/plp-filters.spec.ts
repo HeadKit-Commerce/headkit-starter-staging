@@ -39,13 +39,10 @@ const productHeading = (page: Page, name: string | RegExp) =>
  *   (headkit-block-products.php:160-163); headkit-products.php needs the
  *   same mapping. TITLE A-Z/Z-A works (valid WP orderby) and is asserted.
  *
- * BUG 2 — the "In Stock" toggle is a no-op (P1-07):
- *   collection/utils.ts:194-196 documents that instock is intentionally NOT
- *   mapped to ProductListFilter ("remains a client-side grid filter") — but
- *   no client-side grid filtering exists (product-grid.tsx renders the full
- *   product list untouched). Verified live: /collections/bikes?instock=true
- *   still lists the out-of-stock Folding Bike. Either map a stock_status
- *   param through commerce → headkit/v2 or actually filter the grid.
+ * BUG 2 (FIXED) — the "In Stock" toggle was a no-op (P1-07): nothing
+ *   mapped `?instock=true` onto the backend filter. It now travels as
+ *   ProductListFilter.inStock (collection/utils.ts) → commerce (WordPress
+ *   `in_stock` / Mongo `stockStatus`) and keeps instock + onbackorder.
  *
  * Seed expectations (storefront-parity seeds, all present in the local WP):
  * apparel/bikes/road-bikes categories, pa_color attributes, Folding Bike
@@ -320,15 +317,11 @@ test.describe("PLP: grid, pagination, category scoping, facets, sort (P1-01..P1-
     void prices;
   });
 
-  test.fixme("P1-07 BLOCKED (app bug): In Stock toggle hides out-of-stock products", async ({
+  test("P1-07: In Stock toggle hides out-of-stock products", async ({
     page,
   }) => {
-    // BLOCKER — real app bug, see spec header BUG 2:
-    // instock is neither mapped to the backend filter
-    // (collection/utils.ts:194-196) nor applied client-side
-    // (product-grid.tsx) → toggling it refetches an UNCHANGED filter.
-    // Verified: /collections/bikes?instock=true still lists Folding Bike
-    // (stock status outofstock). Un-fixme once instock filters for real.
+    // Folding Bike is seeded outofstock; ?instock=true must drop it while the
+    // in-stock bikes stay.
     await page.goto(`${BASE_URL}/collections/bikes?instock=true`);
     await expect(productHeading(page, /Mountain Explorer/)).toBeVisible({
       timeout: 30_000,
