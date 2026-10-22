@@ -68,12 +68,13 @@ export default async function CheckoutPage({
 
   let cart = cartResult;
 
-  // null  = no cookie, or WooCommerce session expired (stale cookie was cleared)
-  // empty = user genuinely has an empty cart
-  if (!cart) {
-    redirect("/checkout/error?reason=session_expired");
-  }
-  if (cart.itemsCount === 0) {
+  // null  = no cart cookie (never had a cart, the cookie aged out, or the
+  //         success page / sign-out deleted it) or the cart could not be read
+  // empty = the shopper's cart has no lines
+  // Both are "your cart is empty", as on stock WooCommerce: an expired guest
+  // cart there simply shows empty. `session_expired` is kept for a genuinely
+  // expired Stripe checkout session (the return pages), where it is true.
+  if (!cart || cart.itemsCount === 0) {
     redirect("/checkout/error?reason=empty_cart");
   }
 

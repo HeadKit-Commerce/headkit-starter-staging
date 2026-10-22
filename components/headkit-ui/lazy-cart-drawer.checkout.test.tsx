@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { CartProvider } from "./cart-context";
+import { CartProvider, useCartContext } from "./cart-context";
 
 /**
  * The badge refresh must not run on a /checkout load (rehearsal S2). The page
@@ -40,15 +40,25 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
-async function mountAt(path: string): Promise<void> {
+async function mountAt(
+  path: string,
+  initialCart?: Parameters<typeof CartProvider>[0]["initialCart"],
+): Promise<void> {
   window.history.replaceState(null, "", path);
   await act(async () => {
     root.render(
-      <CartProvider>
+      <CartProvider initialCart={initialCart ?? null}>
         <LazyCartDrawer />
+        <CartProbe />
       </CartProvider>,
     );
   });
+}
+
+/** Renders whether the context still holds a cart, for the stale-cart case. */
+function CartProbe(): React.JSX.Element {
+  const { cartData } = useCartContext();
+  return <span data-probe>{cartData ? "cart" : "none"}</span>;
 }
 
 it("skips the badge read on the checkout page", async () => {
@@ -75,4 +85,24 @@ it("matches only the checkout entry path", () => {
   expect(isCheckoutEntryPath("/checkout/success")).toBe(false);
   expect(isCheckoutEntryPath("/checkout/error")).toBe(false);
   expect(isCheckoutEntryPath("/checkouts")).toBe(false);
+});
+
+/**
+ * A tab left open past the cart's life still holds the old lines in memory.
+ * A `null` read means there is no cart any more (the cookie is gone), so the
+ * badge and drawer must drop them rather than lead to a checkout that has
+ * nothing to sell (Bike Society, 2026-10-22).
+ */
+it("clears a stale in-memory cart when the read finds no cart", async () => {
+  const stale = {
+    token: "t",
+    itemsCount: 2,
+    items: [],
+  } as unknown as NonNullable<
+    Parameters<typeof CartProvider>[0]["initialCart"]
+  >;
+  getCartAction.mockImplementationOnce(async () => null);
+  await mountAt("/", stale);
+  expect(getCartAction).toHaveBeenCalledTimes(1);
+  expect(container.querySelector("[data-probe]")?.textContent).toBe("none");
 });

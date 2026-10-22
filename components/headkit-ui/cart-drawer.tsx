@@ -71,9 +71,9 @@ export function CartDrawer() {
   const giftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    getCartAction().then((cart) => {
-      if (cart) setCartData(cart);
-    });
+    // `null` means there is no cart (cookie gone): drop whatever this tab
+    // still holds, or a long-open tab keeps showing lines that no longer exist.
+    getCartAction().then((cart) => setCartData(cart));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

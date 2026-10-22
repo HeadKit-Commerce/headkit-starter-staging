@@ -34,9 +34,8 @@ function CartCountSync(): null {
   const { setCartData } = useCartContext();
   useEffect(() => {
     if (isCheckoutEntryPath(window.location.pathname)) return;
-    getCartAction().then((cart) => {
-      if (cart) setCartData(cart);
-    });
+    // `null` means there is no cart (cookie gone): clear the stale badge.
+    getCartAction().then((cart) => setCartData(cart));
   }, [setCartData]);
   return null;
 }

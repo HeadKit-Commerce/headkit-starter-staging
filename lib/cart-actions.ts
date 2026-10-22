@@ -53,18 +53,6 @@ const decodeTokenUserId = (token: string): string | null => {
   }
 };
 
-const isTokenExpiringSoon = (
-  token: string,
-  thresholdSeconds = 3600,
-): boolean => {
-  try {
-    const { exp } = JSON.parse(atob(token.split(".")[1] ?? ""));
-    return exp - Date.now() / 1000 < thresholdSeconds;
-  } catch {
-    return true;
-  }
-};
-
 function getKlaviyoId(
   cookieStore: Awaited<ReturnType<typeof cookies>>,
 ): string | undefined {
@@ -80,7 +68,7 @@ async function withCartRetry(
   opts?: CartMutationOptions,
 ): Promise<CartFieldsFragment> {
   const cartToken = await getCartToken();
-  const { name: cookieName, ...cookieOpts } = cartTokenCookieOptions();
+  const { name: cookieName } = cartTokenCookieOptions();
   const cookieStore = await cookies();
   const klaviyoId = getKlaviyoId(cookieStore);
   const authToken = getAuthToken(cookieStore);
@@ -109,15 +97,16 @@ async function withCartRetry(
     }
   }
 
+  // Write the token every change returns, with the cookie living exactly as
+  // long as that token. The Store API re-mints it with a fresh `exp` on every
+  // response, so this is what slides the cart forward from the shopper's last
+  // change. Writing only when the old token had under an hour left pinned the
+  // cookie to the FIRST add-to-cart: the cart died 48h later however actively
+  // it was used (Bike Society, 2026-10-22).
   const persistToken = (newToken: string) => {
     if (!newToken) return;
-    // Skip write if same user identity AND current token is not expiring soon
-    const sameUser =
-      decodeTokenUserId(newToken) === decodeTokenUserId(cartToken ?? "");
-    const needsRefresh = !cartToken || isTokenExpiringSoon(cartToken);
-    if (!sameUser || needsRefresh) {
-      cookieStore.set({ name: cookieName, value: newToken, ...cookieOpts });
-    }
+    const { name, ...opts } = cartTokenCookieOptions(newToken);
+    cookieStore.set({ name, value: newToken, ...opts });
   };
 
   const isSessionError = (err: unknown): boolean =>
@@ -159,7 +148,9 @@ export async function getCartAction(): Promise<CartFieldsFragment | null> {
     // Shopify GIDs are not JWTs — persist whenever commerce rotated the token
     // (ORDERS_PAID consume → fresh empty cart).
     if (cart?.token && cart.token !== cartToken) {
-      const { name: cookieName, ...cookieOpts } = cartTokenCookieOptions();
+      const { name: cookieName, ...cookieOpts } = cartTokenCookieOptions(
+        cart.token,
+      );
       cookieStore.set({ name: cookieName, value: cart.token, ...cookieOpts });
     }
     return cart;
@@ -171,7 +162,7 @@ export async function getCartAction(): Promise<CartFieldsFragment | null> {
 export async function getFullCartAction(): Promise<FullCart | null> {
   const cartToken = await getCartToken();
   if (!cartToken) {
-    console.error("[getFullCartAction] no cart token cookie → session_expired");
+    console.error("[getFullCartAction] no cart token cookie → no cart");
     return null;
   }
   try {
@@ -184,7 +175,7 @@ export async function getFullCartAction(): Promise<FullCart | null> {
     ).cart.get();
   } catch (err) {
     const code = err instanceof GraphQLError ? err.message : String(err);
-    console.error("[getFullCartAction] cart.get() failed → session_expired", {
+    console.error("[getFullCartAction] cart.get() failed → no cart", {
       tokenUserId: decodeTokenUserId(cartToken),
       error: code,
     });
