@@ -13,7 +13,11 @@ import { GraphQLError } from "@headkit/sdk";
 import type { ServerSDK } from "@headkit/sdk/server";
 import type { AddonServerError } from "@/lib/addons";
 import { createServerHeadkit } from "@/lib/sdk.server";
-import { getCartToken, cartTokenCookieOptions } from "@/lib/cart";
+import {
+  getCartToken,
+  cartTokenCookieOptions,
+  cartTokenSecondsLeft,
+} from "@/lib/cart";
 import { getAuthToken } from "@/lib/auth-cookie";
 import { CHECKOUT_SESSION_COOKIE } from "@/lib/checkout-session-cookie";
 
@@ -47,11 +51,40 @@ export type CartMutationOptions = {
  */
 const decodeTokenUserId = (token: string): string | null => {
   try {
-    return JSON.parse(atob(token.split(".")[1] ?? "")).user_id ?? null;
+    // JWT segments are base64url; atob only reads the standard alphabet.
+    const segment = (token.split(".")[1] ?? "")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+    return JSON.parse(atob(segment)).user_id ?? null;
   } catch {
     return null;
   }
 };
+
+/**
+ * How much fresher a token returned by a cart READ must be before
+ * `getCartAction` writes it: one day, the same throttle the theme applies to
+ * the session row (`inc/headkit-cart-read-extend.php`) and WooCommerce to its
+ * classic sessions. The Store API re-mints the token on every response, so
+ * without it every page view would set the cookie.
+ */
+const READ_TOKEN_RENEW_AFTER_SECONDS = 24 * 60 * 60;
+
+/**
+ * Whether a cart read should replace the stored token with the one it
+ * returned. Always when commerce handed back a different cart: a token with
+ * no readable `exp` (a Shopify cart GID, rotated when ORDERS_PAID consumes the
+ * cart), a stored token already past its `exp`, or another session's
+ * `user_id`. Otherwise only when the new token lives more than a day longer.
+ */
+function shouldPersistReadToken(stored: string, returned: string): boolean {
+  if (returned === stored) return false;
+  const returnedLeft = cartTokenSecondsLeft(returned);
+  const storedLeft = cartTokenSecondsLeft(stored);
+  if (returnedLeft === null || storedLeft === null) return true;
+  if (decodeTokenUserId(returned) !== decodeTokenUserId(stored)) return true;
+  return returnedLeft - storedLeft > READ_TOKEN_RENEW_AFTER_SECONDS;
+}
 
 function getKlaviyoId(
   cookieStore: Awaited<ReturnType<typeof cookies>>,
@@ -145,9 +178,13 @@ export async function getCartAction(): Promise<CartFieldsFragment | null> {
       undefined,
       authToken,
     ).cart.get()) as unknown as CartFieldsFragment;
-    // Shopify GIDs are not JWTs — persist whenever commerce rotated the token
-    // (ORDERS_PAID consume → fresh empty cart).
-    if (cart?.token && cart.token !== cartToken) {
+    // A read extends the cart, not just a change: CartCountSync calls this on
+    // every page load, so keeping the fresher token here is what makes the
+    // cart live 30 days from the shopper's last VISIT. The session row on the
+    // server is extended by the same read (theme 0.4.90,
+    // inc/headkit-cart-read-extend.php); without that half the cookie would
+    // outlive a cart WooCommerce had already deleted.
+    if (cart?.token && shouldPersistReadToken(cartToken, cart.token)) {
       const { name: cookieName, ...cookieOpts } = cartTokenCookieOptions(
         cart.token,
       );

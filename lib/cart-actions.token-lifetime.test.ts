@@ -150,3 +150,71 @@ describe("getCartAction sizes the cookie from the token it writes", () => {
     expect(lastCartCookie()).toMatchObject({ value: fresh, maxAge: 48 * HOUR });
   });
 });
+
+describe("getCartAction extends the cart on a plain visit, at most once a day", () => {
+  // CartCountSync reads the cart on every page load. The Store API re-mints
+  // the token on each read, so writing every one would set the cookie on every
+  // page view; the theme renews the session row on the same one-day rule
+  // (inc/headkit-cart-read-extend.php).
+
+  it("a visit 25h after the token was written keeps the fresher token", async () => {
+    cookieValues.set("hk-cart-token", cartToken(T0, 30 * DAY));
+    const now = T0 + 25 * HOUR;
+    vi.setSystemTime(now * 1000);
+    const fresh = cartToken(now, 30 * DAY);
+    createServerHeadkitMock.mockReturnValue(sdkReturning(fresh));
+
+    await actions.getCartAction();
+
+    expect(lastCartCookie()).toMatchObject({ value: fresh, maxAge: 30 * DAY });
+  });
+
+  it("a visit 23h after the token was written leaves the cookie alone", async () => {
+    cookieValues.set("hk-cart-token", cartToken(T0, 30 * DAY));
+    const now = T0 + 23 * HOUR;
+    vi.setSystemTime(now * 1000);
+    createServerHeadkitMock.mockReturnValue(
+      sdkReturning(cartToken(now, 30 * DAY)),
+    );
+
+    const cart = await actions.getCartAction();
+
+    expect(cart).not.toBeNull();
+    expect(lastCartCookie()).toBeUndefined();
+  });
+
+  it("a token for another session is written at once, however fresh", async () => {
+    cookieValues.set("hk-cart-token", cartToken(T0, 30 * DAY, "t_old"));
+    const now = T0 + HOUR;
+    vi.setSystemTime(now * 1000);
+    const other = cartToken(now, 30 * DAY, "t_new");
+    createServerHeadkitMock.mockReturnValue(sdkReturning(other));
+
+    await actions.getCartAction();
+
+    expect(lastCartCookie()?.value).toBe(other);
+  });
+
+  it("a rotated Shopify cart GID is written at once", async () => {
+    cookieValues.set("hk-cart-token", "gid://shopify/Cart/old");
+    vi.setSystemTime(T0 * 1000);
+    createServerHeadkitMock.mockReturnValue(
+      sdkReturning("gid://shopify/Cart/new"),
+    );
+
+    await actions.getCartAction();
+
+    expect(lastCartCookie()?.value).toBe("gid://shopify/Cart/new");
+  });
+
+  it("the same token back is never rewritten", async () => {
+    const token = cartToken(T0, 30 * DAY);
+    cookieValues.set("hk-cart-token", token);
+    vi.setSystemTime((T0 + 3 * DAY) * 1000);
+    createServerHeadkitMock.mockReturnValue(sdkReturning(token));
+
+    await actions.getCartAction();
+
+    expect(lastCartCookie()).toBeUndefined();
+  });
+});

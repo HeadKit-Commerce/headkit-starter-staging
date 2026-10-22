@@ -22,6 +22,8 @@ vi.mock("next/headers", () => ({
 vi.mock("@/lib/cart", () => ({
   getCartToken: () => getCartTokenMock(),
   cartTokenCookieOptions: () => ({ name: "hk-cart-token", path: "/" }),
+  // A Shopify cart GID is not a JWT: it has no `exp`.
+  cartTokenSecondsLeft: () => null,
 }));
 
 vi.mock("@/lib/sdk.server", () => ({
