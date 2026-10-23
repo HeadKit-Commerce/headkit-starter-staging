@@ -63,8 +63,9 @@ export function CheckoutFormSkeleton(): React.ReactElement {
       aria-busy="true"
       aria-label="Loading checkout steps"
     >
-      {/* Express wallet slot — height reserved, no copy */}
-      <Skeleton className="mb-2 h-12 w-full rounded-brand" />
+      {/* No express-checkout skeleton: wallets only mount after Stripe reports
+          availability (`hasWallet`), and many carts never show that block. A
+          reserved bar would pulse then vanish — worse than starting at Contact. */}
       {STEPS.map((step) => (
         <StepChrome
           key={step.order}
