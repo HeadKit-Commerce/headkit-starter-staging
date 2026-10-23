@@ -63,9 +63,25 @@ export function CheckoutFormSkeleton(): React.ReactElement {
       aria-busy="true"
       aria-label="Loading checkout steps"
     >
-      {/* No express-checkout skeleton: wallets only mount after Stripe reports
-          availability (`hasWallet`), and many carts never show that block. A
-          reserved bar would pulse then vanish — worse than starting at Contact. */}
+      {/* Reserve express-checkout height so Apple/Google Pay mounting does not
+          shove the accordion down. Mirrors ExpressCheckoutPi: label + wallet
+          button + "Or" rule. Collapses only when the live form decides there
+          is no wallet — same trade-off as waiting on Stripe either way. */}
+      <div
+        data-testid="checkout-express-skeleton"
+        className="mb-2"
+        aria-hidden="true"
+      >
+        <Skeleton className="mb-2 h-4 w-28" />
+        <Skeleton className="h-12 w-full rounded-brand" />
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200" />
+          <span className="text-xs uppercase tracking-wide text-gray-400">
+            Or
+          </span>
+          <div className="h-px flex-1 bg-gray-200" />
+        </div>
+      </div>
       {STEPS.map((step) => (
         <StepChrome
           key={step.order}
