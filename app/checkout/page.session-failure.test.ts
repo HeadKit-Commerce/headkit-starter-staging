@@ -4,11 +4,10 @@ import { isValidElement, type ReactElement } from "react";
 /**
  * /checkout when its own Stripe session cannot be created.
  *
- * A session failure is RECOVERABLE — the cart is intact — so the shopper goes
- * back to `/checkout?error=<reason>` carrying the reason and nothing else (the
- * old redirect put the exception message in the URL for the error page to
- * print). LOOP GUARD: a request that already arrived with `?error=` and fails
- * again renders in place instead of redirecting a second time.
+ * Session minting lives in {@link CheckoutSessionGate} behind Suspense so the
+ * order summary can stream first. Failures still redirect to
+ * `/checkout?error=<reason>` (never the exception text). LOOP GUARD: a request
+ * that already arrived with `?error=` and fails again renders in place.
  */
 
 const redirectMock = vi.fn((url: string) => {
@@ -47,20 +46,30 @@ vi.mock("@/lib/stripe-config", () => ({
 vi.mock("@/lib/ga4-ecommerce", () => ({
   buildBeginCheckoutFromCart: () => null,
 }));
-vi.mock("@/lib/sdk.server", () => ({ createServerHeadkit: vi.fn() }));
+vi.mock("@/lib/sdk.server", () => ({
+  createServerHeadkit: () => ({
+    pickupLocations: { list: async () => [] },
+  }),
+}));
 vi.mock("@/lib/account-actions", () => ({ getCustomer: vi.fn() }));
 vi.mock("./actions", () => ({
   createCheckoutSessionAction: (...args: unknown[]) =>
     createCheckoutSessionActionMock(...args),
 }));
 vi.mock("./checkout-page-content", () => ({ CheckoutPageContent: () => null }));
+vi.mock("@/components/checkout/checkout-pending-shell", () => ({
+  CheckoutPendingShell: () => null,
+}));
 
 let CheckoutPage: typeof import("./page").default;
+let CheckoutSessionGate: typeof import("./checkout-session-gate").CheckoutSessionGate;
 
 beforeEach(async () => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
   CheckoutPage = (await import("./page")).default;
+  CheckoutSessionGate = (await import("./checkout-session-gate"))
+    .CheckoutSessionGate;
 });
 
 /** Every string rendered anywhere in a server element tree. */
@@ -75,14 +84,38 @@ function textOf(node: unknown): string {
   return "";
 }
 
+function gateProps(error?: string) {
+  return {
+    cart: CART as never,
+    stockAlerts: [],
+    returnUrl: "https://example.test/checkout/success",
+    arrivedFromFailure: typeof error === "string" && error.length > 0,
+    isAuthenticated: false,
+    bnplMessagingEnabled: false,
+    ...(error ? { error } : {}),
+  };
+}
+
 describe("/checkout session creation failure", () => {
+  it("page returns before minting a Stripe session (pending shell can paint)", async () => {
+    createCheckoutSessionActionMock.mockResolvedValue({
+      clientSecret: "cs_secret",
+      sessionId: "cs_1",
+      publishableKey: "pk_test",
+    });
+    const page = await CheckoutPage({ searchParams: Promise.resolve({}) });
+    expect(isValidElement(page)).toBe(true);
+    // Session create lives in CheckoutSessionGate — not awaited by page.tsx.
+    expect(createCheckoutSessionActionMock).not.toHaveBeenCalled();
+  });
+
   it("returns to /checkout with only the reason, never the exception text", async () => {
     createCheckoutSessionActionMock.mockRejectedValue(
       new Error('stripe error 401: {"error":{"message":"Invalid API Key"}}'),
     );
-    await expect(
-      CheckoutPage({ searchParams: Promise.resolve({}) }),
-    ).rejects.toThrow(/NEXT_REDIRECT/);
+    await expect(CheckoutSessionGate(gateProps())).rejects.toThrow(
+      /NEXT_REDIRECT/,
+    );
     expect(redirectMock).toHaveBeenCalledWith(
       "/checkout?error=session_creation_failed",
     );
@@ -94,9 +127,9 @@ describe("/checkout session creation failure", () => {
       sessionId: "cs_1",
       publishableKey: "pk",
     });
-    await expect(
-      CheckoutPage({ searchParams: Promise.resolve({}) }),
-    ).rejects.toThrow(/NEXT_REDIRECT/);
+    await expect(CheckoutSessionGate(gateProps())).rejects.toThrow(
+      /NEXT_REDIRECT/,
+    );
     expect(redirectMock).toHaveBeenCalledWith(
       "/checkout?error=invalid_session",
     );
@@ -104,21 +137,19 @@ describe("/checkout session creation failure", () => {
 
   it("LOOP GUARD: a second consecutive failure renders in place", async () => {
     createCheckoutSessionActionMock.mockRejectedValue(new Error("boom"));
-    const page = await CheckoutPage({
-      searchParams: Promise.resolve({ error: "payment_failed" }),
-    });
+    const gate = await CheckoutSessionGate(gateProps("payment_failed"));
     expect(redirectMock).not.toHaveBeenCalled();
-    const text = textOf(page);
+    const text = textOf(gate);
     expect(text).toContain("We couldn't start your checkout");
     expect(text).not.toContain("boom");
   });
 
   it("LOOP GUARD: the same reason twice is said once (the content banner owns it)", async () => {
     createCheckoutSessionActionMock.mockRejectedValue(new Error("boom"));
-    const page = await CheckoutPage({
-      searchParams: Promise.resolve({ error: "session_creation_failed" }),
-    });
+    const gate = await CheckoutSessionGate(
+      gateProps("session_creation_failed"),
+    );
     expect(redirectMock).not.toHaveBeenCalled();
-    expect(textOf(page)).not.toContain("We couldn't start your checkout");
+    expect(textOf(gate)).not.toContain("We couldn't start your checkout");
   });
 });

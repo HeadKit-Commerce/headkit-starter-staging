@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CheckoutForm } from "@/app/checkout/CheckoutForm";
 import { Button } from "@/components/ui/button";
 import { Cart } from "@/components/checkout/cart";
+import { CheckoutPaymentIcons } from "@/components/checkout/checkout-payment-icons";
 import { OfflinePaymentCheckout } from "@/components/checkout/offline-payment-checkout";
 import { isOfflineOnlyCart } from "@/lib/payment-gateways";
 import { cartItemsDisplayTotal } from "@/lib/cart-prices";
@@ -693,6 +694,7 @@ function CheckoutPageBody({
                     enabled: bnplMessagingEnabled,
                   }}
                 />
+                <CheckoutPaymentIcons />
               </div>
             </div>
           }
