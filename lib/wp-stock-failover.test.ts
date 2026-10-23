@@ -201,6 +201,15 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     },
   );
 
+  it("does not let the order's own hold invent units when admin stock is already 0", () => {
+    const s = scenario("paid_admin_zero_own_hold");
+    expect(s.finalize.stopped).toBe("paid");
+    expect(s.items["11"]).toMatchObject({ claimed: 0, short: 1 });
+    expect(s.stock["101"]).toBe(0);
+    expect(s.status).toBe("refunded");
+    expect(s.gatewayCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("refunds one unit's share of a line when only part of it is short", () => {
     const s = scenario("partial_quantity");
     expect(s.items["11"]).toMatchObject({ claimed: 2, short: 1 });
