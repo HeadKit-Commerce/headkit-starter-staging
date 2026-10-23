@@ -87,9 +87,9 @@ export function CheckoutFormSkeleton(): React.ReactElement {
           key={step.order}
           order={step.order}
           title={step.title}
-          active={step.active}
+          active={step.active === true}
         >
-          {step.active ? (
+          {step.active === true ? (
             <>
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
