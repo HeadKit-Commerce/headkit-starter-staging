@@ -36,6 +36,15 @@ vi.mock("@/lib/sdk.server", () => ({ createServerHeadkit: vi.fn() }));
 vi.mock("@/lib/account-actions", () => ({ getCustomer: vi.fn() }));
 vi.mock("./actions", () => ({ createCheckoutSessionAction: vi.fn() }));
 vi.mock("./checkout-page-content", () => ({ CheckoutPageContent: () => null }));
+vi.mock("./checkout-session-gate", () => ({
+  CheckoutSessionGate: () => null,
+}));
+vi.mock("@/components/checkout/checkout-pending-shell", () => ({
+  CheckoutPendingShell: () => null,
+}));
+vi.mock("@/lib/ga4-ecommerce", () => ({
+  buildBeginCheckoutFromCart: () => null,
+}));
 
 let CheckoutPage: typeof import("./page").default;
 

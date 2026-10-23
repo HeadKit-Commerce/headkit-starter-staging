@@ -35,10 +35,21 @@ interface Props {
   showDisplayShipping?: boolean;
   /** Omit to render no BNPL badge (see {@link CartBnplMessaging}). */
   bnpl?: CartBnplMessaging;
+  /**
+   * Prefer this cart over context. Used by the checkout pending shell so the
+   * order summary can SSR / stream before CartProvider adopts the entry cart.
+   */
+  cart?: CartFieldsFragment | null;
+  /**
+   * Hide the coupon box (e.g. while the Stripe session is still minting and
+   * there is nothing to re-sync amounts against).
+   */
+  hideCoupon?: boolean;
 }
 
-const Cart = ({ showDisplayShipping, bnpl }: Props) => {
-  const { cartData } = useCartContext();
+const Cart = ({ showDisplayShipping, bnpl, cart, hideCoupon }: Props) => {
+  const { cartData: contextCart } = useCartContext();
+  const cartData = cart ?? contextCart;
   const isQuoteMode = useIsQuoteMode();
 
   if (!cartData) return null;
@@ -92,15 +103,23 @@ const Cart = ({ showDisplayShipping, bnpl }: Props) => {
           {/* Unified coupon / gift-card redemption. One input discriminates on the
               gift-card format; applying either re-syncs the Stripe session amount
               via the shared checkout-actions context. */}
-          <div className="mt-[32px] mb-[20px] space-y-[16px]">
-            <CouponBox cart={cartData as CartFieldsFragment} />
-          </div>
+          {!hideCoupon && (
+            <div className="mt-[32px] mb-[20px] space-y-[16px]">
+              <CouponBox cart={cartData as CartFieldsFragment} />
+            </div>
+          )}
 
           {/* Totals. Subtotal, Discount and Shipping are all tax-INCLUSIVE, so
               they reconcile against the inclusive line rows above and the
               inclusive Total below; the tax row beneath them is informational,
               not another addend. */}
-          <div className="flex justify-between font-medium">
+          <div
+            className={
+              hideCoupon
+                ? "mt-[32px] flex justify-between font-medium"
+                : "flex justify-between font-medium"
+            }
+          >
             <p>Subtotal</p>
             <p>{formatPrice(cartItemsDisplayTotal(cartData), currency)}</p>
           </div>

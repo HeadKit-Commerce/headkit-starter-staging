@@ -1,17 +1,11 @@
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
-import { correctCartAtEntry, type EntryCart } from "@/lib/checkout-stock-entry";
-import {
-  hasBlockingCartIssues,
-  isCartItemUnavailableError,
-} from "@/lib/cart-issues";
+import { correctCartAtEntry } from "@/lib/checkout-stock-entry";
+import { hasBlockingCartIssues } from "@/lib/cart-issues";
 import { bagUrl, type StockAlert } from "@/lib/stock-hold";
-import {
-  createCheckoutSessionAction,
-  type CheckoutSessionResult,
-} from "./actions";
-import { CheckoutPageContent } from "./checkout-page-content";
+import { CheckoutSessionGate } from "./checkout-session-gate";
 import type { CartFieldsFragment } from "@headkit/sdk";
 import { getFullCartAction } from "@/lib/cart-actions";
 import { getCustomer } from "@/lib/account-actions";
@@ -19,21 +13,17 @@ import { getAuthToken } from "@/lib/auth-cookie";
 import { resolveCheckoutEmail } from "@/lib/checkout-email";
 import { hostedCheckoutUrl } from "@/lib/hosted-checkout";
 import { hostedCheckoutCookieOptions } from "@/lib/hosted-cart-sync";
-import { getFloatVal, getStoreCurrency } from "@/lib/utils";
+import { getStoreCurrency } from "@/lib/utils";
 import { Ga4EcommerceEmitter } from "@/components/analytics/ga4-ecommerce-emitter";
 import { buildBeginCheckoutFromCart } from "@/lib/ga4-ecommerce";
-import { createServerHeadkit } from "@/lib/sdk.server";
 import { PaymentFailedBanner } from "@/components/checkout/payment-failed-banner";
 import { CartChangedBanner } from "@/components/checkout/cart-changed-banner";
-import { CheckoutTestModeBanner } from "@/components/checkout/test-mode-banner";
+import { CheckoutPendingShell } from "@/components/checkout/checkout-pending-shell";
 import { getBranding } from "@/lib/branding";
 import { normalizeCheckoutMode } from "@/lib/checkout-mode";
-import { isOfflineOnlyCart } from "@/lib/payment-gateways";
 import { getStripeConfig } from "@/lib/stripe-config";
 import {
-  checkoutBannerMessage,
   checkoutDeadEndPath,
-  checkoutFailurePath,
   logCheckoutFailure,
 } from "@/lib/checkout-failure";
 
@@ -173,169 +163,6 @@ export default async function CheckoutPage({
   }
   const customerEmail = resolveCheckoutEmail(cart, fallbackEmail);
 
-  let checkoutSession: {
-    clientSecret: string;
-    sessionId: string;
-    publishableKey: string;
-    stripeAccountId?: string | null;
-    testMode?: boolean;
-    shippingOptionMapping?: Array<{
-      rateId: string;
-      stripeShippingRateId: string;
-    }> | null;
-  } | null = null;
-  // ENG-838: a settled-free cart ($0 total AND shipping settled — no shipping
-  // needed, or a rate already selected) renders the no-payment confirm and
-  // must NOT create a checkout session here: on the zero-total path the
-  // server-side createCheckoutSession FINALIZES the WC order, so doing it
-  // during SSR would place an order at page VIEW (and a reload would try to
-  // finalize the consumed cart again → "This order cannot be paid for").
-  // The finalize belongs to the Place-order click (placeFreeOrder). Mirrors
-  // isZeroTotalCart in commerce and the free-branch condition in
-  // checkout-page-content.tsx.
-  const zeroTotal = getFloatVal(cart.totals.totalPrice ?? "0") <= 0;
-  const shippingSettled =
-    !cart.needsShipping ||
-    (cart.shippingRates ?? []).some((pkg) =>
-      (pkg?.shippingRates ?? []).some((rate) => rate?.selected),
-    );
-  const isSettledFreeCart = zeroTotal && shippingSettled;
-  // A store whose only gateways are offline (bacs / cheque / cod) takes payment
-  // outside the storefront, so there is no Stripe session to create and the
-  // provider has no card capability to create one with. CheckoutPageContent
-  // renders the offline form for exactly this cart — but it never gets the
-  // chance if we throw here first, because the failure redirects away from
-  // this page. Same classifier, same condition, decided one level up.
-  const offlineOnly = isOfflineOnlyCart(cart.paymentMethods);
-  // Computed from the create's result and acted on AFTER it, outside any try:
-  // `redirect()` signals by throwing NEXT_REDIRECT, which a catch would eat.
-  let sessionFailure: "invalid_session" | "session_creation_failed" | null =
-    null;
-  if (!isSettledFreeCart && !offlineOnly) {
-    // Only request shipping-address collection when the cart actually needs
-    // shipping. For digital/no-shipping carts the session must NOT require a
-    // shipping address (the billing-only UI never sets one → confirm() would fail).
-    // ENG-801: no email at create — see comment above `customerEmail`.
-    const createSession = async (
-      forCart: EntryCart,
-    ): Promise<
-      | { ok: true; session: CheckoutSessionResult }
-      | { ok: false; error: unknown }
-    > => {
-      try {
-        const session = await createCheckoutSessionAction(
-          returnUrl,
-          undefined,
-          forCart.needsShipping ? ["AU", "NZ"] : [],
-          successBaseUrl,
-        );
-        return { ok: true, session };
-      } catch (error) {
-        return { ok: false, error };
-      }
-    };
-
-    let created = await createSession(cart);
-    // Stock changed between the cart read above and the session create:
-    // commerce refused BEFORE any payment (CART_ITEM_UNAVAILABLE). Correct the
-    // cart again and try once more; redirect() stays outside any try, where its
-    // control-flow throw cannot be caught.
-    if (!created.ok && isCartItemUnavailableError(created.error)) {
-      const latest = await getFullCartAction();
-      if (!latest || latest.itemsCount === 0) {
-        redirect(bagUrl([...stockAlerts, { kind: "unnamed" }]));
-      }
-      cart = await correctCartAtEntry(latest, stockAlerts);
-      created = await createSession(cart);
-    }
-    if (!created.ok) {
-      // Still refused for stock after the one retry: a line the correction
-      // could not see. The bag on every arrival, the loop guard's included —
-      // the cart must change before a retry can succeed, and the bag never
-      // redirects back, so it cannot loop.
-      if (isCartItemUnavailableError(created.error)) {
-        redirect(bagUrl([...stockAlerts, { kind: "unnamed" }]));
-      }
-      sessionFailure = "session_creation_failed";
-      // The payload stays in OUR logs and out of the URL — a shopper must
-      // never read a provider exception off their own address bar.
-      logCheckoutFailure(
-        sessionFailure,
-        created.error instanceof Error
-          ? created.error.message
-          : String(created.error),
-      );
-    } else {
-      const session = created.session;
-      if (
-        !session.clientSecret ||
-        !session.sessionId ||
-        !session.publishableKey
-      ) {
-        sessionFailure = "invalid_session";
-        logCheckoutFailure(sessionFailure, {
-          hasClientSecret: !!session.clientSecret,
-          hasSessionId: !!session.sessionId,
-          hasPublishableKey: !!session.publishableKey,
-        });
-      } else {
-        checkoutSession = {
-          clientSecret: session.clientSecret,
-          sessionId: session.sessionId,
-          publishableKey: session.publishableKey,
-          stripeAccountId: session.stripeAccountId ?? null,
-          testMode: session.testMode === true,
-          shippingOptionMapping: session.shippingOptionMapping ?? null,
-        };
-      }
-    }
-  }
-
-  // Recoverable: the cart is intact and this page mints a fresh session on
-  // load, so the retry is simply arriving here again with the banner. The loop
-  // guard stops the second consecutive failure from redirecting a third time.
-  if (sessionFailure && !arrivedFromFailure) {
-    redirect(checkoutFailurePath(sessionFailure));
-  }
-  // The loop guard held: this request is the SECOND failure in a row, so the
-  // shopper stays here. The incoming `?error=` banner describes the FIRST
-  // failure; say what just happened as well, from the same copy table — unless
-  // it is the same sentence, which `CheckoutErrorHandler` already shows.
-  const heldSessionFailure =
-    sessionFailure &&
-    checkoutBannerMessage(sessionFailure) !== checkoutBannerMessage(error)
-      ? checkoutBannerMessage(sessionFailure)
-      : null;
-
-  let pickupLocations: Array<{
-    name: string;
-    address: string;
-    city: string;
-    state: string;
-    stateCode: string;
-    postcode: string;
-    country: string;
-    countryCode: string;
-    shippingMethodId: string;
-  }> = [];
-  try {
-    const sdk = createServerHeadkit();
-    const apiLocs = await sdk.pickupLocations.list();
-    pickupLocations = apiLocs.map((l) => ({
-      name: l.name,
-      address: l.address,
-      city: l.city,
-      state: l.state,
-      stateCode: l.stateCode ?? "",
-      postcode: l.postcode,
-      country: l.country,
-      countryCode: l.countryCode ?? "",
-      shippingMethodId: l.shippingMethodId,
-    }));
-  } catch {
-    // Fallback: checkout will use cart-derived list with empty addresses
-  }
-
   // NO `min-h-screen` here. It forced this wrapper to a full 100vh BELOW the
   // header, so the page was always at least a viewport-and-a-header tall no
   // matter how little content the accordion had — measured as a void between
@@ -361,46 +188,31 @@ export default async function CheckoutPage({
     getStoreCurrency(),
   );
 
+  const cartFragment = cart as unknown as CartFieldsFragment;
+
   return (
     <div className="bg-brand-bg">
       <Ga4EcommerceEmitter event={beginCheckoutEvent} />
-      {checkoutSession ? (
-        <CheckoutTestModeBanner
-          publishableKey={checkoutSession.publishableKey}
-          {...(checkoutSession.testMode !== undefined
-            ? { testMode: checkoutSession.testMode }
-            : {})}
-        />
-      ) : null}
       {/* Payment failed banner (ENG-789: retry after Afterpay/BNPL decline) */}
       {paymentFailed && <PaymentFailedBanner />}
       {/* Cart changed banner (ENG-784: session expired mid-redirect because
           the cart drifted; nothing was charged) */}
       {cartChanged && <CartChangedBanner />}
-      {/* Loop guard: a second consecutive session-creation failure, rendered
-          in place rather than redirected (see `heldSessionFailure`). */}
-      {heldSessionFailure && (
-        <div className="mx-auto max-w-6xl px-4 pt-6">
-          <div
-            role="alert"
-            className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3"
-          >
-            <p className="text-sm text-red-700">{heldSessionFailure}</p>
-          </div>
-        </div>
-      )}
-      <CheckoutPageContent
-        initialStockAlerts={stockAlerts}
-        initialCart={cart as unknown as CartFieldsFragment}
-        checkoutSession={checkoutSession}
-        pickupLocations={pickupLocations}
-        returnUrl={returnUrl}
-        {...(successBaseUrl && { successBaseUrl })}
-        {...(customerEmail && { customerEmail })}
-        isAuthenticated={isAuthenticated}
-        allowedCountries={["AU", "NZ"]}
-        bnplMessagingEnabled={stripeConfig.bnplMessagingEnabled}
-      />
+      {/* Cart + step chrome stream first; Stripe session mint stays behind
+          Suspense so the shopper is not stuck on a full-page skeleton. */}
+      <Suspense fallback={<CheckoutPendingShell cart={cartFragment} />}>
+        <CheckoutSessionGate
+          cart={cart}
+          stockAlerts={stockAlerts}
+          returnUrl={returnUrl}
+          arrivedFromFailure={arrivedFromFailure}
+          isAuthenticated={isAuthenticated}
+          bnplMessagingEnabled={stripeConfig.bnplMessagingEnabled}
+          {...(successBaseUrl && { successBaseUrl })}
+          {...(customerEmail && { customerEmail })}
+          {...(error && { error })}
+        />
+      </Suspense>
     </div>
   );
 }
