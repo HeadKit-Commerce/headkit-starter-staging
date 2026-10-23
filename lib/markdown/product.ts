@@ -1,4 +1,3 @@
-import type { Product } from "@headkit/sdk";
 import { productPath } from "@/lib/canonical-path";
 import {
   escapeMarkdown,
@@ -7,11 +6,35 @@ import {
 } from "@/lib/markdown";
 import { formatPrice, getFloatVal } from "@/lib/utils";
 
+/**
+ * Structural product view for markdown mirrors.
+ *
+ * Wider than a single SDK export: `getCachedProduct` returns
+ * `ProductFieldsFragment`, while `@headkit/sdk`'s `Product` is a stricter
+ * shape. Under `exactOptionalPropertyTypes` those are not assignable either
+ * way, so this module only names the fields it reads.
+ */
+export type MarkdownProduct = {
+  slug: string;
+  name?: string | null | undefined;
+  uri?: string | null | undefined;
+  price?: string | null | undefined;
+  regularPrice?: string | null | undefined;
+  stockStatus?: string | null | undefined;
+  shortDescription?: string | null | undefined;
+  description?: string | null | undefined;
+  seo?: { metaDesc?: string | null | undefined } | null | undefined;
+  brands?:
+    | ReadonlyArray<{ name?: string | null | undefined } | null | undefined>
+    | null
+    | undefined;
+};
+
 function stripHtml(html: string | null | undefined): string {
   return (html ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function priceLine(product: Product, currency: string): string {
+function priceLine(product: MarkdownProduct, currency: string): string {
   const price = product.price ? getFloatVal(product.price) : null;
   const regular = product.regularPrice
     ? getFloatVal(product.regularPrice)
@@ -41,7 +64,7 @@ function priceLine(product: Product, currency: string): string {
 }
 
 export function productToMarkdown(
-  product: Product,
+  product: MarkdownProduct,
   opts: { siteUrl: string; currency: string },
 ): string {
   const path = productPath(product);

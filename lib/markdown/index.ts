@@ -1,14 +1,20 @@
+export type MarkdownFrontmatterInput = {
+  canonicalUrl: string;
+  title: string;
+  /**
+   * Optional under `exactOptionalPropertyTypes` — callers may pass an explicit
+   * `undefined` when the description is empty.
+   */
+  description?: string | undefined;
+  lastUpdated?: string | undefined;
+};
+
 export function markdownFrontmatter({
   canonicalUrl,
   description,
   lastUpdated,
   title,
-}: {
-  canonicalUrl: string;
-  description?: string;
-  lastUpdated?: string;
-  title: string;
-}): string {
+}: MarkdownFrontmatterInput): string {
   // JSON strings are valid YAML double-quoted scalars.
   const fields = [
     `title: ${JSON.stringify(title)}`,
