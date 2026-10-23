@@ -28,6 +28,32 @@ import {
   type StockHoldPayments,
 } from "@/lib/stock-hold";
 import { removeCartItemAction, updateCartItemAction } from "@/lib/cart-actions";
+import {
+  BILLING_ADDRESS_COOKIE,
+  parseBillingAddressCookie,
+} from "@/lib/checkout-billing-cookie";
+import {
+  CHECKOUT_DATA_COOKIE,
+  parseCheckoutDataCookie,
+} from "@/lib/checkout-data-cookie";
+import { buildFinalizeAddresses } from "@/lib/finalize-address";
+import {
+  buildStripeCartPaymentData,
+  buildStripeOrderPaymentData,
+} from "@/lib/checkout-payment-data";
+import { countryCodeFrom } from "@/lib/country-names";
+import {
+  orderRefusalFromError,
+  orderRefusalFromSession,
+  logOrderRefusal,
+} from "@/lib/order-refusal";
+import {
+  logOrderValidation,
+  logUnexpectedFinalizeFailure,
+  orderValidationFromError,
+  type CompleteOrderCorrection,
+  type CompleteOrderResult,
+} from "@/lib/order-validation";
 
 /**
  * Checkout mutations and queries. All checkout operations from the frontend
@@ -378,4 +404,198 @@ export async function getOrderAction(
     orderKey,
     billingEmail,
   );
+}
+
+/**
+ * Re-finalises a PAID order with a detail the shopper corrected after
+ * WooCommerce refused it over that detail (`ORDER_VALIDATION`,
+ * `lib/order-validation.ts`). Reached from `components/checkout/complete-order.tsx`
+ * only.
+ *
+ * Nothing is charged here and nothing can be: the Stripe session is already
+ * paid and this calls the same finalize mutation the return page called. Two
+ * things keep it from drifting away from the attempt it retries:
+ *
+ * - `payment_data` comes from the SAME builder that page used
+ *   (`lib/checkout-payment-data.ts`). Its `checkout_session_id` is the key the
+ *   theme's duplicate-finalize claim row is written under, so a retry of this
+ *   session adopts the order rather than creating a second one, even if the
+ *   Stripe webhook finalises it first.
+ * - the address pair is rebuilt from the session and the checkout cookies with
+ *   the same sources that page used (`buildFinalizeAddresses`), and only then
+ *   is the shopper's patch overlaid on the side it names.
+ *
+ * Two finalize shapes, because the two return pages fail at different
+ * moments. The ORDER page already has a draft order, so its retry ADOPTS it
+ * (`processCheckoutOrder`). The CART page's failure came from `processCheckout`,
+ * which creates the order, so there is no id to adopt and the retry creates it
+ * from the still-active cart.
+ *
+ * The arguments come from the browser and are checked against the session
+ * before anything is sent: the session must be paid, must not carry a
+ * recorded refusal, and must name this order when it names one at all (the
+ * order page's own tamper guard).
+ *
+ * It NEVER throws. Every failure comes back as a {@link CompleteOrderResult}.
+ */
+export async function completeOrderAction(
+  /** The draft order to adopt, or "" on the cart page, which has none yet. */
+  orderId: string,
+  orderKey: string,
+  sessionId: string,
+  correction: CompleteOrderCorrection,
+): Promise<CompleteOrderResult> {
+  const adopt = !!orderId && !!orderKey;
+  try {
+    const session = await getCheckoutSessionAction(sessionId);
+    const refused = orderRefusalFromSession(session);
+    if (refused) {
+      logOrderRefusal(refused);
+      return { ok: false, kind: "refused", refusal: refused };
+    }
+    const cartToken = session.cartToken;
+    if (
+      !cartToken ||
+      session.status !== "complete" ||
+      session.paymentStatus === "unpaid" ||
+      (adopt &&
+        !!session.orderId &&
+        session.orderId !== "0" &&
+        session.orderId !== orderId)
+    ) {
+      return { ok: false, kind: "transient" };
+    }
+
+    const cookieStore = await cookies();
+    const billingCookie = parseBillingAddressCookie(
+      cookieStore.get(BILLING_ADDRESS_COOKIE)?.value,
+    );
+    const storedData = parseCheckoutDataCookie(
+      cookieStore.get(CHECKOUT_DATA_COOKIE)?.value,
+    );
+
+    // The same sources, options and email the retried page used.
+    const sessionEmail = adopt
+      ? (storedData.email ?? session.customerEmail ?? "")
+      : (session.customerEmail ?? "");
+    const { billingAddress, shippingAddress } = adopt
+      ? buildFinalizeAddresses(
+          {
+            billingCookie,
+            sessionBilling: session.billingAddress,
+            shippingCookie: storedData.shippingAddress ?? null,
+            sessionShipping: session.shippingAddress,
+          },
+          {
+            billingEmail: sessionEmail,
+            phonePolicy: "omit-empty",
+            context: "checkout/complete-order (order)",
+          },
+        )
+      : buildFinalizeAddresses(
+          {
+            billingCookie,
+            sessionBilling:
+              session.billingAddress ?? session.shippingAddress ?? null,
+            sessionShipping:
+              session.shippingAddress ?? session.billingAddress ?? null,
+          },
+          {
+            billingEmail: sessionEmail,
+            billingPhoneFallback:
+              (session.billingAddress ?? session.shippingAddress)?.phone ?? "",
+            phonePolicy: "emit-empty",
+            context: "checkout/complete-order (cart)",
+          },
+        );
+
+    // The patch. Empty values are dropped so a form that rendered one field
+    // cannot blank the ones it did not render.
+    const patch: Record<string, string> = {};
+    let correctedEmail = "";
+    for (const [field, value] of Object.entries(correction.fields)) {
+      const trimmed = typeof value === "string" ? value.trim() : "";
+      if (!trimmed) continue;
+      if (field === "email") {
+        correctedEmail = trimmed;
+        continue;
+      }
+      patch[field] = field === "country" ? countryCodeFrom(trimmed) : trimmed;
+      if (!patch[field]) delete patch[field];
+    }
+    const correctedBilling = {
+      ...billingAddress,
+      ...(correction.side === "billing" ? patch : {}),
+      ...(correctedEmail ? { email: correctedEmail } : {}),
+    };
+    const correctedShipping = {
+      ...shippingAddress,
+      ...(correction.side === "shipping" ? patch : {}),
+    };
+    const billingEmail =
+      correctedEmail ||
+      (typeof correctedBilling.email === "string"
+        ? correctedBilling.email
+        : "");
+
+    if (adopt) {
+      await processCheckoutOrderAction(cartToken, orderId, orderKey, {
+        orderKey,
+        billingAddress: correctedBilling,
+        shippingAddress: correctedShipping,
+        ...(billingEmail ? { billingEmail } : {}),
+        paymentMethod: "headkit-payments",
+        paymentData: buildStripeOrderPaymentData(sessionId, session),
+      });
+      return {
+        ok: true,
+        path: `/checkout/success/${orderId}?key=${encodeURIComponent(orderKey)}`,
+      };
+    }
+
+    const created = await processCheckoutAction({
+      paymentMethod: "headkit-payments",
+      billingAddress: correctedBilling,
+      shippingAddress: correctedShipping,
+      paymentData: buildStripeCartPaymentData(sessionId, session),
+    });
+    if (!created?.orderId || created.orderId === "0" || !created.orderKey) {
+      // Finalised with no identifiers to route to: the webhook owns it from
+      // here, and the processing screen polls for it.
+      return { ok: false, kind: "transient" };
+    }
+    return {
+      ok: true,
+      path: `/checkout/success/${created.orderId}?key=${encodeURIComponent(created.orderKey)}&session_id=${encodeURIComponent(sessionId)}`,
+    };
+  } catch (err) {
+    // A re-finalize of an order the webhook has meanwhile placed is a SUCCESS
+    // from the shopper's side. Same list the order page treats as
+    // already-finalized.
+    const message = err instanceof Error ? err.message : "";
+    if (
+      adopt &&
+      (message.includes("different customer") ||
+        message.includes("invalid_user") ||
+        message.includes("already paid") ||
+        message.includes("cannot be paid"))
+    ) {
+      return {
+        ok: true,
+        path: `/checkout/success/${orderId}?key=${encodeURIComponent(orderKey)}`,
+      };
+    }
+    const refusal = orderRefusalFromError(err);
+    if (refusal) {
+      logOrderRefusal(refusal);
+      return { ok: false, kind: "refused", refusal };
+    }
+    const failure = orderValidationFromError(err);
+    if (failure) {
+      logOrderValidation(failure);
+      return { ok: false, kind: "validation", failure };
+    }
+    logUnexpectedFinalizeFailure(err);
+    return { ok: false, kind: "transient" };
+  }
 }

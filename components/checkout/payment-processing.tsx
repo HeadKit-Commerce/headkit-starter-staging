@@ -10,17 +10,43 @@ import { PaymentProcessingPoller } from "@/components/checkout/payment-processin
  *
  * ENG-784: when `sessionId` is provided, a client poller upgrades this static
  * screen — it polls the session every 2.5s (≤60s) and auto-routes to the order
- * confirmation once paid, or to the error page on cancel/expiry. The poller
+ * confirmation once paid, or back to `/checkout` on cancel/expiry. The poller
  * only reads/routes; the webhook remains the sole capture authority (D4).
+ *
+ * The poller WRAPS this screen rather than sitting beside it, which is what
+ * lets a post-payment order refusal replace it with no flash of "processing":
+ * the poller renders `children` until the session carries an `orderFailure`,
+ * then renders `<OrderRefused>` in its place.
+ *
+ * `orderId` adds one line naming the order. Pass it ONLY where the order is
+ * known to exist and the finalize failed in a way nobody could classify — the
+ * last resort of `app/checkout/success/[orderId]/page.tsx`, which used to throw
+ * to the error boundary. The ordinary async-payment path passes none: there is
+ * no order to name yet.
  */
 export function PaymentProcessing({
   sessionId,
+  orderId,
 }: {
   sessionId?: string;
+  orderId?: string;
 } = {}): React.ReactElement {
+  if (!sessionId) return <PaymentProcessingScreen orderId={orderId} />;
+  return (
+    <PaymentProcessingPoller sessionId={sessionId}>
+      <PaymentProcessingScreen orderId={orderId} />
+    </PaymentProcessingPoller>
+  );
+}
+
+/** The static screen, held as the poller's `children`. */
+function PaymentProcessingScreen({
+  orderId,
+}: {
+  orderId?: string | undefined;
+}): React.ReactElement {
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
-      {sessionId && <PaymentProcessingPoller sessionId={sessionId} />}
       <div className="bg-white rounded-lg shadow-lg p-8 text-center space-y-6">
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -44,6 +70,16 @@ export function PaymentProcessing({
           payment provider. We&apos;ll confirm your order by email as soon as
           the payment completes — no further action is needed.
         </p>
+
+        {orderId ? (
+          <p className="text-gray-600 text-sm">
+            If this takes more than a minute,{" "}
+            <Link href="/contact" className="underline">
+              contact us
+            </Link>{" "}
+            and quote order #{orderId}.
+          </p>
+        ) : null}
 
         <Link href="/" className="inline-block text-blue-600 underline text-sm">
           Return to Home

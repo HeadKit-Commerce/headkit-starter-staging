@@ -86,7 +86,7 @@ test.describe("Coupons: percent apply/remove, junk code, charge integrity, 100%-
     await installCartCookie(context, cartToken);
 
     await page.goto(`${BASE_URL}/checkout`);
-    await expect(page).not.toHaveURL(/\/checkout\/error/);
+    await expect(page).not.toHaveURL(/\/checkout(?:\/error|\?error=)/);
 
     const codeBox = page.getByPlaceholder("Coupon Code or Gift Card");
     await expect(
@@ -187,8 +187,10 @@ test.describe("Coupons: percent apply/remove, junk code, charge integrity, 100%-
    *
    * Expected: the "No payment required" branch renders and Place order lands
    * on the confirmation (PAY-05 / P0-07).
-   * Actual: /checkout redirects to /checkout/error?reason=session_creation_failed
-   * ("Checkout session could not be created") — the page never renders.
+   * Actual (when recorded): /checkout redirected to
+   * /checkout/error?reason=session_creation_failed — the page never rendered.
+   * A session failure now returns to /checkout?error=session_creation_failed
+   * (`lib/checkout-failure.ts`); the zero-total defect below is unchanged.
    *
    * Root cause (commerce): the zero-total finalize posts
    * `payment_method: "none"` to the WC Store API /checkout —

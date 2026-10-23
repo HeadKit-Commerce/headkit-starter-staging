@@ -9,6 +9,25 @@ import {
 } from "@/app/checkout/actions";
 import { ClearCart } from "@/components/checkout/clear-cart";
 import { PaymentProcessing } from "@/components/checkout/payment-processing";
+import { OrderRefused } from "@/components/checkout/order-refused";
+import { CompleteOrder } from "@/components/checkout/complete-order";
+import { checkoutFailurePath } from "@/lib/checkout-failure";
+import {
+  logOrderRefusal,
+  orderRefusalFromError,
+  orderRefusalFromSession,
+} from "@/lib/order-refusal";
+import {
+  logOrderValidation,
+  logUnexpectedFinalizeFailure,
+  orderValidationFromError,
+} from "@/lib/order-validation";
+import { buildStripeOrderPaymentData } from "@/lib/checkout-payment-data";
+import { buildFinalizeAddresses } from "@/lib/finalize-address";
+import {
+  CHECKOUT_DATA_COOKIE,
+  parseCheckoutDataCookie,
+} from "@/lib/checkout-data-cookie";
 import { LineItemDisplay } from "@/components/checkout/line-item-display";
 import {
   lineDisplayTotal,
@@ -35,21 +54,6 @@ interface Props {
   searchParams: Promise<{ key?: string; session_id?: string }>;
 }
 
-interface StoredCheckoutData {
-  email?: string;
-  shippingAddress?: {
-    firstName: string;
-    lastName: string;
-    address1: string;
-    address2?: string;
-    city: string;
-    state: string;
-    postcode: string;
-    country: string;
-    phone?: string;
-  };
-}
-
 export async function generateMetadata(
   _props: Props,
   parent: ResolvingMetadata,
@@ -65,18 +69,9 @@ export default async function Page({ params, searchParams }: Props) {
   if (!orderId || !orderKey) return notFound();
 
   const cookieStore = await cookies();
-  const checkoutDataRaw = cookieStore.get("hk-checkout-data")?.value;
-
-  let storedData: StoredCheckoutData = {};
-  if (checkoutDataRaw) {
-    try {
-      storedData = JSON.parse(
-        decodeURIComponent(checkoutDataRaw),
-      ) as StoredCheckoutData;
-    } catch {
-      /* ignore malformed cookie */
-    }
-  }
+  const storedData = parseCheckoutDataCookie(
+    cookieStore.get(CHECKOUT_DATA_COOKIE)?.value,
+  );
 
   const billingEmailFromCookie = storedData.email;
 
@@ -130,6 +125,18 @@ export default async function Page({ params, searchParams }: Props) {
     }
 
     if (session) {
+      // Checked before every branch below: when commerce has stamped a
+      // post-payment order refusal, the shopper PAID and WooCommerce refused
+      // the order, and the payment is already refunded or released. This URL
+      // names an order that will never exist, so neither the status branching
+      // nor the draft-order processing below applies — and the `unpaid`
+      // branch's processing screen is the forever-spinner this closes.
+      const refusal = orderRefusalFromSession(session);
+      if (refusal) {
+        logOrderRefusal(refusal);
+        return <OrderRefused refusal={refusal} />;
+      }
+
       // ENG-789: the backend rewrites the Stripe return_url to this
       // order-based URL once the draft order exists, so redirect-BNPL
       // failures (e.g. Afterpay "Fail test payment") land HERE — not on
@@ -145,12 +152,13 @@ export default async function Page({ params, searchParams }: Props) {
       if (session.status === "expired") {
         // ENG-784: deliberate cart-changed expiry (mechanism 1 fired during a
         // BNPL redirect) → back to /checkout with the cart-changed banner
-        // (cart intact, fresh session minted on load). Plain expiry keeps the
-        // session_expired error page.
+        // (cart intact, fresh session minted on load). Plain expiry is
+        // recoverable too: the WooCommerce cart normally outlives the Stripe
+        // session, and only `/checkout`'s null-cart gate decides a dead end.
         if (session.expiredReason === "cart_changed") {
           redirect("/checkout?error=cart_changed");
         }
-        redirect("/checkout/error?reason=session_expired");
+        redirect(checkoutFailurePath("session_expired"));
       }
       if (session.paymentStatus === "unpaid") {
         // ENG-784: sessionId enables the client poller (poll-only, D4).
@@ -223,84 +231,28 @@ export default async function Page({ params, searchParams }: Props) {
             }
           }
         }
-        const cookie = storedData.shippingAddress;
-        const shippingSource =
-          cookie ??
-          sessionAddr.shippingAddress ??
-          sessionAddr.billingAddress ??
-          null;
-        const billingSource =
-          billingCookie ?? sessionAddr.billingAddress ?? shippingSource;
+        // `lib/finalize-address.ts` owns the pair and, above all, the
+        // country/state/postcode rule: fall back across every source, then
+        // OMIT the field rather than send "" — an empty country is a
+        // woocommerce_rest_invalid_address_country 400 AFTER the charge.
+        const { billingAddress, shippingAddress } = buildFinalizeAddresses(
+          {
+            billingCookie,
+            sessionBilling: sessionAddr.billingAddress,
+            shippingCookie: storedData.shippingAddress ?? null,
+            sessionShipping: sessionAddr.shippingAddress,
+          },
+          {
+            billingEmail: billingEmail ?? "",
+            phonePolicy: "omit-empty",
+            context: "checkout/success/[orderId]",
+          },
+        );
 
-        const billingAddress = billingSource
-          ? {
-              firstName: billingSource.firstName ?? "",
-              lastName: billingSource.lastName ?? "",
-              address1: billingSource.address1 ?? "",
-              ...(billingSource.address2
-                ? { address2: billingSource.address2 }
-                : {}),
-              city: billingSource.city ?? "",
-              state: billingSource.state ?? "",
-              postcode: billingSource.postcode ?? "",
-              country: billingSource.country ?? "",
-              email: billingEmail ?? "",
-              ...(billingSource.phone ? { phone: billingSource.phone } : {}),
-            }
-          : {
-              firstName: "",
-              lastName: "",
-              address1: "",
-              city: "",
-              state: "",
-              postcode: "",
-              country: "",
-              email: billingEmail ?? "",
-              phone: "",
-            };
-
-        const shippingAddress = shippingSource
-          ? {
-              firstName: shippingSource.firstName ?? "",
-              lastName: shippingSource.lastName ?? "",
-              address1: shippingSource.address1 ?? "",
-              ...(shippingSource.address2
-                ? { address2: shippingSource.address2 }
-                : {}),
-              city: shippingSource.city ?? "",
-              state: shippingSource.state ?? "",
-              postcode: shippingSource.postcode ?? "",
-              country: shippingSource.country ?? "",
-              ...(shippingSource.phone ? { phone: shippingSource.phone } : {}),
-            }
-          : {
-              firstName: "",
-              lastName: "",
-              address1: "",
-              city: "",
-              state: "",
-              postcode: "",
-              country: "",
-              phone: "",
-            };
-
-        const paymentData = [
-          { key: "checkout_session_id", value: sessionId },
-          { key: "payment_status", value: "paid" },
-          { key: "payment_intent_id", value: session.paymentIntentId ?? "" },
-          { key: "payment_method", value: session.paymentMethod ?? "card" },
-          { key: "payment_mode", value: session.livemode ? "live" : "test" },
-          { key: "payment_provider", value: "stripe" },
-          { key: "card_brand", value: session.cardBrand ?? "" },
-          { key: "card_last4", value: session.cardLast4 ?? "" },
-          { key: "wallet_type", value: session.walletType ?? "" },
-        ];
-        if (session.stripeCustomerId) {
-          paymentData.push({
-            key: "stripe_customer_id",
-            value: session.stripeCustomerId,
-          });
-        }
+        // `lib/checkout-payment-data.ts` owns these keys — a contract with the
+        // theme, and `completeOrderAction` re-finalises this same order from
+        // the same builder, so a retry cannot drift a key from this attempt.
+        const paymentData = buildStripeOrderPaymentData(sessionId, session);
 
         try {
           await processCheckoutOrderAction(
@@ -336,15 +288,56 @@ export default async function Page({ params, searchParams }: Props) {
           // re-finalize here fails with an ownership / already-paid error. That
           // is NOT a checkout failure: fall through to the confirmation render
           // instead of crashing to the error boundary (KNOWN BUG,
-          // checkout-purchase.spec.ts ~L263). Genuinely unexpected errors still
-          // surface.
+          // checkout-purchase.spec.ts ~L263). Checked FIRST: none of these
+          // carries a code, and the branches below would otherwise read an
+          // already-placed order as a failure.
           const alreadyFinalized =
             msg.includes("different customer") ||
             msg.includes("invalid_user") ||
             msg.includes("already paid") ||
             msg.includes("cannot be paid") ||
             msg.includes("must not be null");
-          if (!alreadyFinalized) throw orderErr;
+
+          // The shopper has PAID. From here nothing may reach the error
+          // boundary. Three dispositions, in this order: a refusal is terminal
+          // and refunded, a validation failure is still paid and still
+          // placeable, and a code belongs to exactly one of them.
+          if (!alreadyFinalized) {
+            const refusal = orderRefusalFromError(orderErr);
+            if (refusal) {
+              logOrderRefusal(refusal);
+              return <OrderRefused refusal={refusal} />;
+            }
+            const validationFailure = orderValidationFromError(orderErr);
+            if (validationFailure) {
+              logOrderValidation(validationFailure);
+              return (
+                <CompleteOrder
+                  failure={validationFailure}
+                  orderId={String(effectiveOrderId || orderId)}
+                  orderKey={String(effectiveOrderKey || orderKey)}
+                  sessionId={sessionId}
+                  /* The pair we actually SENT: its country is the one
+                     WooCommerce rejected, and its shipping half is what the
+                     form opens with. */
+                  shippingAddress={shippingAddress}
+                  billingAddress={billingAddress}
+                  customerEmail={billingEmail ?? null}
+                />
+              );
+            }
+            // Nobody classified it and the shopper is holding a charged card,
+            // so the LAST resort is the processing screen with its poller (the
+            // webhook may yet place this order) and a line naming the order, so
+            // a support thread starts from a fact. Never a throw.
+            logUnexpectedFinalizeFailure(orderErr);
+            return (
+              <PaymentProcessing
+                sessionId={sessionId}
+                orderId={String(effectiveOrderId || orderId)}
+              />
+            );
+          }
         }
         // Success OR already-finalized → route to the clean confirmation URL
         // (no session_id) for the deterministic order render. Kept OUTSIDE the

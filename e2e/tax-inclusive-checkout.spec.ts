@@ -14,8 +14,7 @@ import {
  * ---------------------------------------------------------------
  * This test loads `/checkout`, and `app/checkout/page.tsx` mints a Stripe
  * Checkout Session for any non-zero, non-offline-only cart — redirecting to
- * `/checkout/error?reason=session_creation_failed` when commerce has no Stripe
- * key. The taxed fixture is A$110, so this test cannot run without
+ * `/checkout?error=session_creation_failed` when commerce has no Stripe key. The taxed fixture is A$110, so this test cannot run without
  * `STRIPE_TEST_SECRET_KEY`, and CI treats a missing secret as an EXPECTED
  * state, not an error.
  *

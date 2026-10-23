@@ -62,7 +62,7 @@ async function walkToPayment(page: Page, email: string): Promise<void> {
 
 /** The error screen the plan forbids on any stock outcome. */
 async function expectNoErrorScreen(page: Page): Promise<void> {
-  await expect(page).not.toHaveURL(/\/checkout\/error/);
+  await expect(page).not.toHaveURL(/\/checkout(?:\/error|\?error=)/);
   await expect(page.getByText(/something went wrong/i)).toHaveCount(0);
 }
 

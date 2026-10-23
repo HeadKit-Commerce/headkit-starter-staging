@@ -170,7 +170,7 @@ test.describe("Checkout attribution: logged-in paid order + account surfaces (Ga
     await loginViaUi(page);
     try {
       await page.goto(`${BASE_URL}/checkout`);
-      await expect(page).not.toHaveURL(/\/checkout\/error/);
+      await expect(page).not.toHaveURL(/\/checkout(?:\/error|\?error=)/);
 
       await completeAuthedContactStep(page);
       await completeAuthedDeliveryStep(page);

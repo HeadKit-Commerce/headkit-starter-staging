@@ -91,7 +91,7 @@ test.describe("Paid card checkout (Gap 1 — P0-01/02/03/18)", () => {
     await expect(
       page,
       "checkout redirected to an error page instead of rendering",
-    ).not.toHaveURL(/\/checkout\/error/);
+    ).not.toHaveURL(/\/checkout(?:\/error|\?error=)/);
 
     await fillContactStep(page, GUEST_EMAIL);
     await fillShipToHomeStep(page);

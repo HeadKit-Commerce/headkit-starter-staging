@@ -187,7 +187,7 @@ test.describe("Checkout auth: logged-in prefill + reload durability + guest safe
     await expect(
       page,
       "logged-in checkout redirected to an error page instead of rendering",
-    ).not.toHaveURL(/\/checkout\/error/);
+    ).not.toHaveURL(/\/checkout(?:\/error|\?error=)/);
 
     // Prefill BEFORE reload — the seeded WP email is populated into the Stripe
     // ContactDetailsElement (sourced from the recreated session's customer_email).
@@ -219,7 +219,7 @@ test.describe("Checkout auth: logged-in prefill + reload durability + guest safe
     await expect(
       page,
       "checkout redirected to error after reload",
-    ).not.toHaveURL(/\/checkout\/error/);
+    ).not.toHaveURL(/\/checkout(?:\/error|\?error=)/);
     const after = await emailPrefilledInCheckout(page, TEST_EMAIL);
     expect(
       after,
@@ -310,7 +310,7 @@ test.describe("Checkout auth: logged-in prefill + reload durability + guest safe
     await expect(
       page,
       "guest checkout redirected to an error page instead of rendering",
-    ).not.toHaveURL(/\/checkout\/error/);
+    ).not.toHaveURL(/\/checkout(?:\/error|\?error=)/);
 
     // The contact step must render for the guest (checkout still works)…
     await expect(

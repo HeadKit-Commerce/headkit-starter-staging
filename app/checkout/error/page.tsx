@@ -2,88 +2,62 @@
 
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, Suspense } from "react";
 import { useCartContext } from "@/components/headkit-ui/cart-context";
+import {
+  checkoutDeadEndContent,
+  isCheckoutBagReason,
+  logCheckoutFailure,
+} from "@/lib/checkout-failure";
 
 /**
- * Stock refusals never end on this screen (checkout plan v3 §2.3): checkout
- * corrects the cart in place, and leaves only for the bag. These reasons can
- * still arrive from an old link or a storefront tab opened before the change,
- * so they are forwarded to the bag with the generic alert.
+ * The checkout DEAD END: reached only when there is nothing left to retry.
+ *
+ * Every recoverable failure returns to `/checkout` with a banner instead
+ * (`lib/checkout-failure.ts` owns which is which, and the copy for both). The
+ * reasons that still land here mean the shopper's cart is gone, so the action
+ * is a way back into the shop, not a "Try Again" that would bounce straight
+ * off `/checkout`'s own empty-cart gate.
+ *
+ * The two STOCK reasons are not rendered at all (checkout plan v3 §2.3: no
+ * stock refusal ends on an error screen). An old link or a tab opened before
+ * that change can still carry one, so it is forwarded to the bag with the
+ * generic alert. `isCheckoutBagReason` decides.
+ *
+ * NO TECHNICAL DETAIL IS RENDERED HERE. Callers no longer put a payload in the
+ * URL; if a legacy link still carries `?error=` / `?message=` it is logged
+ * once and never displayed. Do not reintroduce a details toggle, and do not
+ * read those params for anything but that log line.
+ *
+ * It never redirects to `/checkout`: `/checkout` may send a shopper here, so a
+ * redirect back is the one arrangement that can loop. The bag forward goes to
+ * `/`, which never sends anyone back here.
  */
-const STOCK_REASONS = new Set(["item_unavailable", "stock_correction_empty"]);
-
-const getErrorMessage = (reason?: string): string => {
-  switch (reason) {
-    case "empty_cart":
-      return "Your cart is empty. Add items to your cart to continue.";
-    case "item_unavailable":
-      return "An item in your cart is no longer available. Open your cart, remove it, and try again.";
-    case "stock_correction_empty":
-      return "Some items were out of stock and removed. Your cart is now empty.";
-    case "invalid_session":
-      return "We couldn't prepare your checkout session. Please try again.";
-    case "session_creation_failed":
-      return "Checkout session could not be created. Please try again.";
-    case "missing_data":
-    case "missing_parameters":
-      return "We couldn't find your checkout information. Please try again.";
-    case "invalid_data":
-      return "Your checkout information was invalid. Please try again.";
-    case "missing_billing":
-    case "missing_address":
-      return "Address information is missing. Please complete all checkout steps.";
-    case "missing_shipping":
-      return "Shipping information is missing. Please try again.";
-    case "order_creation_failed":
-    case "checkout_failed":
-    case "checkout_execution_error":
-      return "We couldn't create your order. Please try again.";
-    case "payment_failed":
-      return "Your payment was not successful. Please check your payment details and try again.";
-    case "payment_canceled":
-      return "Your payment was cancelled and you have not been charged — your cart changed while the payment was in progress. Please review your cart and try again.";
-    case "cart_changed":
-      // Defensive copy — cart-changed flows normally land on /checkout with
-      // the banner (ENG-784); this covers any direct/legacy link here.
-      return "Your cart changed while your payment was in progress, so that payment was cancelled and nothing was charged. Please review your updated order and pay again.";
-    case "session_expired":
-      return "Your cart session has expired. Please add items to your cart and try again.";
-    case "no_session":
-      return "Your cart session has expired. Please start a new checkout.";
-    case "processing_error":
-      return "There was an error processing your order. Please try again.";
-    default:
-      return "There was a problem processing your payment. Please try again.";
-  }
-};
-
 function ErrorContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [showDetails, setShowDetails] = useState(false);
+  const { setBagAlerts, toggleCart } = useCartContext();
+  const logged = useRef(false);
 
   const reason = searchParams.get("reason") ?? undefined;
-  const { setBagAlerts, toggleCart } = useCartContext();
-  const toBag = reason !== undefined && STOCK_REASONS.has(reason);
+  const toBag = isCheckoutBagReason(reason);
+  // Read ONLY to log. Never rendered — see the docblock above.
+  const legacyDetails =
+    searchParams.get("error") ?? searchParams.get("message") ?? undefined;
+  const { title, body, action } = checkoutDeadEndContent(reason);
+
+  useEffect(() => {
+    if (logged.current) return;
+    logged.current = true;
+    logCheckoutFailure(reason, legacyDetails);
+  }, [reason, legacyDetails]);
+
   useEffect(() => {
     if (!toBag) return;
     setBagAlerts([{ kind: "unnamed" }]);
     toggleCart(true);
     router.replace("/");
   }, [toBag, setBagAlerts, toggleCart, router]);
-  const errorDetails =
-    searchParams.get("error") ?? searchParams.get("message") ?? undefined;
-  const errorMessage = getErrorMessage(reason);
-
-  let parsedError: unknown = null;
-  if (errorDetails) {
-    try {
-      parsedError = JSON.parse(errorDetails);
-    } catch {
-      parsedError = errorDetails;
-    }
-  }
 
   if (toBag) return null;
 
@@ -96,7 +70,8 @@ function ErrorContent() {
           viewBox="0 0 24 24"
           strokeWidth={1.5}
           stroke="currentColor"
-          className="w-16 h-16 mx-auto text-red-500"
+          className="w-16 h-16 mx-auto text-amber-500"
+          aria-hidden="true"
         >
           <path
             strokeLinecap="round"
@@ -105,37 +80,26 @@ function ErrorContent() {
           />
         </svg>
 
-        <h1 className="text-2xl text-gray-900">Payment Failed</h1>
-        <p className="text-gray-600">{errorMessage}</p>
-
-        {errorDetails && (
-          <div className="mt-4">
-            <button
-              onClick={() => setShowDetails(!showDetails)}
-              className="text-blue-600 underline text-sm"
-            >
-              {showDetails ? "Hide Details" : "Show Technical Details"}
-            </button>
-            {showDetails && (
-              <div className="mt-2 p-4 bg-gray-100 rounded text-left overflow-auto max-h-60">
-                <pre className="text-xs whitespace-pre-wrap">
-                  {JSON.stringify(parsedError, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-        )}
+        <h1 className="text-2xl text-gray-900">{title}</h1>
+        <p className="text-gray-600">{body}</p>
 
         <div className="space-y-4">
-          <Button onClick={() => router.push("/checkout")} className="w-full">
-            Try Again
-          </Button>
+          {action === "checkout" ? (
+            <Button onClick={() => router.push("/checkout")} className="w-full">
+              Return to checkout
+            </Button>
+          ) : (
+            <Button onClick={() => router.push("/shop")} className="w-full">
+              Back to shop
+            </Button>
+          )}
+          {/* The cart is a drawer in the root layout, not a route. */}
           <Button
-            onClick={() => router.push("/")}
+            onClick={() => toggleCart(true)}
             variant="secondary"
             className="w-full"
           >
-            Return to Home
+            View cart
           </Button>
         </div>
       </div>

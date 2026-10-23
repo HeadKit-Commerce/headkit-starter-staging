@@ -33,6 +33,19 @@ import { CartChangedBanner } from "@/components/checkout/cart-changed-banner";
 import type { Step } from "@/app/checkout/CheckoutForm";
 import { StockAlertsProvider } from "@/components/checkout/stock-alerts";
 import type { StockAlert } from "@/lib/stock-hold";
+import { checkoutBannerMessage } from "@/lib/checkout-failure";
+/**
+ * The ONE banner mechanism for a failure that arrived at `/checkout` as
+ * `?error=<reason>`. Every recoverable checkout failure routes here (see
+ * `lib/checkout-failure.ts`), so the sentence comes from that table rather
+ * than a second copy of the wording, and nothing but the sentence reaches the
+ * DOM. The reason was logged with its payload where the failure happened;
+ * there is nothing more to log here.
+ *
+ * `payment_failed` and `cart_changed` are exceptions to the RENDERER only:
+ * both already have a dismissible banner mounted by `app/checkout/page.tsx`
+ * carrying the same sentence, so an inline copy would say it twice.
+ */
 function CheckoutErrorHandler({
   onError,
 }: {
@@ -42,30 +55,9 @@ function CheckoutErrorHandler({
 
   useEffect(() => {
     const error = searchParams.get("error");
-    if (error) {
-      switch (error) {
-        case "payment_failed":
-          // Rendered by the dismissible <PaymentFailedBanner> on the checkout
-          // page (ENG-789) — no inline duplicate here.
-          break;
-        case "cart_changed":
-          // Rendered by the dismissible <CartChangedBanner> on the checkout
-          // page (ENG-784) — no inline duplicate here.
-          break;
-        case "checkout_failed":
-          onError(
-            "There was an issue processing your order. Please try again.",
-          );
-          break;
-        case "stripe_error":
-          onError(
-            "There was an issue with the payment processor. Please try again.",
-          );
-          break;
-        default:
-          onError("An error occurred. Please try again.");
-      }
-    }
+    if (!error) return;
+    if (error === "payment_failed" || error === "cart_changed") return;
+    onError(checkoutBannerMessage(error));
   }, [searchParams, onError]);
 
   return null;
@@ -705,7 +697,20 @@ function CheckoutPageBody({
             </div>
           }
         />
-      ) : null}
+      ) : (
+        /* LOOP GUARD, the render half. `/checkout` refuses to redirect a
+           shopper who already arrived with `?error=` and then failed to mint
+           a session (`app/checkout/page.tsx`) — one hop maximum — so the
+           route stops HERE with no session on a payable cart. Show the order
+           summary and a retry, never a blank page and never a bounce to
+           `/checkout/error`. */
+        <div className="mx-auto max-w-6xl px-[20px] md:px-[40px]">
+          <Cart showDisplayShipping={true} />
+          <div className="mt-6 text-center">
+            <Button onClick={() => router.push("/checkout")}>Try again</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

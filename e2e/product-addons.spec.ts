@@ -64,7 +64,7 @@ import { BASE_URL, WP_BASE_URL, STORE_API, stackIsUp } from "./helpers";
  * THE ONE UNREACHABLE SURFACE (measured by plan 14.1-06, re-stated so nobody
  * re-derives it): `/checkout` mints a Stripe Checkout Session during SSR and the
  * local commerce process holds `sk_test_…placeholder`, so it 307s to
- * `/checkout/error?reason=session_creation_failed`. The documented free-cart
+ * `/checkout?error=session_creation_failed`. The documented free-cart
  * escape hatch (`e2e-free-100` + `pickup_location:0`) DOES render `/checkout` —
  * but `checkout-page-content.tsx` returns the free-order confirm UI BEFORE the
  * `{checkoutSession ? …}` block that holds `<Cart>`, so the summary column does

@@ -133,7 +133,7 @@ import {
  * THE ONE UNREACHABLE SURFACE. The checkout summary is not observable on this
  * stack and was not for 14.1-06 or 14.1-07 either: `/checkout` mints a Stripe
  * Checkout Session during SSR and commerce holds `sk_test_…placeholder`, so it
- * 307s to `/checkout/error`; the documented free-cart branch returns BEFORE the
+ * 307s to `/checkout?error=session_creation_failed`; the documented free-cart branch returns BEFORE the
  * `{checkoutSession ? …}` block that holds `<Cart>`. Rather than a `test.fixme`
  * — a skip by another name in a file whose central prohibition is that nothing
  * self-skips — it is stated here as a recorded environment gap. The summary line

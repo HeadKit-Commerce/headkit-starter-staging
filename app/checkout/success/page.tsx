@@ -2,10 +2,30 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { getCheckoutSessionAction, processCheckoutAction } from "../actions";
 import { PaymentProcessing } from "@/components/checkout/payment-processing";
+import { OrderRefused } from "@/components/checkout/order-refused";
+import { CompleteOrder } from "@/components/checkout/complete-order";
 import {
   BILLING_ADDRESS_COOKIE,
   parseBillingAddressCookie,
 } from "@/lib/checkout-billing-cookie";
+import { buildFinalizeAddresses } from "@/lib/finalize-address";
+import { buildStripeCartPaymentData } from "@/lib/checkout-payment-data";
+import {
+  checkoutFailurePath,
+  logCheckoutFailure,
+} from "@/lib/checkout-failure";
+import {
+  logOrderRefusal,
+  orderRefusalFromError,
+  orderRefusalFromSession,
+  type OrderRefusal,
+} from "@/lib/order-refusal";
+import {
+  logOrderValidation,
+  orderValidationFromError,
+  type OrderValidationAddressLike,
+  type OrderValidationFailure,
+} from "@/lib/order-validation";
 
 /**
  * Checkout return page: Stripe sends the shopper here (with only session_id)
@@ -17,7 +37,15 @@ import {
  *   Redirect to /checkout?error=payment_failed — the checkout page creates a
  *   fresh Stripe session on load and the cart is preserved, so this is an
  *   in-place retry.
- * - status "expired"                    → /checkout/error?reason=session_expired
+ * - status "expired"                    → /checkout?error=session_expired
+ *   (recoverable: the WooCommerce cart normally outlives the Stripe session,
+ *   and `/checkout` mints a fresh one; only its null-cart gate decides a dead
+ *   end — `lib/checkout-failure.ts`.)
+ * - session carries `orderFailure`      → the shopper PAID and WooCommerce
+ *   refused the order; commerce has already refunded or released the payment,
+ *   so render <OrderRefused>. Checked BEFORE every branch below: a refused
+ *   session is otherwise an ordinary complete+paid session whose order id
+ *   never resolves, which is how it used to sit on "processing" forever.
  * - status "complete" + unpaid          → async payment method still processing
  *   (e.g. bank debits). Render a pending screen; the webhook finalizes the
  *   order on checkout.session.async_payment_succeeded.
@@ -31,6 +59,12 @@ import {
  * orderId returned by WooCommerce. The Stripe webhook does the same thing
  * asynchronously; whichever runs first wins (WC POST /checkout is safe to call
  * once the cart is active).
+ *
+ * That finalize can itself be refused after the payment: `ORDER_REFUSED`
+ * (terminal, refunded → <OrderRefused>) or `ORDER_VALIDATION` (one detail to
+ * correct, still paid → <CompleteOrder>, which retries the same session). Any
+ * other failure keeps the poll-the-session path, and the last resort is the
+ * processing screen — never the error boundary.
  */
 
 /** Where the page should send (or render) the shopper, computed inside the
@@ -40,10 +74,12 @@ import {
 type Disposition =
   | "order" // paid + order resolved → confirmation page
   | "retry" // session open (failed/canceled) → /checkout?error=payment_failed
-  | "expired" // session expired → /checkout/error?reason=session_expired
+  | "expired" // session expired → /checkout?error=session_expired
   | "cart_changed" // deliberately expired: cart drifted (ENG-784) → /checkout?error=cart_changed
+  | "order_refused" // paid, then WooCommerce refused + commerce refunded → render UI
+  | "order_validation" // paid, then WooCommerce refused ONE detail → render the complete-order form
   | "pending" // async payment processing (or paid but unresolved) → render UI
-  | "error"; // session fetch threw → /checkout/error?reason=processing_error
+  | "error"; // session fetch threw → /checkout?error=processing_error
 
 export default async function CheckoutSuccessPage({
   searchParams,
@@ -60,11 +96,24 @@ export default async function CheckoutSuccessPage({
   let disposition: Disposition = "error";
   let resolvedOrderId: string | undefined;
   let resolvedOrderKey: string | undefined;
+  let refusal: OrderRefusal | null = null;
+  // Not refunded — which is why it is its own disposition, not a refusal reason.
+  let validationFailure: OrderValidationFailure | null = null;
+  let validationBilling: OrderValidationAddressLike | null = null;
+  let validationShipping: OrderValidationAddressLike | null = null;
+  let validationEmail: string | null = null;
 
   try {
     const session = await getCheckoutSessionAction(sessionId);
 
-    if (session.status === "open") {
+    // Commerce stamped a post-payment refusal on the session: the money is
+    // already refunded or released and no order will ever exist, so no branch
+    // below applies and nothing may be re-processed.
+    refusal = orderRefusalFromSession(session);
+    if (refusal) {
+      logOrderRefusal(refusal);
+      disposition = "order_refused";
+    } else if (session.status === "open") {
       // Payment failed or canceled (Afterpay decline/cancel returns here with
       // the session still open and remountable). Send the shopper back to
       // /checkout for an in-place retry with a fresh session + preserved cart.
@@ -94,44 +143,10 @@ export default async function CheckoutSuccessPage({
       // the webhook completes. Call processCheckout to create-and-finalize the
       // order immediately so the user can see their order confirmation.
       if ((!orderId || orderId === "0") && session.cartToken) {
-        const paymentData: { key: string; value: string }[] = [
-          { key: "checkout_session_id", value: sessionId },
-          { key: "payment_status", value: "paid" },
-          { key: "payment_provider", value: "stripe" },
-        ];
-        if (session.paymentIntentId) {
-          paymentData.push({
-            key: "payment_intent_id",
-            value: session.paymentIntentId,
-          });
-        }
-        if (session.paymentMethod) {
-          paymentData.push({
-            key: "payment_method",
-            value: session.paymentMethod,
-          });
-        }
-        if (session.cardBrand) {
-          paymentData.push({ key: "card_brand", value: session.cardBrand });
-        }
-        if (session.cardLast4) {
-          paymentData.push({ key: "card_last4", value: session.cardLast4 });
-        }
-        if (session.walletType) {
-          paymentData.push({ key: "wallet_type", value: session.walletType });
-        }
-        if (session.livemode !== undefined) {
-          paymentData.push({
-            key: "payment_mode",
-            value: session.livemode ? "live" : "test",
-          });
-        }
-        if (session.stripeCustomerId) {
-          paymentData.push({
-            key: "stripe_customer_id",
-            value: session.stripeCustomerId,
-          });
-        }
+        // `lib/checkout-payment-data.ts` owns these keys — a contract with the
+        // theme, and `completeOrderAction` retries this finalize from the same
+        // builder, so a retry cannot drift a key from the attempt it retries.
+        const paymentData = buildStripeCartPaymentData(sessionId, session);
 
         // ENG-801: carry billing and shipping SEPARATELY. The session's
         // customer_details is STALE for up to tens of seconds after
@@ -166,36 +181,22 @@ export default async function CheckoutSuccessPage({
           sessionAddr.billingAddress ?? sessionAddr.shippingAddress ?? null;
         const sessionShipping =
           sessionAddr.shippingAddress ?? sessionAddr.billingAddress ?? null;
-        const billingSource = billingCookie ?? sessionBilling;
-        const billingAddress = {
-          firstName: billingSource?.firstName ?? "",
-          lastName: billingSource?.lastName ?? "",
-          address1: billingSource?.address1 ?? "",
-          ...(billingSource?.address2
-            ? { address2: billingSource.address2 }
-            : {}),
-          city: billingSource?.city ?? "",
-          state: billingSource?.state ?? "",
-          postcode: billingSource?.postcode ?? "",
-          country: billingSource?.country ?? "",
-          email: sessionAddr.customerEmail ?? session.customerEmail ?? "",
-          // The payment-step billing element returns no phone — inherit the
-          // session phone (set from shipping at the delivery step).
-          phone: billingSource?.phone || sessionBilling?.phone || "",
-        };
-        const shippingAddress = {
-          firstName: sessionShipping?.firstName ?? "",
-          lastName: sessionShipping?.lastName ?? "",
-          address1: sessionShipping?.address1 ?? "",
-          ...(sessionShipping?.address2
-            ? { address2: sessionShipping.address2 }
-            : {}),
-          city: sessionShipping?.city ?? "",
-          state: sessionShipping?.state ?? "",
-          postcode: sessionShipping?.postcode ?? "",
-          country: sessionShipping?.country ?? "",
-          phone: sessionShipping?.phone ?? "",
-        };
+        // `lib/finalize-address.ts` owns the pair and, above all, the
+        // country/state/postcode rule: fall back across every source, then
+        // OMIT the field rather than send "" — an empty country is a
+        // woocommerce_rest_invalid_address_country 400 AFTER the charge.
+        const { billingAddress, shippingAddress } = buildFinalizeAddresses(
+          { billingCookie, sessionBilling, sessionShipping },
+          {
+            billingEmail:
+              sessionAddr.customerEmail ?? session.customerEmail ?? "",
+            // The payment-step billing element returns no phone — inherit the
+            // session phone (set from shipping at the delivery step).
+            billingPhoneFallback: sessionBilling?.phone ?? "",
+            phonePolicy: "emit-empty",
+            context: "checkout/success (cart)",
+          },
+        );
 
         try {
           const checkout = await processCheckoutAction({
@@ -208,17 +209,43 @@ export default async function CheckoutSuccessPage({
             orderId = checkout.orderId;
             orderKey = checkout.orderKey;
           }
-        } catch {
-          /* processCheckout failed — almost always woocommerce_rest_cart_empty: the
-             Stripe webhook won the race, already placed the order, and emptied the
-             cart. The webhook writes the real order_id/order_key back onto the session
-             metadata after creating the order, so poll the session below to resolve it. */
+        } catch (checkoutErr) {
+          /* THIS page's own POST can be what discovers a post-payment refusal,
+             and that throw is the FIRST notice — commerce refunds and only then
+             stamps the session. A typed code is terminal (ORDER_REFUSED) or asks
+             the shopper for one detail (ORDER_VALIDATION); anything else is
+             TRANSIENT — almost always woocommerce_rest_cart_empty: the Stripe
+             webhook won the race, already placed the order, and emptied the
+             cart. The webhook writes the real order_id/order_key back onto the
+             session metadata after creating the order, so poll the session
+             below to resolve it. */
+          refusal = orderRefusalFromError(checkoutErr);
+          if (refusal) {
+            logOrderRefusal(refusal);
+          } else {
+            validationFailure = orderValidationFromError(checkoutErr);
+            if (validationFailure) {
+              logOrderValidation(validationFailure);
+              // The pair we actually SENT: its country is the one WooCommerce
+              // rejected, and its shipping half is what the form opens with.
+              validationBilling = billingAddress;
+              validationShipping = shippingAddress;
+              validationEmail =
+                sessionAddr.customerEmail ?? session.customerEmail ?? null;
+            }
+          }
         }
 
         // Lost the create race (or our own POST hasn't reflected yet): poll the Stripe
         // session metadata, which the webhook updates with the real order_id/order_key
         // once it finishes creating the order. Bounded so we never hang the page.
-        if (!orderId || orderId === "0" || !orderKey) {
+        // Not after a typed refusal: polling cannot produce an order WooCommerce
+        // has refused.
+        if (
+          !refusal &&
+          !validationFailure &&
+          (!orderId || orderId === "0" || !orderKey)
+        ) {
           for (let attempt = 0; attempt < 6; attempt++) {
             await new Promise((resolve) => setTimeout(resolve, 500));
             try {
@@ -239,7 +266,11 @@ export default async function CheckoutSuccessPage({
         }
       }
 
-      if (orderId && orderId !== "0" && orderKey) {
+      if (refusal) {
+        disposition = "order_refused";
+      } else if (validationFailure) {
+        disposition = "order_validation";
+      } else if (orderId && orderId !== "0" && orderKey) {
         disposition = "order";
         resolvedOrderId = orderId;
         resolvedOrderKey = orderKey;
@@ -250,8 +281,11 @@ export default async function CheckoutSuccessPage({
         disposition = "pending";
       }
     }
-  } catch {
-    /* Session fetch failed — handled via the "error" disposition below. */
+  } catch (caught) {
+    /* Session fetch failed — handled via the "error" disposition below. The
+       payload is logged here, where it is known, and never travels in the
+       redirect URL. */
+    logCheckoutFailure("processing_error", caught);
   }
 
   // redirect() OUTSIDE the try/catch (it throws NEXT_REDIRECT; a catch would eat it).
@@ -264,13 +298,36 @@ export default async function CheckoutSuccessPage({
     redirect("/checkout?error=payment_failed");
   }
   if (disposition === "expired") {
-    redirect("/checkout/error?reason=session_expired");
+    redirect(checkoutFailurePath("session_expired"));
   }
   if (disposition === "cart_changed") {
     redirect("/checkout?error=cart_changed");
   }
   if (disposition === "error") {
-    redirect("/checkout/error?reason=processing_error");
+    redirect(checkoutFailurePath("processing_error"));
+  }
+
+  // Terminal and rendered, never redirected: `/checkout`'s banner could not
+  // tell the shopper what happened to money that already left their account.
+  if (disposition === "order_refused" && refusal) {
+    return <OrderRefused refusal={refusal} />;
+  }
+
+  // Terminal only until the shopper fixes it: the payment stands and the form
+  // re-finalises this same paid session. `orderId` is "" because WooCommerce
+  // refused before an order existed, so every sentence says "your order".
+  if (disposition === "order_validation" && validationFailure) {
+    return (
+      <CompleteOrder
+        failure={validationFailure}
+        orderId=""
+        orderKey=""
+        sessionId={sessionId}
+        shippingAddress={validationShipping}
+        billingAddress={validationBilling}
+        customerEmail={validationEmail}
+      />
+    );
   }
 
   // ENG-784: sessionId enables the client poller (2.5s ≤ 60s) that routes to

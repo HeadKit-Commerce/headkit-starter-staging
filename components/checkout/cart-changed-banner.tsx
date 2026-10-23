@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CHECKOUT_BANNER_COPY } from "@/lib/checkout-failure";
 
 /**
  * Dismissible cart-changed banner shown at the top of /checkout (ENG-784).
@@ -35,9 +36,7 @@ export function CartChangedBanner(): React.ReactElement | null {
           />
         </svg>
         <p className="flex-1 text-sm text-amber-800">
-          Your cart changed while your payment was in progress, so that payment
-          was cancelled and nothing was charged. Please review your updated
-          order and pay again.
+          {CHECKOUT_BANNER_COPY.cart_changed}
         </p>
         <button
           type="button"

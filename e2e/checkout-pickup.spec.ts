@@ -136,7 +136,7 @@ test.describe("Click & Collect: no shipping charged, pickup address on the sessi
     await installCartCookie(context, cartToken);
 
     await page.goto(`${BASE_URL}/checkout`);
-    await expect(page).not.toHaveURL(/\/checkout\/error/);
+    await expect(page).not.toHaveURL(/\/checkout(?:\/error|\?error=)/);
 
     await fillContactStep(page, "e2e-pickup@example.com");
     await selectPickup(page, PICKUP_NAME);

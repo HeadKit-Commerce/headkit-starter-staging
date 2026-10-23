@@ -29,6 +29,12 @@ import { getBranding } from "@/lib/branding";
 import { normalizeCheckoutMode } from "@/lib/checkout-mode";
 import { isOfflineOnlyCart } from "@/lib/payment-gateways";
 import { getStripeConfig } from "@/lib/stripe-config";
+import {
+  checkoutBannerMessage,
+  checkoutDeadEndPath,
+  checkoutFailurePath,
+  logCheckoutFailure,
+} from "@/lib/checkout-failure";
 
 export default async function CheckoutPage({
   searchParams,
@@ -45,6 +51,12 @@ export default async function CheckoutPage({
   // cart drifted land here with ?error=cart_changed — cart intact, fresh
   // session minted below, honest banner on top.
   const cartChanged = error === "cart_changed";
+  // LOOP GUARD. A shopper who is already HERE because something failed must
+  // not be redirected away again when this page's own session creation then
+  // fails — that is `/checkout → /checkout` forever. One hop maximum: with an
+  // `?error=` already on the URL, a session failure below renders in place
+  // instead, and `CheckoutPageContent` shows the order summary beneath it.
+  const arrivedFromFailure = typeof error === "string" && error.length > 0;
 
   // Parallel: quote-mode needs branding; Shopify hosted redirect needs cart;
   // the checkout summary's BNPL badge needs the store's messaging toggle.
@@ -72,10 +84,21 @@ export default async function CheckoutPage({
   //         success page / sign-out deleted it) or the cart could not be read
   // empty = the shopper's cart has no lines
   // Both are "your cart is empty", as on stock WooCommerce: an expired guest
-  // cart there simply shows empty. `session_expired` is kept for a genuinely
-  // expired Stripe checkout session (the return pages), where it is true.
-  if (!cart || cart.itemsCount === 0) {
-    redirect("/checkout/error?reason=empty_cart");
+  // cart there simply shows empty.
+  //
+  // THIS IS THE ONE PLACE a dead end is decided. Every other surface routes a
+  // failure to `/checkout` because none of them can see the cart; this gate
+  // can, so the dead end is reached in exactly one hop, from here, and
+  // `/checkout/error` never sends anyone back (`lib/checkout-failure.ts`).
+  if (!cart) {
+    logCheckoutFailure("empty_cart", {
+      cart: "unreadable",
+      arrivedWith: error,
+    });
+    redirect(checkoutDeadEndPath("empty_cart"));
+  }
+  if (cart.itemsCount === 0) {
+    redirect(checkoutDeadEndPath("empty_cart"));
   }
 
   // Shopify Checkout is authoritative: redirect to Storefront cart.checkoutUrl
@@ -167,9 +190,13 @@ export default async function CheckoutPage({
   // outside the storefront, so there is no Stripe session to create and the
   // provider has no card capability to create one with. CheckoutPageContent
   // renders the offline form for exactly this cart — but it never gets the
-  // chance if we throw here first, because the failure redirects to
-  // /checkout/error. Same classifier, same condition, decided one level up.
+  // chance if we throw here first, because the failure redirects away from
+  // this page. Same classifier, same condition, decided one level up.
   const offlineOnly = isOfflineOnlyCart(cart.paymentMethods);
+  // Computed from the create's result and acted on AFTER it, outside any try:
+  // `redirect()` signals by throwing NEXT_REDIRECT, which a catch would eat.
+  let sessionFailure: "invalid_session" | "session_creation_failed" | null =
+    null;
   if (!isSettledFreeCart && !offlineOnly) {
     // Only request shipping-address collection when the cart actually needs
     // shipping. For digital/no-shipping carts the session must NOT require a
@@ -208,36 +235,63 @@ export default async function CheckoutPage({
       created = await createSession(cart);
     }
     if (!created.ok) {
+      // Still refused for stock after the one retry: a line the correction
+      // could not see. The bag on every arrival, the loop guard's included —
+      // the cart must change before a retry can succeed, and the bag never
+      // redirects back, so it cannot loop.
       if (isCartItemUnavailableError(created.error)) {
         redirect(bagUrl([...stockAlerts, { kind: "unnamed" }]));
       }
-      const message =
+      sessionFailure = "session_creation_failed";
+      // The payload stays in OUR logs and out of the URL — a shopper must
+      // never read a provider exception off their own address bar.
+      logCheckoutFailure(
+        sessionFailure,
         created.error instanceof Error
           ? created.error.message
-          : String(created.error);
-      const params = new URLSearchParams({
-        reason: "session_creation_failed",
-        message,
-      });
-      redirect(`/checkout/error?${params.toString()}`);
+          : String(created.error),
+      );
+    } else {
+      const session = created.session;
+      if (
+        !session.clientSecret ||
+        !session.sessionId ||
+        !session.publishableKey
+      ) {
+        sessionFailure = "invalid_session";
+        logCheckoutFailure(sessionFailure, {
+          hasClientSecret: !!session.clientSecret,
+          hasSessionId: !!session.sessionId,
+          hasPublishableKey: !!session.publishableKey,
+        });
+      } else {
+        checkoutSession = {
+          clientSecret: session.clientSecret,
+          sessionId: session.sessionId,
+          publishableKey: session.publishableKey,
+          stripeAccountId: session.stripeAccountId ?? null,
+          testMode: session.testMode === true,
+          shippingOptionMapping: session.shippingOptionMapping ?? null,
+        };
+      }
     }
-    const session = created.session;
-    if (
-      !session.clientSecret ||
-      !session.sessionId ||
-      !session.publishableKey
-    ) {
-      redirect("/checkout/error?reason=invalid_session");
-    }
-    checkoutSession = {
-      clientSecret: session.clientSecret,
-      sessionId: session.sessionId,
-      publishableKey: session.publishableKey,
-      stripeAccountId: session.stripeAccountId ?? null,
-      testMode: session.testMode === true,
-      shippingOptionMapping: session.shippingOptionMapping ?? null,
-    };
   }
+
+  // Recoverable: the cart is intact and this page mints a fresh session on
+  // load, so the retry is simply arriving here again with the banner. The loop
+  // guard stops the second consecutive failure from redirecting a third time.
+  if (sessionFailure && !arrivedFromFailure) {
+    redirect(checkoutFailurePath(sessionFailure));
+  }
+  // The loop guard held: this request is the SECOND failure in a row, so the
+  // shopper stays here. The incoming `?error=` banner describes the FIRST
+  // failure; say what just happened as well, from the same copy table — unless
+  // it is the same sentence, which `CheckoutErrorHandler` already shows.
+  const heldSessionFailure =
+    sessionFailure &&
+    checkoutBannerMessage(sessionFailure) !== checkoutBannerMessage(error)
+      ? checkoutBannerMessage(sessionFailure)
+      : null;
 
   let pickupLocations: Array<{
     name: string;
@@ -309,6 +363,18 @@ export default async function CheckoutPage({
       {/* Cart changed banner (ENG-784: session expired mid-redirect because
           the cart drifted; nothing was charged) */}
       {cartChanged && <CartChangedBanner />}
+      {/* Loop guard: a second consecutive session-creation failure, rendered
+          in place rather than redirected (see `heldSessionFailure`). */}
+      {heldSessionFailure && (
+        <div className="mx-auto max-w-6xl px-4 pt-6">
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3"
+          >
+            <p className="text-sm text-red-700">{heldSessionFailure}</p>
+          </div>
+        </div>
+      )}
       <CheckoutPageContent
         initialStockAlerts={stockAlerts}
         initialCart={cart as unknown as CartFieldsFragment}

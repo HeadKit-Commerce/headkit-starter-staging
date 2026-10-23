@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CHECKOUT_BANNER_COPY } from "@/lib/checkout-failure";
 
 /**
  * Dismissible payment-failed banner shown at the top of /checkout when the
@@ -32,8 +33,7 @@ export function PaymentFailedBanner(): React.ReactElement | null {
           />
         </svg>
         <p className="flex-1 text-sm text-red-700">
-          Your payment was not successful. Please try again or use a different
-          payment method.
+          {CHECKOUT_BANNER_COPY.payment_failed}
         </p>
         <button
           type="button"
