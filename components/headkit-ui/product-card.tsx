@@ -94,14 +94,14 @@ interface Props {
   /** Eager-load the card image (first-row cards where it may be the LCP). */
   priority?: boolean;
   /**
-   * Forwarded to both of the card's `InstantLink`s. Omitted means `true`: a
-   * product URL is keyed on `params`, so it joins Next's prefetch queue.
-   * The scheduler prefetches visible links, moves the hovered one to the
-   * front, and does not drop that priority when the pointer leaves.
+   * Forwarded to both of the card's `InstantLink`s. Omitted means `"intent"`:
+   * Partial Prefetching keeps the App Shell warm, and a full per-link prefetch
+   * upgrades on hover / focus-visible / settled viewport (vercel/shop budget).
+   * Pass `true` for primary CTAs that should join the queue immediately
+   * (carousel slides do this via `ProductSlide`). Pass `false` to opt out.
    * https://nextjs.org/docs/app/guides/prefetching#prefetch-scheduling
-   * Pass `false` only to opt a card out.
    */
-  prefetch?: boolean | undefined;
+  prefetch?: boolean | "intent" | undefined;
   /**
    * Heading level for the product name. The correct level depends on where the
    * card sits:
@@ -271,13 +271,13 @@ export const ProductCard = ({
         />
       </div>
       {/*
-        `prefetch={true}` puts this product URL in Next's queue. Visible cards
-        prefetch in the background; the card under the pointer is the priority
-        task and stays there after the pointer leaves.
+        Default `"intent"`: dense PLP grids stay on the App Shell until hover
+        or a settled viewport upgrade. Carousels pass `prefetch={true}` via
+        `ProductSlide` so the visible row stays warm.
       */}
       <InstantLink
         href={href}
-        prefetch={prefetch ?? true}
+        prefetch={prefetch ?? "intent"}
         aria-label="Featured Image"
         className="block"
         onMouseEnter={() => setIsHovering(true)}
@@ -308,7 +308,7 @@ export const ProductCard = ({
           <div className="min-w-0">
             <InstantLink
               href={href}
-              prefetch={prefetch ?? true}
+              prefetch={prefetch ?? "intent"}
               pendingVariant="text"
               onClick={handleSelectItem}
             >
