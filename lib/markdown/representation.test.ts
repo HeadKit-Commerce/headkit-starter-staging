@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { escapeMarkdown } from "@/lib/markdown";
 import {
   getMarkdownMirrorPath,
   getMarkdownPath,
   getMarkdownRewritePath,
   prefersMarkdown,
 } from "@/lib/markdown/representation";
+
+describe("escapeMarkdown", () => {
+  it("escapes backslashes before other markdown metacharacters", () => {
+    expect(escapeMarkdown("a\\b|c")).toBe("a\\\\b\\|c");
+    expect(escapeMarkdown("*_[`]#")).toBe("\\*\\_\\[\\`\\]#");
+    expect(escapeMarkdown("# heading")).toBe("\\# heading");
+  });
+});
 
 describe("prefersMarkdown", () => {
   it("is false when Accept is absent or HTML-preferred", () => {

@@ -20,7 +20,11 @@ export function markdownFrontmatter({
 }
 
 export function escapeMarkdown(text: string): string {
-  return text.replace(/[|*_`]/g, "\\$&").replace(/^#/gm, "\\#");
+  // Backslashes first so later escapes cannot be undone by a trailing `\`.
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/[|*_`\[\]]/g, "\\$&")
+    .replace(/^#/gm, "\\#");
 }
 
 export function summarizeText(text: string, maxLength = 200): string {
