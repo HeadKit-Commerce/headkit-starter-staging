@@ -22,8 +22,12 @@ it("paints known step titles instead of anonymous skeleton bars", async () => {
   expect(text).toContain("Delivery");
   expect(text).toContain("Shipping Options");
   expect(text).toContain("Payment");
+  expect(text).toMatch(/Or/i);
   expect(
     host.querySelector('[data-testid="checkout-form-skeleton"]'),
+  ).not.toBeNull();
+  expect(
+    host.querySelector('[data-testid="checkout-express-skeleton"]'),
   ).not.toBeNull();
   await act(async () => {
     root?.unmount();
