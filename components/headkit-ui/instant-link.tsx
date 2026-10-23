@@ -1,12 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, type ComponentProps, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { convertToRelativePath, isAppNavigationHref } from "@/lib/convert-uri";
 import { navMouseDownEnabled } from "@/lib/nav-interaction-flags";
 import { cn } from "@/lib/utils";
 
 type PendingVariant = "card" | "text";
+
+type NextPrefetch = ComponentProps<typeof Link>["prefetch"];
 
 type InstantLinkProps = Omit<ComponentProps<typeof Link>, "prefetch"> & {
   /**
@@ -21,9 +30,144 @@ type InstantLinkProps = Omit<ComponentProps<typeof Link>, "prefetch"> & {
    * that decide per item (`ProductCarousel`'s `prefetchCount`, the nav's threaded
    * flag) need to say "unset" as a VALUE, so `undefined` is allowed here and is
    * forwarded only when the caller set it. An omitted prop is Next's `'auto'`.
+   *
+   * `"intent"` (vercel/shop pattern): stay on `'auto'` (App Shell only under
+   * Partial Prefetching) until hover/focus-visible or a settled viewport
+   * intersection upgrades to a full per-link prefetch. Dense PLP grids pass
+   * this so every card does not join the prefetch queue at once.
    */
-  prefetch?: ComponentProps<typeof Link>["prefetch"] | undefined;
+  prefetch?: NextPrefetch | "intent" | undefined;
 };
+
+const HOVER_INTENT_DELAY_MS = 100;
+const SETTLE_INTENT_DELAY_MS = 300;
+const SETTLE_INTENT_LIMIT = 4;
+
+interface Connection {
+  effectiveType?: string;
+  saveData?: boolean;
+}
+
+const settleCandidates = new Set<HTMLAnchorElement>();
+const settleUpgrades = new Map<HTMLAnchorElement, () => void>();
+let settleObserver: IntersectionObserver | undefined;
+let settleTimer: number | undefined;
+let touchPrimary: MediaQueryList | undefined;
+
+function canUpgrade(anchor: HTMLAnchorElement): boolean {
+  const connection = (navigator as Navigator & { connection?: Connection })
+    .connection;
+
+  if (
+    !anchor.isConnected ||
+    document.visibilityState !== "visible" ||
+    !navigator.onLine ||
+    connection?.saveData ||
+    connection?.effectiveType?.endsWith("2g") ||
+    anchor.hasAttribute("download") ||
+    (anchor.target && anchor.target.toLowerCase() !== "_self") ||
+    anchor.getAttribute("aria-disabled") === "true"
+  ) {
+    return false;
+  }
+
+  try {
+    const current = new URL(window.location.href);
+    const destination = new URL(anchor.href);
+
+    // Root ensureStatic="prefetch" keeps per-link prefetches static, so search
+    // params resolve only on navigation and a same-path upgrade adds nothing.
+    return (
+      (destination.protocol === "http:" || destination.protocol === "https:") &&
+      destination.origin === current.origin &&
+      destination.pathname !== current.pathname
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isTouchPrimary(): boolean {
+  touchPrimary ??= window.matchMedia("(hover: none)");
+  return touchPrimary.matches;
+}
+
+function scheduleSettleIntent() {
+  window.clearTimeout(settleTimer);
+  settleTimer = window.setTimeout(upgradeSettledLinks, SETTLE_INTENT_DELAY_MS);
+}
+
+function cancelSettleIntent() {
+  window.clearTimeout(settleTimer);
+}
+
+function upgradeSettledLinks() {
+  const center = window.innerHeight / 2;
+  const destinations = new Map<
+    string,
+    { anchors: HTMLAnchorElement[]; distance: number }
+  >();
+
+  for (const anchor of settleCandidates) {
+    if (!canUpgrade(anchor)) continue;
+    const rect = anchor.getBoundingClientRect();
+    const distance = Math.abs(rect.top + rect.height / 2 - center);
+    const destination = destinations.get(anchor.href);
+    if (destination) {
+      destination.anchors.push(anchor);
+      destination.distance = Math.min(destination.distance, distance);
+    } else {
+      destinations.set(anchor.href, { anchors: [anchor], distance });
+    }
+  }
+
+  const nearest = [...destinations.values()]
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, SETTLE_INTENT_LIMIT);
+  for (const { anchors } of nearest) {
+    for (const anchor of anchors) settleUpgrades.get(anchor)?.();
+  }
+}
+
+function observeSettleIntent(
+  anchor: HTMLAnchorElement,
+  upgrade: () => void,
+): () => void {
+  if (!settleObserver) {
+    window.addEventListener("scroll", scheduleSettleIntent, {
+      capture: true,
+      passive: true,
+    });
+    settleObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const target = entry.target as HTMLAnchorElement;
+          if (entry.isIntersecting) settleCandidates.add(target);
+          else settleCandidates.delete(target);
+        }
+        scheduleSettleIntent();
+      },
+      { rootMargin: "-25% 0px" },
+    );
+  }
+
+  settleUpgrades.set(anchor, upgrade);
+  settleObserver.observe(anchor);
+
+  return () => {
+    settleCandidates.delete(anchor);
+    settleUpgrades.delete(anchor);
+    settleObserver?.unobserve(anchor);
+  };
+}
+
+function assignRef(
+  ref: Ref<HTMLAnchorElement> | undefined,
+  anchor: HTMLAnchorElement | null,
+) {
+  if (typeof ref === "function") ref(anchor);
+  else if (ref) ref.current = anchor;
+}
 
 function hrefToString(href: ComponentProps<typeof Link>["href"]): string {
   if (typeof href === "string") return href;
@@ -121,13 +265,15 @@ export function mouseDownNavigationRefusal(event: {
 }
 
 /**
- * Next.js 16.3 Instant Navigation link.
+ * Next.js Instant Navigation link.
  *
  * Prefetch-on-intent and mouse-down navigation stay. The clicked link does
  * not paint its own pending state — the destination route's `loading.tsx` is shown
  * only when that page is not already ready. `lib/nav-interaction-flags.ts`
  * owns the mouse-down switch. Prefetch is whatever the caller passed;
- * an omitted prop is Next's `'auto'`.
+ * an omitted prop is Next's `'auto'`. `"intent"` upgrades to a full per-link
+ * prefetch on hover / focus-visible / settled viewport (max 4), matching
+ * vercel/shop's dense-grid budget.
  *
  * Absolute http(s) storefront URLs from WooCommerce/Shopify CMS fields are
  * normalized to relative paths (same as nav menus) so carousel CTAs and block
@@ -227,15 +373,61 @@ export function InstantLink({
   className,
   children,
   href,
+  ref,
   ...rest
 }: InstantLinkProps): React.JSX.Element {
   // Set while a mouse-down-initiated navigation is in flight, so the real `click`
   // that follows the same gesture is swallowed instead of navigating a second
   // time. A ref, not state: nothing renders from it.
   const suppressNextClickRef = useRef(false);
+  const destinationKey = JSON.stringify([href, rest.as]);
+  const [intentDestination, setIntentDestination] = useState<string | null>(
+    null,
+  );
+  const anchorRef = useRef<HTMLAnchorElement | null>(null);
+  const focused = useRef(false);
+  const hovered = useRef(false);
+  const intentTimer = useRef<number | undefined>(undefined);
+  const intentMode = prefetch === "intent";
+  const upgraded = intentMode && intentDestination === destinationKey;
 
   const normalizedHref = normalizeLinkHref(href);
   const hrefStr = hrefToString(normalizedHref);
+
+  function cancelPendingIntent() {
+    if (intentTimer.current !== undefined) window.clearTimeout(intentTimer.current);
+    intentTimer.current = undefined;
+  }
+
+  function scheduleIntent(anchor: HTMLAnchorElement) {
+    cancelPendingIntent();
+    if (!intentMode || upgraded || !canUpgrade(anchor)) return;
+
+    const destination = anchor.href;
+    intentTimer.current = window.setTimeout(() => {
+      intentTimer.current = undefined;
+      if (anchor.href === destination && canUpgrade(anchor)) {
+        setIntentDestination(destinationKey);
+      }
+    }, HOVER_INTENT_DELAY_MS);
+  }
+
+  useEffect(() => {
+    const anchor = anchorRef.current;
+    if (!intentMode || upgraded || !anchor || !isTouchPrimary()) return;
+    return observeSettleIntent(anchor, () =>
+      setIntentDestination(destinationKey),
+    );
+  }, [destinationKey, intentMode, upgraded]);
+
+  useEffect(
+    () => () => {
+      if (intentTimer.current !== undefined) {
+        window.clearTimeout(intentTimer.current);
+      }
+    },
+    [],
+  );
 
   if (hrefStr && !isAppNavigationHref(hrefStr)) {
     // Destructured (not deleted by key) so a future next/link rename fails the
@@ -273,9 +465,23 @@ export function InstantLink({
   const {
     onMouseDown: callerOnMouseDown,
     onClick: callerOnClick,
+    onBlur: callerOnBlur,
+    onFocus: callerOnFocus,
+    onPointerCancel: callerOnPointerCancel,
+    onPointerDown: callerOnPointerDown,
+    onPointerEnter: callerOnPointerEnter,
+    onPointerLeave: callerOnPointerLeave,
     replace,
     ...linkRest
   } = rest;
+
+  const resolvedPrefetch: NextPrefetch | undefined = intentMode
+    ? upgraded
+      ? true
+      : "auto"
+    : prefetch === undefined
+      ? undefined
+      : (prefetch as NextPrefetch);
 
   const handleMouseDown = (
     event: React.MouseEvent<HTMLAnchorElement>,
@@ -344,13 +550,67 @@ export function InstantLink({
       {...(replace === undefined ? {} : { replace })}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
+      onBlur={(event) => {
+        callerOnBlur?.(event);
+        focused.current = false;
+        if (!hovered.current) cancelPendingIntent();
+      }}
+      onFocus={(event) => {
+        callerOnFocus?.(event);
+        if (event.defaultPrevented || !event.currentTarget.matches(":focus-visible"))
+          return;
+        focused.current = true;
+        scheduleIntent(event.currentTarget);
+      }}
+      onPointerCancel={(event) => {
+        callerOnPointerCancel?.(event);
+        hovered.current = false;
+        cancelPendingIntent();
+      }}
+      onPointerDown={(event) => {
+        callerOnPointerDown?.(event);
+        // Navigation renders the cached shell instead of waiting on an
+        // in-flight per-link prefetch, so an upgrade after a press only
+        // duplicates the request.
+        cancelPendingIntent();
+        cancelSettleIntent();
+      }}
+      onPointerEnter={(event) => {
+        callerOnPointerEnter?.(event);
+        if (
+          event.defaultPrevented ||
+          event.pointerType === "touch" ||
+          event.buttons !== 0 ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey
+        ) {
+          return;
+        }
+        hovered.current = true;
+        scheduleIntent(event.currentTarget);
+      }}
+      onPointerLeave={(event) => {
+        callerOnPointerLeave?.(event);
+        hovered.current = false;
+        if (!focused.current) cancelPendingIntent();
+      }}
       href={normalizedHref}
       // Omitted, not passed as `undefined`: `next/link`'s own prop type is
       // `boolean | 'auto' | null` and this repo runs `exactOptionalPropertyTypes`,
       // so an explicit `undefined` does not typecheck. An absent prop is what
-      // 'auto' means.
-      {...(prefetch === undefined ? {} : { prefetch: prefetch })}
+      // 'auto' means. Intent mode always passes a concrete value.
+      {...(resolvedPrefetch === undefined ? {} : { prefetch: resolvedPrefetch })}
       className={cn("relative cursor-pointer", className)}
+      ref={(anchor) => {
+        anchorRef.current = anchor;
+        assignRef(ref, anchor);
+        return () => {
+          anchorRef.current = null;
+          assignRef(ref, null);
+        };
+      }}
     >
       {children}
     </Link>

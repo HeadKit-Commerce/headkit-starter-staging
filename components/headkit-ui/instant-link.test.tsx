@@ -13,7 +13,9 @@ import {
 } from "@/components/headkit-ui/instant-link";
 
 const { observedPrefetch } = vi.hoisted(() => ({
-  observedPrefetch: vi.fn<(prefetch: boolean | undefined) => void>(),
+  observedPrefetch: vi.fn<
+    (prefetch: boolean | "auto" | null | undefined) => void
+  >(),
 }));
 
 /**
@@ -54,7 +56,7 @@ vi.mock("next/link", () => ({
   }: {
     children: React.ReactNode;
     href: string;
-    prefetch?: boolean;
+    prefetch?: boolean | "auto" | null;
   }) => {
     observedPrefetch(prefetch);
     return (
@@ -127,6 +129,21 @@ describe("InstantLink prefetch resolution", () => {
     );
 
     expect(observedPrefetch).toHaveBeenCalledWith(false);
+  });
+
+  it("resolves prefetch=\"intent\" to 'auto' until a client upgrade", () => {
+    observedPrefetch.mockClear();
+
+    renderToStaticMarkup(
+      <InstantLink href="/shop/foo" prefetch="intent">
+        Product
+      </InstantLink>,
+    );
+
+    expect(
+      observedPrefetch,
+      "Intent mode stays on the App Shell ('auto') until hover/settle upgrades to true",
+    ).toHaveBeenCalledWith("auto");
   });
 });
 
