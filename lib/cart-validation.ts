@@ -1,8 +1,12 @@
-import type { CartItem } from "@headkit/sdk";
+import type { CartFieldsFragment, CartItem } from "@headkit/sdk";
 import { removeCartItemAction, updateCartItemAction } from "./cart-actions";
 import { decodeHtmlEntities } from "./utils";
 import { stripTitleMarkers } from "./title-emphasis";
-import { lineDisplayName, type StockAlert } from "./stock-hold";
+import {
+  lineDisplayName,
+  type CartCorrection,
+  type StockAlert,
+} from "./stock-hold";
 
 /** Backorder stock status constant matching WooCommerce/provider values. */
 const STOCK_STATUS_BACKORDER = "onbackorder";
@@ -153,4 +157,28 @@ export function stockAlertsFromValidation(
       ? { kind: "removed", name }
       : { kind: "reduced", name, quantity: issue.availableStock ?? 0 };
   });
+}
+
+/**
+ * Applies the corrections a stock refusal calls for — removes unavailable
+ * lines, reduces short ones — WITHOUT expiring the Checkout Session, so the
+ * shopper stays on checkout and the session is re-synced to the corrected
+ * cart. Returns the corrected cart, or null when a correction failed (it
+ * stops at the first one). Called by `/api/checkout/correct-cart` (C2/C3).
+ */
+export async function applyCartCorrections(
+  corrections: ReadonlyArray<CartCorrection>,
+): Promise<CartFieldsFragment | null> {
+  let cart: CartFieldsFragment | null = null;
+  for (const c of corrections) {
+    const result =
+      c.action === "remove"
+        ? await removeCartItemAction(c.itemKey, { keepCheckoutSession: true })
+        : await updateCartItemAction(c.itemKey, c.quantity, {
+            keepCheckoutSession: true,
+          });
+    if (!result.success) return null;
+    cart = result.cart;
+  }
+  return cart;
 }

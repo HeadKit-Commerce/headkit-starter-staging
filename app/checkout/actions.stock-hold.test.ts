@@ -13,8 +13,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createServerHeadkitMock = vi.fn();
 const getCartTokenMock = vi.fn();
-const removeCartItemActionMock = vi.fn();
-const updateCartItemActionMock = vi.fn();
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({
@@ -26,12 +24,6 @@ vi.mock("next/headers", () => ({
 vi.mock("@/lib/cart", () => ({ getCartToken: () => getCartTokenMock() }));
 vi.mock("@/lib/sdk.server", () => ({
   createServerHeadkit: (...args: unknown[]) => createServerHeadkitMock(...args),
-}));
-vi.mock("@/lib/cart-actions", () => ({
-  removeCartItemAction: (...args: unknown[]) =>
-    removeCartItemActionMock(...args),
-  updateCartItemAction: (...args: unknown[]) =>
-    updateCartItemActionMock(...args),
 }));
 
 /** The shape the SDK throws: a GraphQLError with extensions. */
@@ -180,42 +172,5 @@ describe("createPaymentIntentAction (the Express hold)", () => {
     await expect(actions.createPaymentIntentAction()).rejects.toThrow(
       "stripe down",
     );
-  });
-});
-
-describe("correctCartAction", () => {
-  it("removes and reduces WITHOUT expiring the Checkout Session, and returns the corrected cart", async () => {
-    removeCartItemActionMock.mockResolvedValue({
-      success: true,
-      cart: { itemsCount: 3 },
-    });
-    updateCartItemActionMock.mockResolvedValue({
-      success: true,
-      cart: { itemsCount: 2 },
-    });
-    const cart = await actions.correctCartAction([
-      { itemKey: "k1", action: "remove", quantity: 0 },
-      { itemKey: "k2", action: "reduce", quantity: 2 },
-    ]);
-    expect(removeCartItemActionMock).toHaveBeenCalledWith("k1", {
-      keepCheckoutSession: true,
-    });
-    expect(updateCartItemActionMock).toHaveBeenCalledWith("k2", 2, {
-      keepCheckoutSession: true,
-    });
-    expect(cart).toEqual({ itemsCount: 2 });
-  });
-
-  it("stops at the first failed correction", async () => {
-    removeCartItemActionMock.mockResolvedValue({
-      success: false,
-      error: "x",
-    });
-    const cart = await actions.correctCartAction([
-      { itemKey: "k1", action: "remove", quantity: 0 },
-      { itemKey: "k2", action: "reduce", quantity: 2 },
-    ]);
-    expect(cart).toBeNull();
-    expect(updateCartItemActionMock).not.toHaveBeenCalled();
   });
 });

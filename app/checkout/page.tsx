@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { correctCartAtEntry, type EntryCart } from "@/lib/checkout-stock-entry";
 import {
   hasBlockingCartIssues,
@@ -41,6 +42,19 @@ export default async function CheckoutPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  // Nothing on this page may run before a real request. Every read below is
+  // bound to the shopper's cookie-backed cart, and a null cart renders as a
+  // terminal page. A client prefetch of `/checkout` runs a RUNTIME prerender
+  // under Cache Components, which resolves `cookies()` and `searchParams` —
+  // so without this line the prefetch started `cart.get()`, completed with the
+  // fetch in flight, and Next's rejection of that fetch was swallowed into a
+  // null cart and a logged "provider failure". `connection()` never resolves
+  // in a `prerender-runtime` store (`next/dist/server/request/connection.js`),
+  // so the prefetch stops here and no cart read starts. It is first on
+  // purpose: the route is already fully dynamic, so no static shell is lost.
+  // `lib/cart-actions.ts` rethrows the interruption as the backstop.
+  await connection();
+
   // ENG-789: the checkout return page redirects failed/canceled payments
   // (e.g. Afterpay declines) back here with ?error=payment_failed for an
   // in-place retry. Reading searchParams keeps the page dynamic — it already

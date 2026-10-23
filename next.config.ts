@@ -8,6 +8,7 @@ import {
   resolveBuildWorkers,
 } from "./lib/build-parallelism";
 import { resolvePrerenderTimeout } from "./lib/prerender-timeout";
+import { serverActionsAllowedOrigins } from "./lib/server-actions-origins";
 
 /**
  * The container's memory limit, when the kernel exposes one (cgroup v2 first,
@@ -244,6 +245,12 @@ const prerenderTimeout = resolvePrerenderTimeout(
   process.env.HEADKIT_STATIC_PAGE_GENERATION_TIMEOUT,
 );
 
+// Apex <-> www: a Server Action replayed across the edge redirect keeps the
+// other host's Origin. See `lib/server-actions-origins.ts`.
+const serverActionsOrigins = serverActionsAllowedOrigins(
+  process.env.NEXT_PUBLIC_FRONTEND_URL,
+);
+
 const nextConfig: NextConfig = {
   transpilePackages: ["@headkit/sdk"],
   ...(deploymentId ? { deploymentId } : {}),
@@ -293,6 +300,9 @@ const nextConfig: NextConfig = {
     // stating it keeps the intended budget if Next's 0.9 factor ever moves.
     ...(prerenderTimeout
       ? { useCacheTimeout: prerenderTimeout.useCacheTimeout }
+      : {}),
+    ...(serverActionsOrigins
+      ? { serverActions: { allowedOrigins: serverActionsOrigins } }
       : {}),
   },
   images: {

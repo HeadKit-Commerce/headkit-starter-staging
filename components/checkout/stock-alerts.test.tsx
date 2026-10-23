@@ -10,6 +10,10 @@ import type { HoldOutcome, StockAlert } from "@/lib/stock-hold";
  * checkout — unavailable lines removed, short lines reduced, the session kept
  * (the corrected cart re-syncs it), one alert per item. Checkout is left only
  * when the corrections empty the cart, for the bag, with the same alerts.
+ *
+ * The correction endpoint and the navigation are spies: this proves the
+ * hook's decisions, not that a real cart changed or that the bag opened (the
+ * bag's half is `components/headkit-ui/cart-context.bag-alerts.test.tsx`).
  */
 
 (
@@ -17,11 +21,8 @@ import type { HoldOutcome, StockAlert } from "@/lib/stock-hold";
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
 const setCartData = vi.fn();
-const setBagAlerts = vi.fn();
-const toggleCart = vi.fn();
-const push = vi.fn();
-const correctCartAction = vi.fn();
-const getFullCartAction = vi.fn();
+const goToBag = vi.fn();
+const requestCartCorrection = vi.fn();
 
 const cartData = {
   itemsCount: 4,
@@ -37,14 +38,14 @@ const cartData = {
 };
 
 vi.mock("@/components/headkit-ui/cart-context", () => ({
-  useCartContext: () => ({ cartData, setCartData, setBagAlerts, toggleCart }),
+  useCartContext: () => ({ cartData, setCartData }),
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
-vi.mock("@/app/checkout/actions", () => ({
-  correctCartAction: (...args: unknown[]) => correctCartAction(...args),
+vi.mock("@/lib/stock-hold", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/stock-hold")>()),
+  goToBag: (...args: unknown[]) => goToBag(...args),
 }));
-vi.mock("@/lib/cart-actions", () => ({
-  getFullCartAction: (...args: unknown[]) => getFullCartAction(...args),
+vi.mock("@/lib/checkout-cart-correction", () => ({
+  requestCartCorrection: (...args: unknown[]) => requestCartCorrection(...args),
 }));
 
 let container: HTMLDivElement;
@@ -88,7 +89,10 @@ afterEach(() => {
 
 describe("useStockRefusal", () => {
   it("corrects the named lines in place, keeps the session, and shows one alert per item", async () => {
-    correctCartAction.mockResolvedValue({ itemsCount: 2, items: [] });
+    requestCartCorrection.mockResolvedValue({
+      ok: true,
+      cart: { itemsCount: 2, items: [] },
+    });
     await mount();
     await refuse({
       status: "refused",
@@ -97,12 +101,12 @@ describe("useStockRefusal", () => {
         { code: "INSUFFICIENT_STOCK", itemKey: "k-gloves", available: 2 },
       ],
     });
-    expect(correctCartAction).toHaveBeenCalledWith([
+    expect(requestCartCorrection).toHaveBeenCalledWith([
       { itemKey: "k-small", action: "remove", quantity: 0 },
       { itemKey: "k-gloves", action: "reduce", quantity: 2 },
     ]);
     expect(setCartData).toHaveBeenCalledWith({ itemsCount: 2, items: [] });
-    expect(push).not.toHaveBeenCalled();
+    expect(goToBag).not.toHaveBeenCalled();
     const text = container.textContent ?? "";
     expect(text).toContain(
       "Unfortunately Base Layer – Small is now unavailable and has been removed from your cart. You have not been charged.",
@@ -113,24 +117,28 @@ describe("useStockRefusal", () => {
   });
 
   it("leaves checkout for the bag, with the alerts, only when the cart is now empty", async () => {
-    correctCartAction.mockResolvedValue({ itemsCount: 0, items: [] });
+    requestCartCorrection.mockResolvedValue({
+      ok: true,
+      cart: { itemsCount: 0, items: [] },
+    });
     await mount();
     await refuse({
       status: "refused",
       issues: [{ code: "OUT_OF_STOCK", itemKey: "k-small", available: 0 }],
     });
-    expect(setBagAlerts).toHaveBeenCalledWith([
+    // The same `?bag_alerts=` arrival the server's entry redirect produces.
+    expect(goToBag).toHaveBeenCalledWith([
       { kind: "removed", name: "Base Layer – Small" },
     ]);
-    expect(toggleCart).toHaveBeenCalledWith(true);
-    expect(push).toHaveBeenCalledWith("/");
+    // The emptied cart is never published to the page it is leaving.
+    expect(setCartData).not.toHaveBeenCalled();
     expect(container.textContent).not.toContain("Unfortunately");
   });
 
   it("does not rewrite an unchanged cart (which would re-sync into the same refusal forever)", async () => {
     await mount();
     await refuse({ status: "refused", issues: [{ code: "OUT_OF_STOCK" }] });
-    expect(correctCartAction).not.toHaveBeenCalled();
+    expect(requestCartCorrection).not.toHaveBeenCalled();
     expect(setCartData).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
       "Unfortunately items in your cart are now unavailable.",
@@ -143,19 +151,64 @@ describe("useStockRefusal", () => {
     expect(container.textContent).toContain(
       "We couldn't reserve your items just now. Please try again — you have not been charged.",
     );
-    expect(correctCartAction).not.toHaveBeenCalled();
+    expect(requestCartCorrection).not.toHaveBeenCalled();
+  });
+
+  it("leaves for the bag when removing the LAST lines reports a lost session", async () => {
+    // Removing a cart's last line can answer CART_SESSION_EXPIRED, so the
+    // endpoint reports a failure and no cart — the cart is gone.
+    requestCartCorrection.mockResolvedValue({ ok: false, cart: null });
+    await mount();
+    await refuse({
+      status: "refused",
+      issues: [
+        { code: "OUT_OF_STOCK", itemKey: "k-small", available: 0 },
+        { code: "OUT_OF_STOCK", itemKey: "k-gloves", available: 0 },
+      ],
+    });
+    expect(goToBag).toHaveBeenCalledTimes(1);
+    expect(setCartData).not.toHaveBeenCalled();
   });
 
   it("stays on checkout when a correction fails", async () => {
-    correctCartAction.mockResolvedValue(null);
-    getFullCartAction.mockRejectedValue(new Error("down"));
+    // A failure that leaves the rest of the cart standing.
+    requestCartCorrection.mockResolvedValue({ ok: false, cart: null });
     await mount();
     await refuse({
       status: "refused",
       issues: [{ code: "OUT_OF_STOCK", itemKey: "k-small", available: 0 }],
     });
-    expect(push).not.toHaveBeenCalled();
+    expect(goToBag).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Base Layer – Small");
+  });
+
+  it("stays on checkout when the endpoint cannot be reached", async () => {
+    requestCartCorrection.mockResolvedValue(null);
+    await mount();
+    await refuse({
+      status: "refused",
+      issues: [
+        { code: "OUT_OF_STOCK", itemKey: "k-small", available: 0 },
+        { code: "OUT_OF_STOCK", itemKey: "k-gloves", available: 0 },
+      ],
+    });
+    expect(goToBag).not.toHaveBeenCalled();
+    expect(setCartData).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Base Layer – Small");
+  });
+
+  it("publishes a corrected cart re-read after a partial failure", async () => {
+    requestCartCorrection.mockResolvedValue({
+      ok: false,
+      cart: { itemsCount: 3, items: [] },
+    });
+    await mount();
+    await refuse({
+      status: "refused",
+      issues: [{ code: "OUT_OF_STOCK", itemKey: "k-small", available: 0 }],
+    });
+    expect(setCartData).toHaveBeenCalledWith({ itemsCount: 3, items: [] });
+    expect(goToBag).not.toHaveBeenCalled();
   });
 });
 

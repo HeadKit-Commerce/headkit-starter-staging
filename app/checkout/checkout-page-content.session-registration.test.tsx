@@ -30,7 +30,6 @@ const actions = vi.hoisted(() => ({
   registerActiveCheckoutSessionAction: vi.fn(async () => undefined),
   expireCheckoutSessionAction: vi.fn(async () => undefined),
   updateCustomerAction: vi.fn(),
-  correctCartAction: vi.fn(),
 }));
 const form = vi.hoisted(() => ({
   onRefreshSession: undefined as

@@ -10,12 +10,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
 import { useCartContext } from "@/components/headkit-ui/cart-context";
 import { StockAlertList } from "@/components/headkit-ui/stock-alert-list";
-import { correctCartAction } from "@/app/checkout/actions";
-import { getFullCartAction } from "@/lib/cart-actions";
+import { requestCartCorrection } from "@/lib/checkout-cart-correction";
 import {
+  goToBag,
   planStockCorrections,
   type HoldOutcome,
   type StockAlert,
@@ -97,11 +96,17 @@ export function useStockAlerts(): StockAlertsValue {
  * A hold that could not be placed shows the retry alert. When the corrections
  * empty the cart, the shopper is sent to the bag with the same alerts — the
  * only case that leaves checkout.
+ *
+ * The corrections go through `/api/checkout/correct-cart`, a Route Handler:
+ * as a cookie-setting Server Action they re-rendered /checkout inside the
+ * action's response, and an emptied cart then redirected to /checkout/error
+ * before this hook could hand the shopper to the bag. The hand-off is a full
+ * navigation to the same `?bag_alerts=` URL the server's entry redirect uses
+ * (`goToBag`), so the bag opens on a fresh cart read.
  */
 export function useStockRefusal(): (outcome: HoldOutcome) => Promise<void> {
-  const { cartData, setCartData, setBagAlerts, toggleCart } = useCartContext();
+  const { cartData, setCartData } = useCartContext();
   const { show } = useStockAlerts();
-  const router = useRouter();
 
   return useCallback(
     async (outcome: HoldOutcome) => {
@@ -111,9 +116,10 @@ export function useStockRefusal(): (outcome: HoldOutcome) => Promise<void> {
       }
       if (outcome.status !== "refused") return;
 
+      const lines = cartData?.items ?? [];
       const { corrections, alerts } = planStockCorrections(
         outcome.issues,
-        cartData?.items ?? [],
+        lines,
       );
       const shown: StockAlert[] =
         alerts.length > 0 ? alerts : [{ kind: "unnamed" }];
@@ -125,24 +131,33 @@ export function useStockRefusal(): (outcome: HoldOutcome) => Promise<void> {
         show(shown);
         return;
       }
-      const next =
-        (await correctCartAction(corrections)) ??
-        (await getFullCartAction().catch(() => null));
-      if (!next) {
-        show(shown);
+      const result = await requestCartCorrection(corrections);
+      const next = result?.cart ?? null;
+      // Removing a cart's LAST line can answer "session expired" and leave no
+      // cart behind (see the route's header), so a correction that was
+      // removing every line has emptied the cart even when it reports a
+      // failure.
+      const removesEverything =
+        lines.length > 0 &&
+        lines.every((line) =>
+          corrections.some(
+            (c) => c.itemKey === line.key && c.action === "remove",
+          ),
+        );
+      // An emptied cart leaves BEFORE it reaches the page: published, it
+      // would re-run the sync effect against a cart with nothing to pay for
+      // while the navigation is still under way.
+      if (
+        (next && next.itemsCount === 0) ||
+        (result && !next && removesEverything)
+      ) {
+        goToBag(shown);
         return;
       }
-      setCartData(next);
-
-      if (next.itemsCount === 0) {
-        setBagAlerts(shown);
-        toggleCart(true);
-        router.push("/");
-        return;
-      }
+      if (next) setCartData(next);
       show(shown);
     },
-    [cartData, setCartData, setBagAlerts, toggleCart, show, router],
+    [cartData, setCartData, show],
   );
 }
 

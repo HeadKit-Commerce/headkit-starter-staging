@@ -23,11 +23,9 @@ import type {
 import {
   holdOutcomeFromError,
   holdRefusalFromError,
-  type CartCorrection,
   type HoldOutcome,
   type StockHoldPayments,
 } from "@/lib/stock-hold";
-import { removeCartItemAction, updateCartItemAction } from "@/lib/cart-actions";
 import {
   BILLING_ADDRESS_COOKIE,
   parseBillingAddressCookie,
@@ -212,29 +210,6 @@ export async function releaseCheckoutStockAction(
   } catch {
     // Swallowed by design — see docblock.
   }
-}
-
-/**
- * Applies the corrections a refusal calls for — removes unavailable lines,
- * reduces short ones — WITHOUT expiring the Checkout Session, so the shopper
- * stays on checkout and the session is re-synced to the corrected cart.
- * Returns the corrected cart, or null when a correction failed.
- */
-export async function correctCartAction(
-  corrections: ReadonlyArray<CartCorrection>,
-): Promise<CartFieldsFragment | null> {
-  let cart: CartFieldsFragment | null = null;
-  for (const c of corrections) {
-    const result =
-      c.action === "remove"
-        ? await removeCartItemAction(c.itemKey, { keepCheckoutSession: true })
-        : await updateCartItemAction(c.itemKey, c.quantity, {
-            keepCheckoutSession: true,
-          });
-    if (!result.success) return null;
-    cart = result.cart;
-  }
-  return cart;
 }
 
 /**

@@ -28,6 +28,7 @@ const CART = {
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => redirectMock(url),
 }));
+vi.mock("next/server", () => ({ connection: async () => undefined }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined, set: vi.fn() }),
 }));

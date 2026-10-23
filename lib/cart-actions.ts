@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { unstable_rethrow } from "next/navigation";
 import type {
   AddToCartInput,
   AddToCartMultiInput,
@@ -191,11 +192,36 @@ export async function getCartAction(): Promise<CartFieldsFragment | null> {
       cookieStore.set({ name: cookieName, value: cart.token, ...cookieOpts });
     }
     return cart;
-  } catch {
+  } catch (err) {
+    unstable_rethrow(err);
     return null;
   }
 }
 
+/**
+ * Read the full cart for the cookie-bound WooCommerce session.
+ *
+ * `null` means "there is no cart to show" — no cookie, or a cart the provider
+ * genuinely refused — and both server-rendered callers render it as a
+ * terminal state (`app/checkout/page.tsx` redirects to the empty-cart page,
+ * `app/quote/page.tsx` renders `<QuoteEmpty />`). A `null` returned for any
+ * reason that is NOT the provider's answer is therefore a wrong page.
+ *
+ * That is why `unstable_rethrow(err)` is the first statement of the catch.
+ * Under Cache Components a client prefetch runs a RUNTIME prerender, which
+ * resolves `cookies()` rather than hanging them, so the cart token is read and
+ * `cart.get()` fires — and when the prefetch completes Next rejects the
+ * still-pending `fetch()` with its `HANGING_PROMISE_REJECTION` error. The SDK
+ * transport wraps that in a `ConnectionError` carrying it as `cause`;
+ * `unstable_rethrow` recurses into `cause`, so the interruption propagates to
+ * React (which is what abandoning a prefetch should look like) instead of
+ * being logged as a provider failure and turned into a null cart.
+ *
+ * This is the backstop: both callers `await connection()` before the read, so
+ * a prefetch stops at that boundary and never starts the fetch. Every other
+ * cart action's catch carries the same first line for the same reason.
+ * Genuine provider errors still log and still return null.
+ */
 export async function getFullCartAction(): Promise<FullCart | null> {
   const cartToken = await getCartToken();
   if (!cartToken) {
@@ -211,6 +237,8 @@ export async function getFullCartAction(): Promise<FullCart | null> {
       authToken,
     ).cart.get();
   } catch (err) {
+    // Must precede every other statement — see the docblock above.
+    unstable_rethrow(err);
     const code = err instanceof GraphQLError ? err.message : String(err);
     console.error("[getFullCartAction] cart.get() failed → no cart", {
       tokenUserId: decodeTokenUserId(cartToken),
@@ -281,6 +309,7 @@ export async function addToCartAction(
     const cart = await withCartRetry((sdk) => sdk.cart.addItem(input), opts);
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to add to cart",
@@ -304,6 +333,7 @@ export async function addToCartMultiAction(
     const cart = await withCartRetry((sdk) => sdk.cart.addItems(input), opts);
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to add to cart",
@@ -323,6 +353,7 @@ export async function removeCartItemAction(
     const cart = await withCartRetry((sdk) => sdk.cart.removeItem(key), opts);
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to remove cart item",
@@ -343,6 +374,7 @@ export async function updateCartItemAction(
     );
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to update cart item",
@@ -359,6 +391,7 @@ export async function applyCouponAction(
     const cart = await withCartRetry((sdk) => sdk.cart.applyCoupon(code), opts);
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to apply coupon",
@@ -378,6 +411,7 @@ export async function applyGiftCardAction(
     );
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     // The gift-cards plugin surfaces invalid-code / non-19-char failures as a
     // UserError; propagate its message verbatim. Never log the code (T-09-03).
     const message = sanitizeCartErrorMessage(
@@ -399,6 +433,7 @@ export async function updateCartAttributesAction(
     );
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to update cart",
@@ -418,6 +453,7 @@ export async function removeCouponAction(
     );
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to remove coupon",
@@ -438,6 +474,7 @@ export async function selectShippingAction(
     );
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to select shipping",
@@ -457,6 +494,7 @@ export async function updateCustomerAddressAction(
     );
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to update customer",
@@ -481,6 +519,7 @@ export async function rebuildCartFromKlaviyoAction(
     );
     return { success: true, cart };
   } catch (err) {
+    unstable_rethrow(err);
     const message = sanitizeCartErrorMessage(
       err instanceof Error ? err.message : "",
       "Failed to rebuild cart",

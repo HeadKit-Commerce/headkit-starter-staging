@@ -41,6 +41,7 @@ import {
   useCheckoutActions,
 } from "@/app/checkout/checkout-actions-context";
 import { getFullCartAction, selectShippingAction } from "@/lib/cart-actions";
+import { restoreDeliveryRateAfterPickup } from "@/lib/restore-delivery-rate";
 import { personalSavedAddressInput } from "@/lib/checkout-address-seed";
 import type { AddressInput } from "@headkit/sdk";
 import { useDebugRegister } from "@headkit/sdk/debug";
@@ -594,6 +595,25 @@ function CheckoutSteps({
       const runGetCart = async () => {
         fetchedCart = await getFullCartAction();
         if (fetchedCart) setCartData(fetchedCart);
+        // Switching back to Ship to home leaves WooCommerce's pickup rate
+        // SELECTED — the address write does not displace it — which keeps
+        // `shouldMountExpressCheckout` false and the cart priced for pickup.
+        // `lib/restore-delivery-rate.ts` owns the rule and its no-op cases;
+        // it makes no call on a cart that already has a delivery rate.
+        if (data.deliveryMethod === DeliveryStepEnum.SHIPPING_TO_HOME) {
+          const restored = await restoreDeliveryRateAfterPickup(
+            fetchedCart,
+            formData.shippingRateId,
+            {
+              selectShipping: (packageId, rateId) =>
+                selectShippingAction(packageId, rateId, {
+                  keepCheckoutSession: true,
+                }),
+              onCart: setCartData,
+            },
+          );
+          if (restored) fetchedCart = restored;
+        }
       };
       if (actions) {
         const updateResult = await actions.runServerUpdate(runGetCart);

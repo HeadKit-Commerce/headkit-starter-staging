@@ -163,6 +163,16 @@ export function bagUrl(alerts: ReadonlyArray<StockAlert>): string {
   return `/?${params.toString()}`;
 }
 
+/**
+ * Leaves checkout for the bag with these alerts, from the browser: a full
+ * navigation to {@link bagUrl}, which the root layout's cart provider opens
+ * the bag from — the same arrival the server's entry redirect produces, and a
+ * fresh cart read rather than the emptied one checkout was holding.
+ */
+export function goToBag(alerts: ReadonlyArray<StockAlert>): void {
+  window.location.assign(bagUrl(alerts));
+}
+
 /** Reads alerts back from a query string; anything malformed is dropped. */
 export function bagAlertsFromSearch(search: string): StockAlert[] {
   const raw = new URLSearchParams(search).get(BAG_ALERTS_PARAM);

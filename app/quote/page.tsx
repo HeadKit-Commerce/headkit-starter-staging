@@ -6,6 +6,7 @@ import { getCustomer } from "@/lib/account-actions";
 import { getAuthToken } from "@/lib/auth-cookie";
 import { resolveCheckoutEmail } from "@/lib/checkout-email";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { getBranding } from "@/lib/branding";
 import { normalizeCheckoutMode } from "@/lib/checkout-mode";
 import { QuoteCheckout } from "@/components/quote/quote-checkout";
@@ -16,6 +17,11 @@ import { QuoteEmpty } from "@/components/quote/quote-empty";
  * Creates a WooCommerce order via the headkit-quote gateway (Quote status).
  */
 export default async function QuoteCheckoutPage(): Promise<React.ReactElement> {
+  // Same rule as `app/checkout/page.tsx`: a client prefetch is a runtime
+  // prerender that resolves `cookies()`, so without this boundary it would
+  // start the cart read below, abandon it, and resolve to `<QuoteEmpty />`.
+  await connection();
+
   const { storeSettings } = await getBranding();
   const mode = normalizeCheckoutMode(storeSettings.checkoutType);
   if (mode !== "quote") {

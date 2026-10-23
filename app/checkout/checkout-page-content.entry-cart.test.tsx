@@ -31,7 +31,6 @@ vi.mock("@/app/checkout/actions", () => ({
   getCheckoutAction: vi.fn(),
   expireCheckoutSessionAction: vi.fn(async () => undefined),
   updateCustomerAction: vi.fn(),
-  correctCartAction: vi.fn(),
 }));
 vi.mock("@/lib/register-checkout-session", () => ({
   registerActiveCheckoutSession: vi.fn(async () => undefined),
