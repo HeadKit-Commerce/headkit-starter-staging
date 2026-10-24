@@ -316,7 +316,10 @@ export function StripePaymentStep({
         return;
       }
 
-      const result = await checkout.confirm();
+      // redirect:always sends Afterpay/BNPL back to our return_url after
+      // authorization. The webhook then checks admin stock and captures or
+      // cancels — this call does not take the money itself.
+      const result = await checkout.confirm({ redirect: "always" });
       if (result.type === "error") {
         // Ask commerce to release the hold. It reads the live PaymentIntent
         // and releases only when this attempt has really ended — a 3D Secure

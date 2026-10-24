@@ -64,12 +64,11 @@ function PaymentProcessingScreen({
           />
         </svg>
 
-        <h1 className="text-2xl text-gray-900">Confirming your payment</h1>
+        <h1 className="text-2xl text-gray-900">Checking availability</h1>
         <p className="text-gray-600">
-          Thanks — we&apos;re confirming your payment with your provider and
-          checking stock. This usually takes a few seconds. We&apos;ll show your
-          order confirmation here as soon as it&apos;s ready, and email you if
-          you leave this page.
+          We&apos;re confirming the items are still in stock before taking
+          payment. This usually takes a few seconds. If something sold out,
+          you&apos;ll return to checkout and won&apos;t be charged.
         </p>
 
         {orderId ? (
