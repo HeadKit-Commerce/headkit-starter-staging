@@ -252,6 +252,37 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
       expect(got.calls.filter((c) => c.startsWith("reserve:"))).toHaveLength(1);
     });
 
+    it("refuses Pay when admin stock is 0 even though this session's hold still claims the unit", () => {
+      const got = scenario("hold_admin_zero_while_own_hold");
+      expect(got.status).toBe(409);
+      expect(got.code).toBe("headkit_stock_hold_refused");
+      expect(got.issues).toEqual([
+        expect.objectContaining({
+          product_id: 501,
+          code: "out_of_stock",
+          available: 0,
+        }),
+      ]);
+      // Inventing hold rows are released — no payment, no Woo order.
+      expect(got.rows).toEqual({});
+      expect(got.draftStatus).toBe("checkout-draft");
+    });
+
+    it("refuses Pay when admin stock is short of the bag under an existing hold", () => {
+      const got = scenario("hold_admin_short_while_own_hold");
+      expect(got.status).toBe(409);
+      expect(got.code).toBe("headkit_stock_hold_refused");
+      expect(got.issues).toEqual([
+        expect.objectContaining({
+          product_id: 501,
+          quantity: 2,
+          code: "insufficient_stock",
+          available: 1,
+        }),
+      ]);
+      expect(got.rows).toEqual({});
+    });
+
     it("refreshes the hold on a later Pay click", () => {
       const got = scenario("hold_again_a_minute_later");
       expect(got.result?.status).toBe("held");

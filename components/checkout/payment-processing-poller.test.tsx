@@ -100,14 +100,33 @@ describe("PaymentProcessingPoller", () => {
     expect(getCheckoutSessionAction.mock.calls.length).toBe(reads);
   });
 
-  it("returns a cancelled payment to /checkout with its reason", async () => {
+  it("returns a cancelled authorization to /checkout for sold-out correction", async () => {
     getCheckoutSessionAction.mockResolvedValue({
       status: "complete",
       paymentStatus: "unpaid",
       paymentIntentStatus: "canceled",
     });
     await mount();
-    expect(replace).toHaveBeenCalledWith("/checkout?error=payment_canceled");
+    expect(replace).toHaveBeenCalledWith("/checkout");
+  });
+
+  it("routes stock auth-released refusals to /checkout, not OrderRefused", async () => {
+    getCheckoutSessionAction.mockResolvedValue({
+      status: "complete",
+      paymentStatus: "unpaid",
+      orderFailure: {
+        reason: "woocommerce_rest_product_out_of_stock",
+        message: "Item is out of stock.",
+        refundStatus: "authorization_released",
+      },
+    });
+    await mount();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(replace).toHaveBeenCalledWith("/checkout");
+    expect(container.textContent).not.toContain("We couldn't place your order");
   });
 
   it("returns an expired session to /checkout, not the dead end", async () => {

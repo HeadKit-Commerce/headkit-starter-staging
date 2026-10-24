@@ -190,6 +190,22 @@ export function orderRefusalFromError(error: unknown): OrderRefusal | null {
 }
 
 /**
+ * Stock sold out while authorized (not captured): shopper must return to
+ * `/checkout` for sold-out alerts — never a processing interstitial and never
+ * a standalone OrderRefused dead-end that skips cart correction.
+ */
+export function isStockAuthReleasedRefusal(
+  refusal: OrderRefusal | null | undefined,
+): boolean {
+  if (!refusal) return false;
+  if (refusal.refundStatus !== "authorization_released") return false;
+  return (
+    refusal.reason === "woocommerce_rest_product_out_of_stock" ||
+    refusal.reason === "woocommerce_rest_product_partially_out_of_stock"
+  );
+}
+
+/**
  * The ONE log line for a refusal: the WooCommerce code and the Stripe refund
  * id, which together reconcile a refund against an order that was never
  * created. Call it where the refusal is detected, not from a render.

@@ -4,6 +4,7 @@ import {
   ORDER_REFUSAL_FALLBACK_BODY,
   ORDER_REFUSAL_REASON_COPY,
   UNNAMED_ORDER_REFUSAL_REASON,
+  isStockAuthReleasedRefusal,
   orderRefusalBody,
   orderRefusalFromError,
   orderRefusalFromSession,
@@ -103,6 +104,21 @@ describe("copy", () => {
     ]) {
       expect(orderRefusalBody({ reason })).not.toContain("woocommerce_");
     }
+  });
+
+  it("detects stock auth-released refusals for the /checkout redirect", () => {
+    expect(
+      isStockAuthReleasedRefusal({
+        reason: "woocommerce_rest_product_out_of_stock",
+        refundStatus: "authorization_released",
+      }),
+    ).toBe(true);
+    expect(
+      isStockAuthReleasedRefusal({
+        reason: "woocommerce_rest_product_out_of_stock",
+        refundStatus: "succeeded",
+      }),
+    ).toBe(false);
   });
 
   it("says what happened to the money by refund status", () => {

@@ -198,15 +198,19 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     expect(s.record).toBeNull();
   });
 
-  it("claims against admin stock on authorized finalize without capturing or refunding", () => {
+  it("refuses authorized shortfall with 409 before a customer order or claim meta", () => {
     const s = scenario("authorized_same_cart");
-    expect(s.finalize.stopped).toBe("authorized");
-    expect(s.status).toBe("pending");
-    expect(s.claimShortTotal).toBe(1);
-    expect(s.items["11"]).toMatchObject({ claimed: 0, short: 1 });
+    expect(s.finalize.status).toBe(409);
+    expect([
+      "woocommerce_rest_product_out_of_stock",
+      "woocommerce_rest_product_partially_out_of_stock",
+    ]).toContain(s.finalize.code);
+    expect(s.finalize.stopped).toBe("validate_cart");
+    expect(s.items["11"]?.claimed).toBe("");
+    expect(s.items["11"]?.short).toBe("");
+    expect(s.record).toBeNull();
     expect(s.gatewayCalls).toEqual([]);
     expect(s.ran).toEqual([]);
-    expect(record(s).state).toBe("detected");
   });
 
   it("records claim_short_total=0 when authorized and fully covered so commerce may capture", () => {
@@ -218,10 +222,15 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     expect(s.rowsLeft).toBeGreaterThanOrEqual(1);
   });
 
-  it("does not let the order's own hold invent units when admin stock is already 0", () => {
+  it("refuses authorized finalize when admin stock is 0 under an own hold (no claimed/short meta)", () => {
     const auth = scenario("authorized_admin_zero_own_hold");
-    expect(auth.claimShortTotal).toBe(1);
-    expect(auth.items["11"]).toMatchObject({ claimed: 0, short: 1 });
+    expect(auth.finalize.status).toBe(409);
+    expect([
+      "woocommerce_rest_product_out_of_stock",
+      "woocommerce_rest_product_partially_out_of_stock",
+    ]).toContain(auth.finalize.code);
+    expect(auth.items["11"]?.claimed).toBe("");
+    expect(auth.items["11"]?.short).toBe("");
     expect(auth.stock["101"]).toBe(0);
 
     const paid = scenario("paid_admin_zero_own_hold");

@@ -8,6 +8,7 @@ import {
   logCheckoutFailure,
 } from "@/lib/checkout-failure";
 import {
+  isStockAuthReleasedRefusal,
   orderRefusalFromSession,
   type OrderRefusal,
 } from "@/lib/order-refusal";
@@ -23,14 +24,14 @@ const POLL_TIMEOUT_MS = 120_000;
  *
  * Polls immediately on mount, then every 2.5s for up to 120s, and acts on the
  * first terminal state:
- *  - post-payment order refusal (`session.orderFailure`) → render
- *    <OrderRefused> in place of `children`. Checked FIRST: a refused session
- *    can also read `paid`, and it is the refusal that decides the screen. It
- *    is rendered rather than routed because a `router.replace` back to the
- *    same return URL would re-render "processing" on the way.
+ *  - stock auth released (`orderFailure` + authorization_released + out of
+ *    stock) → `/checkout` immediately so `correctCartAtEntry` shows sold-out
+ *    alerts. Never leave the shopper on this processing screen for that case.
+ *  - other post-payment order refusal (`session.orderFailure`) → render
+ *    <OrderRefused> in place of `children`.
  *  - paid + REAL orderId/orderKey → order confirmation page
- *  - paymentIntentStatus "canceled" (mechanism 2 / claim-before-capture
- *    released an authorization) → /checkout?error=payment_canceled
+ *  - paymentIntentStatus "canceled" (auth released before session stamp) →
+ *    `/checkout` (cart intact; sold-out correction happens at entry)
  *  - session expired → /checkout?error=session_expired
  *  - timeout → stop polling; the static reassurance copy stays on screen and
  *    the webhook/email confirms asynchronously.
@@ -78,9 +79,11 @@ export function PaymentProcessingPoller({
           if (cancelled) return;
           const refused = orderRefusalFromSession(session);
           if (refused) {
-            // Not logged here: this runs in the shopper's browser, and the
-            // refusal's ids belong in server logs (commerce records them).
             stop();
+            if (isStockAuthReleasedRefusal(refused)) {
+              router.replace("/checkout");
+              return;
+            }
             setRefusal(refused);
             return;
           }
@@ -97,9 +100,11 @@ export function PaymentProcessingPoller({
             return;
           }
           if (session.paymentIntentStatus === "canceled") {
+            // Auth released (stock or amount) — back to checkout, not a
+            // "payment cancelled / cart changed" banner that skips sold-out alerts.
             stop();
             logCheckoutFailure("payment_canceled");
-            router.replace(checkoutFailurePath("payment_canceled"));
+            router.replace("/checkout");
             return;
           }
           if (session.status === "expired") {

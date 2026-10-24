@@ -15,6 +15,7 @@ import {
   logCheckoutFailure,
 } from "@/lib/checkout-failure";
 import {
+  isStockAuthReleasedRefusal,
   logOrderRefusal,
   orderRefusalFromError,
   orderRefusalFromSession,
@@ -76,6 +77,7 @@ type Disposition =
   | "retry" // session open (failed/canceled) → /checkout?error=payment_failed
   | "expired" // session expired → /checkout?error=session_expired
   | "cart_changed" // deliberately expired: cart drifted (ENG-784) → /checkout?error=cart_changed
+  | "stock_retry" // auth released for sold-out → /checkout (alerts via correctCartAtEntry)
   | "order_refused" // paid, then WooCommerce refused + commerce refunded → render UI
   | "order_validation" // paid, then WooCommerce refused ONE detail → render the complete-order form
   | "pending" // async payment processing (or paid but unresolved) → render UI
@@ -112,7 +114,11 @@ export default async function CheckoutSuccessPage({
     refusal = orderRefusalFromSession(session);
     if (refusal) {
       logOrderRefusal(refusal);
-      disposition = "order_refused";
+      // Sold-out under authorize-first: back to checkout with per-item alerts.
+      // Never PaymentProcessing, never a standalone OrderRefused dead-end.
+      disposition = isStockAuthReleasedRefusal(refusal)
+        ? "stock_retry"
+        : "order_refused";
     } else if (session.status === "open") {
       // Payment failed or canceled (Afterpay decline/cancel returns here with
       // the session still open and remountable). Send the shopper back to
@@ -127,10 +133,13 @@ export default async function CheckoutSuccessPage({
       disposition =
         session.expiredReason === "cart_changed" ? "cart_changed" : "expired";
     } else if (session.paymentStatus === "unpaid") {
-      // Session complete but the async payment method (delayed-notification
-      // BNPL / bank debit) hasn't settled. The webhook finalizes the order on
-      // checkout.session.async_payment_succeeded — do NOT processCheckout here.
-      disposition = "pending";
+      // Authorize-first stock refuse cancels the PI before capture — never show
+      // PaymentProcessing for that. Async BNPL still settling stays pending.
+      if (session.paymentIntentStatus === "canceled") {
+        disposition = "stock_retry";
+      } else {
+        disposition = "pending";
+      }
     } else {
       // Session complete and paid (or no_payment_required): existing
       // order-resolution path, unchanged.
@@ -302,6 +311,9 @@ export default async function CheckoutSuccessPage({
   }
   if (disposition === "cart_changed") {
     redirect("/checkout?error=cart_changed");
+  }
+  if (disposition === "stock_retry") {
+    redirect("/checkout");
   }
   if (disposition === "error") {
     redirect(checkoutFailurePath("processing_error"));
