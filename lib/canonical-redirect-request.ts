@@ -23,16 +23,25 @@ const COLLECTION_PREFIX = `/${COLLECTION_PATH_PREFIX}/`;
  *
  * The gate is deliberately narrow, because each candidate costs one subrequest:
  *
- * - **A query string is required.** With no query there is nothing to preserve,
- *   so the route's own `permanentRedirect` is already correct and the proxy
- *   stays entirely out of the way. That is the overwhelming majority of
- *   traffic, crawlers included, and it is byte-for-byte unchanged.
  * - **GET and HEAD only.** A Server Action POSTs to the page's own URL, which
  *   on a listing route routinely carries a query string; those must never pay a
  *   lookup.
- * - **`/products/...` always qualifies**, because the canonical for a product
- *   is under `/shop/...` — so a flat product URL is non-canonical unless the
- *   product has no category ancestry at all.
+ * - **`/products/...` always qualifies, query or not**, because the canonical
+ *   for a product is under `/shop/...` — so a flat product URL is non-canonical
+ *   unless the product has no category ancestry at all. The route's own
+ *   `permanentRedirect` cannot be relied on for the path-only case: since #622
+ *   a flat URL whose product has a `/shop` permalink is not prerendered, and on
+ *   a WooCommerce build the route has no request-time read left (#638 gated the
+ *   Shopify preview marker), so Next serves an unbuilt slug from the route's
+ *   PPR fallback shell. The redirect then throws AFTER that shell committed a
+ *   200 — a client-side redirect — and the revalidated entry is cached as a 308
+ *   with NO `Location` header. `ensureStatic` would make the route render
+ *   blocking (it does for collections) but a Shopify build awaits
+ *   `searchParams` on this route, so it cannot take that lock.
+ *   `e2e/canonical-url-308.spec.ts` is what observed it.
+ * - **Anywhere else, a query string is required.** With no query there is
+ *   nothing to preserve, so the route's own `permanentRedirect` is already
+ *   correct and the proxy stays entirely out of the way.
  * - **`/collections/...` only when the CATEGORY part is a single segment.**
  *   That is the shape that actually redirects, and it is the one the WordPress
  *   theme emits: measured on this store, 127 of 127 category menu links arrive
@@ -54,8 +63,8 @@ export function isCanonicalRedirectCandidate(
   search: string,
 ): boolean {
   if (method !== "GET" && method !== "HEAD") return false;
-  if (!search || search === "?") return false;
   if (pathname.startsWith(PRODUCT_PREFIX)) return true;
+  if (!search || search === "?") return false;
   if (!pathname.startsWith(COLLECTION_PREFIX)) return false;
   return categorySegmentCount(pathname.slice(COLLECTION_PREFIX.length)) === 1;
 }

@@ -306,6 +306,15 @@ export async function generateMetadata({
  *   redirect in the default export,
  *     none of the three                    → 308, prerendered AND at runtime
  *
+ * That last row no longer holds at runtime for a slug this route did not
+ * prerender. Since #622 a product with a `/shop` permalink is not built here,
+ * and since #638 a WooCommerce build has no request-time read on this route, so
+ * Next serves an unbuilt slug from the PPR fallback shell and this redirect
+ * lands after its 200 (the revalidated entry is then a 308 with no
+ * `Location`). `proxy.ts` therefore issues the path-only flat-product 308
+ * itself (`isCanonicalRedirectCandidate`); this one remains for the prerendered
+ * case and as the fallback when the proxy lookup fails.
+ *
  * `instant = true` makes no difference either way. Re-introducing any of the
  * three silently turns every flat product URL back into a 200 duplicate, which
  * is the whole defect this closes. No unit test can see it — calling this

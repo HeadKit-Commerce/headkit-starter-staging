@@ -770,9 +770,10 @@ export async function fillCard(
  * Deliberately NOT `/pay/i`: that would also match unrelated buttons, and it
  * would let a silent regression back to a bare `Pay Now` on a normal cart pass.
  * The amount branch therefore requires a digit, and allows a currency prefix
- * and/or suffix around it (`A$430.00`, `US$1,430.00`, `430,00 €`).
+ * and/or suffix around it (`A$430.00`, `US$1,430.00`, `430,00 €`), including a
+ * code separated by a space (`THB 652.58`, which Adaptive Pricing renders).
  */
-export const PAY_BUTTON_NAME = /^Pay (?:Now|\S*\d[\d.,\s]*\S*)$/;
+export const PAY_BUTTON_NAME = /^Pay (?:Now|\S*\s?\d[\d.,\s]*\S*)$/;
 
 /** The Payment step's confirm button. */
 export function payButton(page: Page) {

@@ -17,13 +17,8 @@ const LOAD_ROOT_MARGIN = "400px";
  * committing (Lighthouse-safe: not on entry).
  */
 export function LoadMore() {
-  const {
-    hasMore,
-    isLoadingAfter,
-    loadMore,
-    prefetchNextPage,
-    currentPage,
-  } = useCollection();
+  const { hasMore, isLoadingAfter, loadMore, prefetchNextPage, currentPage } =
+    useCollection();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef(loadMore);
   const prefetchRef = useRef(prefetchNextPage);

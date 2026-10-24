@@ -122,21 +122,23 @@ test.describe("PLP: grid, pagination, category scoping, facets, sort (P1-01..P1-
       })
       .toBeGreaterThan(before);
 
-    // Deep-linked ?page=2 starts mid-list and offers Load Previous.
+    // Deep-linked ?page=2 is ONE continuous list: the static shell's page 1
+    // plus page 2 appended in the browser (`hydrateThroughPage`, #667), so no
+    // Load Previous is ever offered and the shareable `?page=2` stays in the
+    // URL until the shopper loads more.
     await page.goto(`${BASE_URL}/shop?page=2`);
     await expect(cards(page).first()).toBeVisible({ timeout: 30_000 });
-    const page2Count = await cards(page).count();
-    await expect(
-      page.getByRole("button", { name: /load previous/i }),
-      "?page=2 deep-link did not offer Load Previous",
-    ).toBeVisible();
-    await page.getByRole("button", { name: /load previous/i }).click();
     await expect
       .poll(() => cards(page).count(), {
-        message: "Load Previous did not prepend page 1",
+        message: "?page=2 deep-link did not hydrate page 2 below page 1",
         timeout: 30_000,
       })
-      .toBeGreaterThan(page2Count);
+      .toBeGreaterThan(firstPageCards);
+    await expect(
+      page.getByRole("button", { name: /load previous/i }),
+      "a deep link renders pages 1…N, so there is nothing to load before it",
+    ).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.get("page")).toBe("2");
   });
 
   test("P1-02: category scoping — flat /collections/apparel and nested /collections/bikes/road-bikes", async ({

@@ -53,6 +53,13 @@ import { BASE_URL } from "./helpers";
  * that 308 (campaign query, `?preview_key=` on a published product) before
  * the route renders, and those cases stay 308 with the query preserved.
  *
+ * A flat PRODUCT URL is the proxy's with or without a query. The product
+ * route does not prerender a product that has a `/shop` permalink (#622), so
+ * at runtime it served the first request a 200 fallback shell with a
+ * client-side redirect and cached a 308 with no `Location` — the two product
+ * cases below failed exactly that way, cold and warm. See
+ * `isCanonicalRedirectCandidate` in `lib/canonical-redirect-request.ts`.
+ *
  * STORE-AGNOSTIC BY CONSTRUCTION. No slug is hard-coded. The sitemap is the
  * storefront's own published statement of the winning URL for every product and
  * collection, so the fixtures are READ from it and the flat counterpart is

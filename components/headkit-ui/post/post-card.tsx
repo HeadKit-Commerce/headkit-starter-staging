@@ -131,10 +131,7 @@ export function PostCard({
 
   if (!video) {
     return (
-      <InstantLink
-        href={href}
-        className={cn("block", className)}
-      >
+      <InstantLink href={href} className={cn("block", className)}>
         {body}
       </InstantLink>
     );

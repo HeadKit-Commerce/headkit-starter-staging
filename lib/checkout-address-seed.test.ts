@@ -470,7 +470,12 @@ describe("ShippingAddressElement options source-scan", () => {
     expect(source).toMatch(/Pickup goes onto the Stripe session only/);
   });
 
-  it("Payment Element keeps wallets on auto while Express stays mounted", () => {
+  it("Payment Element hides the wallets that the Express element owns", () => {
+    // Since #665 Express Checkout on Payment Intents renders Apple Pay /
+    // Google Pay at the top of the page, so the Payment Element hides them to
+    // avoid a second set of wallet buttons. This used to assert "auto", the
+    // pre-#665 contract, and has failed since that PR landed (unnoticed:
+    // Build and Test stopped at Lint before reaching Test).
     const source = readFileSync(
       resolve(
         __dirname,
@@ -478,8 +483,8 @@ describe("ShippingAddressElement options source-scan", () => {
       ),
       "utf8",
     );
-    expect(source).toMatch(/applePay:\s*"auto"/);
-    expect(source).toMatch(/googlePay:\s*"auto"/);
-    expect(source).not.toMatch(/applePay:\s*"never"/);
+    expect(source).toMatch(/applePay:\s*"never"/);
+    expect(source).toMatch(/googlePay:\s*"never"/);
+    expect(source).not.toMatch(/applePay:\s*"auto"/);
   });
 });

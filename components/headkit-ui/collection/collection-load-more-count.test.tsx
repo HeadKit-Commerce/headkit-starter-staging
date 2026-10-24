@@ -20,6 +20,11 @@ import type { ProductSummaryFieldsFragment } from "@headkit/sdk";
  * `commitProducts`, the single writer of `products`, from the very list it
  * returns.
  *
+ * `currentPageRef` and `totalProductsRef` mirror `currentPage` and
+ * `totalProducts` the same way, written by `commitCurrentPage` /
+ * `commitTotalProducts`; the page-advance and "stops asking" tests below read
+ * them through `loadMore`.
+ *
  * The clamp is what makes the difference observable. A mirror still holding the
  * INITIAL count would clamp the total back to 2 with four products on screen,
  * leaving `hasMore` true against a list that has no more pages — the sentinel
@@ -47,15 +52,23 @@ vi.mock("next/navigation", () => ({
 const { listCollectionProducts } = vi.hoisted(() => ({
   listCollectionProducts:
     vi.fn<
-      () => Promise<{ products: ProductSummaryFieldsFragment[]; total: number }>
+      (
+        filter: unknown,
+        page: number,
+        perPage: number,
+      ) => Promise<{ products: ProductSummaryFieldsFragment[]; total: number }>
     >(),
 }));
 
 vi.mock("@/lib/collection-actions", () => ({
-  listCollectionProducts: (): Promise<{
+  listCollectionProducts: (
+    filter: unknown,
+    page: number,
+    perPage: number,
+  ): Promise<{
     products: ProductSummaryFieldsFragment[];
     total: number;
-  }> => listCollectionProducts(),
+  }> => listCollectionProducts(filter, page, perPage),
 }));
 
 import {
@@ -168,6 +181,31 @@ describe("CollectionProvider — Load More and the exhausted-list clamp", () => 
     expect(h.state()).toBe("count:4 total:84 hasMore:true");
     // Append must omit `page` — `?page=2` would remount as a short window.
     expect(window.location.search).toBe("?q=helmet");
+
+    h.unmount();
+  });
+
+  it("asks for the next page each time, from the page it last committed", async () => {
+    listCollectionProducts.mockResolvedValueOnce({
+      products: [product("Align Helmet"), product("Tactic Helmet")],
+      total: 84,
+    });
+    listCollectionProducts.mockResolvedValueOnce({
+      products: [product("Octal Helmet"), product("Chamonix Helmet")],
+      total: 84,
+    });
+
+    const h = mount();
+    await h.clickMore();
+    await h.clickMore();
+
+    // `loadMore` takes the next page from `currentPageRef`, which
+    // `commitCurrentPage` writes with the page it commits. A mirror that did
+    // not advance would ask for page 2 twice.
+    expect(listCollectionProducts.mock.calls.map((call) => call[1])).toEqual([
+      2, 3,
+    ]);
+    expect(h.state()).toBe("count:6 total:84 hasMore:true");
 
     h.unmount();
   });

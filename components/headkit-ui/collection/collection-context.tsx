@@ -166,10 +166,12 @@ export function CollectionProvider({
   // in render (react-hooks/refs + discarded-render races). See
   // collection-load-more-count.test.tsx.
   const productsCountRef = useRef(initialProducts.length);
+  // Synchronous mirrors of currentPage / totalProducts for the same reason, and
+  // written the same way: only by commitCurrentPage / commitTotalProducts below,
+  // never in render (react-hooks/refs). A render-time write lagged the state by
+  // a render and could be taken from a render React then discarded.
   const currentPageRef = useRef(initialPage);
-  currentPageRef.current = currentPage;
   const totalProductsRef = useRef(initialTotal);
-  totalProductsRef.current = totalProducts;
   const prefetchRef = useRef<PrefetchBuffer | null>(null);
   const prefetchInFlightRef = useRef<number | null>(null);
 
@@ -189,6 +191,16 @@ export function CollectionProvider({
     },
     [],
   );
+
+  const commitCurrentPage = useCallback((page: number) => {
+    currentPageRef.current = page;
+    setCurrentPage(page);
+  }, []);
+
+  const commitTotalProducts = useCallback((total: number) => {
+    totalProductsRef.current = total;
+    setTotalProducts(total);
+  }, []);
 
   // Seeded from PROPS ONLY, with no query string. This provider renders in the
   // static shell (outside every Suspense boundary), so it may not perform a
@@ -222,11 +234,7 @@ export function CollectionProvider({
    * short grid. Deep links still set `page` until the shopper appends further.
    */
   const syncUrl = useCallback(
-    (
-      page: number,
-      filters: FilterValues,
-      opts?: { omitPage?: boolean },
-    ) => {
+    (page: number, filters: FilterValues, opts?: { omitPage?: boolean }) => {
       const params = new URLSearchParams();
       if (searchTermRef.current) params.set("q", searchTermRef.current);
       if (page > 1 && !opts?.omitPage) params.set("page", page.toString());
@@ -288,13 +296,7 @@ export function CollectionProvider({
       }
       return filter;
     },
-    [
-      categorySlug,
-      brandSlug,
-      onSale,
-      isNew,
-      defaultCollectionSort,
-    ],
+    [categorySlug, brandSlug, onSale, isNew, defaultCollectionSort],
   );
 
   const fetchProducts = useCallback(
@@ -329,7 +331,7 @@ export function CollectionProvider({
         // Empty "after" page means we've exhausted the list — clamp the total
         // so hasMore flips false and the sentinel stops firing.
         if (position === "after" && result.products.length === 0) {
-          setTotalProducts(productsCountRef.current);
+          commitTotalProducts(productsCountRef.current);
           return;
         }
 
@@ -338,8 +340,8 @@ export function CollectionProvider({
         // after a transition-scheduled append interrupts that transition, so
         // Load More flickered "Loading…" then never grew the grid (ENG-856
         // regression). Filter checkbox INP still uses startFilterTransition.
-        setCurrentPage(page);
-        setTotalProducts(result.total);
+        commitCurrentPage(page);
+        commitTotalProducts(result.total);
 
         if (position === "middle") {
           commitProducts(result.products);
@@ -377,6 +379,8 @@ export function CollectionProvider({
       syncUrl,
       buildListFilter,
       commitProducts,
+      commitCurrentPage,
+      commitTotalProducts,
       clearPrefetch,
     ],
   );
@@ -407,11 +411,11 @@ export function CollectionProvider({
             itemsPerPage,
           );
           if (result.products.length === 0) {
-            setTotalProducts(productsCountRef.current);
+            commitTotalProducts(productsCountRef.current);
             break;
           }
-          setCurrentPage(page);
-          setTotalProducts(result.total);
+          commitCurrentPage(page);
+          commitTotalProducts(result.total);
           commitProducts((prev) => [...prev, ...result.products]);
         }
         setHasFirstPage(true);
@@ -429,6 +433,8 @@ export function CollectionProvider({
       itemsPerPage,
       buildListFilter,
       commitProducts,
+      commitCurrentPage,
+      commitTotalProducts,
       syncUrl,
       clearPrefetch,
     ],
@@ -445,10 +451,10 @@ export function CollectionProvider({
       setIsLoadingAfter(true);
       try {
         if (buffered.products.length === 0) {
-          setTotalProducts(productsCountRef.current);
+          commitTotalProducts(productsCountRef.current);
         } else {
-          setCurrentPage(nextPage);
-          setTotalProducts(buffered.total);
+          commitCurrentPage(nextPage);
+          commitTotalProducts(buffered.total);
           commitProducts((prev) => [...prev, ...buffered.products]);
           syncUrl(nextPage, filterValues, { omitPage: true });
         }
@@ -459,7 +465,14 @@ export function CollectionProvider({
       return;
     }
     void fetchProducts(nextPage, "after");
-  }, [fetchProducts, commitProducts, syncUrl, filterValues]);
+  }, [
+    fetchProducts,
+    commitProducts,
+    commitCurrentPage,
+    commitTotalProducts,
+    syncUrl,
+    filterValues,
+  ]);
 
   const loadPrevious = useCallback(() => {
     if (isLoadingBeforeRef.current || currentPageRef.current <= 1) return;
@@ -529,8 +542,10 @@ export function CollectionProvider({
       // Brand omitted from query (06.1) — it lives in filterPath.
       if (filterValues.instock) params.set("instock", "true");
       if (filterValues.sort) params.set("sort", filterValues.sort);
-      if (filterValues.price_min) params.set("price_min", filterValues.price_min);
-      if (filterValues.price_max) params.set("price_max", filterValues.price_max);
+      if (filterValues.price_min)
+        params.set("price_min", filterValues.price_min);
+      if (filterValues.price_max)
+        params.set("price_max", filterValues.price_max);
       const qs = params.toString();
       // Concise body, so whatever `router.push` returns is the transition's result.
       // Today that is `undefined` and React treats the scope as an ordinary sync
@@ -598,7 +613,6 @@ export function CollectionProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-
   // A colour click is `router.push` to `/f/<slug>`. Those URLs are not built
   // at deploy time, so the first open is a cold function render. Bare collections
   // are already a prerender HIT. Warm the top colours while the shopper is still
@@ -643,7 +657,6 @@ export function CollectionProvider({
       window.removeEventListener("load", warm);
     };
   }, [categoryBasePath, pathname, productFilter, router]);
-
 
   // `/search` prerenders the unfiltered catalog. A `?q=` visit used to paint
   // that catalog and then replace it when this effect's fetch returned.
@@ -693,7 +706,6 @@ export function CollectionProvider({
       setFilterValues({ ...DEFAULT_FILTER_VALUES, page: 1 });
     });
   }, [startFilterTransition]);
-
 
   return (
     <CollectionContext.Provider

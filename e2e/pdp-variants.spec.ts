@@ -278,8 +278,15 @@ test.describe("PDP: rendering, colorway paths, size persistence, stock, legacy U
       page.getByRole("heading", { level: 1, name: "Test Product 12" }),
     ).toBeVisible({ timeout: 30_000 });
 
-    // Desktop gallery images are DialogTriggers wrapping the image.
-    await page.locator('button[aria-haspopup="dialog"]').first().click();
+    // Desktop gallery images are DialogTriggers wrapping the image. The
+    // header's mobile "Open menu" button is ALSO a dialog trigger (Base UI,
+    // #546) and comes first in the DOM, hidden at this viewport — so the
+    // trigger must be one that wraps an image and is visible.
+    await page
+      .locator('button[aria-haspopup="dialog"]')
+      .filter({ has: page.locator("img"), visible: true })
+      .first()
+      .click();
     await expect(
       page.getByRole("dialog"),
       "clicking a gallery image did not open the lightbox dialog",

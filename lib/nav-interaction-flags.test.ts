@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isFlagOptedIn, navMouseDownEnabled } from "@/lib/nav-interaction-flags";
+import {
+  isFlagOptedIn,
+  navMouseDownEnabled,
+} from "@/lib/nav-interaction-flags";
 
 describe("isFlagOptedIn", () => {
   it.each([

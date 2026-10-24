@@ -182,7 +182,6 @@ function names(root: HTMLElement): string[] {
   );
 }
 
-
 let host: HTMLElement;
 let root: Root;
 
@@ -243,8 +242,6 @@ describe("a filter change that navigates", () => {
     // would be the same products over the wire twice.
     expect(pendingFetch).toBeNull();
   });
-
-
 });
 
 describe("a listing update served in place", () => {

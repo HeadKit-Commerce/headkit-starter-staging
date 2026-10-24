@@ -164,8 +164,8 @@ function rewritePostsBasePath(
 }
 
 /**
- * The canonical 308 for a flat product or collection URL that carries a query
- * string — issued HERE so the query survives it.
+ * The canonical 308 for a flat product URL, and for a flat collection URL that
+ * carries a query string — issued HERE so the query survives it.
  *
  * The routes themselves cannot do this. `app/products/[...slug]/page.tsx` and
  * `app/collections/[...slug]/page.tsx` build their `Location` from `params`
@@ -174,15 +174,18 @@ function rewritePostsBasePath(
  * exports `generateStaticParams` that is a build error under Cache Components —
  * the rule in "Setting a status code needs THREE conditions" in `AGENTS.md`.
  * The proxy is the layer that sees the whole URL, so it is where a campaign
- * link's `gclid` / `utm_*` / `_kx` can be carried through.
+ * link's `gclid` / `utm_*` / `_kx` can be carried through. A flat PRODUCT
+ * URL comes here even with no query, because the product route's own 308 is
+ * not a real status line for a slug it did not prerender — see
+ * `isCanonicalRedirectCandidate`.
  *
  * The DECISION is not made here: `/api/canonical-redirect` calls the routes'
  * own functions. Two copies of a redirect rule is the one arrangement that can
  * loop, so there is no second copy.
  *
  * `null` on any failure — a non-200, a malformed body, a network error. The
- * route then 308s exactly as it does today, dropping the query: strictly the
- * behaviour this replaces, never a wrong destination and never a loop.
+ * route then redirects on its own, dropping the query: never a wrong
+ * destination and never a loop.
  *
  * `cache: "no-store"` on purpose. The caching that matters is the `"use cache"`
  * entries the endpoint resolves through, which the routes share; a revalidating
@@ -237,7 +240,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   // Canonical consolidation WITH the query string attached. Gated to the flat
-  // product and collection shapes carrying a query (see
+  // product shape and the flat collection shape carrying a query (see
   // `lib/canonical-redirect-request.ts`), so an ordinary request never pays the
   // lookup — and it returns before `readProxyConfig`, because a request that is
   // leaving on a 308 needs neither the blog rewrite nor a robots header.
