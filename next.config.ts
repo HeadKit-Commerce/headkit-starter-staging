@@ -153,9 +153,9 @@ const positiveIntEnv = (raw: string | undefined, fallback: number): number => {
 /**
  * Minimum lifetime of an OPTIMIZED image in the image cache, in seconds.
  *
- * UNSET BY DEFAULT, which means Next's own default of 14,400 s / 4 h
- * (`next/dist/shared/lib/image-config.js`). `NEXT_IMAGE_MINIMUM_CACHE_TTL` raises
- * it per store; the Bike Society fork runs 2592000 (30 days).
+ * Default 2,592,000 s / 30 days (same as the Bike Society fork). Override with
+ * `NEXT_IMAGE_MINIMUM_CACHE_TTL`. Next's own default without this key is
+ * 14,400 s / 4 h (`next/dist/shared/lib/image-config.js`).
  *
  * Read the next paragraph before reasoning about product photos: this key does NOT
  * govern them, and the obvious worry about it is misplaced.
@@ -190,7 +190,11 @@ const positiveIntEnv = (raw: string | undefined, fallback: number): number => {
  */
 const imageMinimumCacheTTL = positiveIntEnv(
   process.env.NEXT_IMAGE_MINIMUM_CACHE_TTL,
-  0,
+  // Platform default: 30 days. Matches the Bike Society fork's measured
+  // choice for dashboard branding on storage.googleapis.com (no automatic
+  // image-cache purge). Override per store via NEXT_IMAGE_MINIMUM_CACHE_TTL.
+  // Do not raise to a year here — a merchant logo swap would stick that long.
+  2592000,
 );
 const buildCpus = positiveIntEnv(
   process.env.NEXT_BUILD_CPUS,
@@ -265,6 +269,9 @@ const nextConfig: NextConfig = {
   // https://nextjs.org/docs/app/guides/prefetching
   cacheComponents: true,
   partialPrefetching: true,
+  // React Compiler — same spine as vercel/shop. Highest-value client-perf
+  // parity item (cart, filters, PDP pickers). Requires babel-plugin-react-compiler.
+  reactCompiler: true,
   ...(prerenderTimeout
     ? {
         staticPageGenerationTimeout:
@@ -314,11 +321,9 @@ const nextConfig: NextConfig = {
     // <img src> fallback for every `sizes` that uses vw. These storefronts
     // never paint a 4K hero; 2048 matches the largest WordPress derivative.
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048],
-    // See `imageMinimumCacheTTL` above: absent unless the store sets a value, and
-    // absent means Next's 4 h default.
-    ...(imageMinimumCacheTTL > 0
-      ? { minimumCacheTTL: imageMinimumCacheTTL }
-      : {}),
+    // See `imageMinimumCacheTTL` above. Always set — the platform default is
+    // 30 days; stores override via NEXT_IMAGE_MINIMUM_CACHE_TTL.
+    minimumCacheTTL: imageMinimumCacheTTL,
     // 65 = catalog grid cards; 50 = phone hero encode and carousel cards; 75 = desktop hero.
     qualities: [50, 65, 75, 100],
     remotePatterns,

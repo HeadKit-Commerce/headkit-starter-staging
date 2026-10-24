@@ -63,6 +63,17 @@ const ENV_KLAVIYO_PUBLIC_KEY = process.env.NEXT_PUBLIC_KLAVIYO_PUBLIC_KEY;
 const ENV_HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID;
 const SITE_URL = process.env.NEXT_PUBLIC_FRONTEND_URL ?? "";
 
+/**
+ * Pin the App Shell for Instant Navigation / Partial Prefetching.
+ *
+ * `"prefetch"` (not `"navigation"`) keeps the shared shell static while
+ * cart/auth Suspense holes stay request-time. Catalog routes keep their own
+ * `ensureStatic = "navigation"` so product/collection documents stay in the
+ * per-link prefetch payload.
+ * https://nextjs.org/docs/app/api-reference/file-conventions/route-segment-config#ensurestatic
+ */
+export const ensureStatic = "prefetch";
+
 const HEX_OR_RGB =
   /^(#(?:[0-9a-fA-F]{3,8})|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(?:0|1|0?\.\d+)\s*\))$/;
 

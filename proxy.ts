@@ -10,6 +10,7 @@ import {
   isCanonicalRedirectCandidate,
 } from "@/lib/canonical-redirect-request";
 import { legacyFacetRedirectPath } from "@/lib/legacy-facet-redirect";
+import { getMarkdownRewritePath } from "@/lib/markdown/representation";
 
 /** Must match `DEFAULT_POSTS_BASE_PATH` in lib/posts-base-path.ts (internal route). */
 const DEFAULT_POSTS_BASE_PATH = "news";
@@ -247,6 +248,15 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const canonical = await canonicalRedirect(request);
   if (canonical) return canonical;
 
+  // Answer-engine Markdown surface (vercel/shop parity): `Accept: text/markdown`
+  // or a `.md` suffix rewrites onto `/md…` before blog/robots config runs.
+  const markdownPath = getMarkdownRewritePath(request);
+  if (markdownPath) {
+    const rewriteUrl = request.nextUrl.clone();
+    rewriteUrl.pathname = markdownPath;
+    return NextResponse.rewrite(rewriteUrl);
+  }
+
   // ONE read of the per-store config, shared by the blog rewrite and the
   // host-indexing gate below, so neither costs a subrequest of its own.
   const config = await readProxyConfig(request);
@@ -309,6 +319,10 @@ export const config = {
     "/account",
     "/account/:path*",
     "/:key.txt",
+    // Markdown mirrors (`/index.md`, `/products/foo.md`, …). The catch-all
+    // below excludes dotted paths, so `.md` must be listed explicitly.
+    "/index.md",
+    "/:path*.md",
     // Blog base-path rewrite + legacy /news → canonical Posts-page slug.
     // Exclude Next internals and common static file extensions.
     "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
