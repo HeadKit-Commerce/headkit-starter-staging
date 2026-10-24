@@ -64,11 +64,12 @@ function PaymentProcessingScreen({
           />
         </svg>
 
-        <h1 className="text-2xl text-gray-900">Your payment is processing</h1>
+        <h1 className="text-2xl text-gray-900">Confirming your payment</h1>
         <p className="text-gray-600">
-          Thanks for your order! Your payment is still being processed by your
-          payment provider. We&apos;ll confirm your order by email as soon as
-          the payment completes — no further action is needed.
+          Thanks — we&apos;re confirming your payment with your provider and
+          checking stock. This usually takes a few seconds. We&apos;ll show your
+          order confirmation here as soon as it&apos;s ready, and email you if
+          you leave this page.
         </p>
 
         {orderId ? (

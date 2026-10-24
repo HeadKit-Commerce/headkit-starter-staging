@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { correctCartAtEntry } from "@/lib/checkout-stock-entry";
@@ -26,6 +26,7 @@ import {
   checkoutDeadEndPath,
   logCheckoutFailure,
 } from "@/lib/checkout-failure";
+import { normalizeSiteUrl, resolveSiteUrl } from "@/lib/site-url";
 
 export default async function CheckoutPage({
   searchParams,
@@ -130,8 +131,31 @@ export default async function CheckoutPage({
     redirect(bagUrl([...stockAlerts, { kind: "unnamed" }]));
   }
 
-  const returnUrl = `${process.env.NEXT_PUBLIC_FRONTEND_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
-  const successBaseUrl = process.env.NEXT_PUBLIC_FRONTEND_URL;
+  // Stripe Custom Checkout briefly shows checkout.stripe.com?...&returned_from_redirect
+  // before hopping to return_url. Prefer live store domain / request host over a
+  // stale baked NEXT_PUBLIC_FRONTEND_URL so BNPL returns land on this storefront.
+  const requestHeaders = await headers();
+  const forwardedHost = requestHeaders.get("x-forwarded-host");
+  const host = (forwardedHost ?? requestHeaders.get("host") ?? "")
+    .split(",")[0]
+    ?.trim();
+  const proto = (requestHeaders.get("x-forwarded-proto") ?? "https")
+    .split(",")[0]
+    ?.trim();
+  const requestOrigin =
+    host && proto ? normalizeSiteUrl(`${proto}://${host}`) : "";
+  const siteOrigin =
+    resolveSiteUrl(
+      storeSettings.domain,
+      process.env.NEXT_PUBLIC_FRONTEND_URL,
+    ) || requestOrigin;
+  if (!siteOrigin) {
+    throw new Error(
+      "Checkout return URL has no origin (store domain, request host, and NEXT_PUBLIC_FRONTEND_URL are all empty)",
+    );
+  }
+  const returnUrl = `${siteOrigin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
+  const successBaseUrl = siteOrigin;
 
   // CKA-04 prefill + ENG-801: resolve the shopper's email server-side SOLELY
   // to seed the Contact step prefill via the `customerEmail` prop below. The

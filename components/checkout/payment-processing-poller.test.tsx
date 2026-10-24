@@ -8,7 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
  * The processing poller: a refusal stamped mid-poll REPLACES the processing
  * screen in place (no route, so no flash of "processing"), and cancel /
  * expiry return the shopper to `/checkout` — never to `/checkout/error`,
- * which the poller cannot know is warranted.
+ * which the poller cannot know is warranted. The first poll runs on mount.
  */
 
 (
@@ -36,12 +36,11 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => {
-    root.render(
-      <PaymentProcessingPoller sessionId="cs_1">
-        <p>Your payment is processing</p>
-      </PaymentProcessingPoller>,
-    );
+  // Default: still settling — immediate mount poll must not route away.
+  getCheckoutSessionAction.mockResolvedValue({
+    status: "complete",
+    paymentStatus: "unpaid",
+    paymentIntentStatus: "processing",
   });
 });
 
@@ -51,6 +50,19 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+async function mount(): Promise<void> {
+  await act(async () => {
+    root.render(
+      <PaymentProcessingPoller sessionId="cs_1">
+        <p>Your payment is processing</p>
+      </PaymentProcessingPoller>,
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
 async function tick(): Promise<void> {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(2_500);
@@ -58,7 +70,8 @@ async function tick(): Promise<void> {
 }
 
 describe("PaymentProcessingPoller", () => {
-  it("renders its children until something terminal happens", () => {
+  it("renders its children until something terminal happens", async () => {
+    await mount();
     expect(container.textContent).toBe("Your payment is processing");
   });
 
@@ -69,14 +82,19 @@ describe("PaymentProcessingPoller", () => {
       orderId: "0",
       orderFailure: {
         reason: "woocommerce_rest_product_out_of_stock",
+        message: "Item is out of stock.",
         refundStatus: "succeeded",
       },
     });
-    await tick();
+    await mount();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getCheckoutSessionAction).toHaveBeenCalled();
     expect(container.textContent).toContain("We couldn't place your order");
-    expect(container.textContent).not.toContain("processing");
+    expect(container.textContent).not.toContain("Your payment is processing");
     expect(replace).not.toHaveBeenCalled();
-    // Polling stopped: no further reads after the refusal.
     const reads = getCheckoutSessionAction.mock.calls.length;
     await tick();
     expect(getCheckoutSessionAction.mock.calls.length).toBe(reads);
@@ -88,7 +106,7 @@ describe("PaymentProcessingPoller", () => {
       paymentStatus: "unpaid",
       paymentIntentStatus: "canceled",
     });
-    await tick();
+    await mount();
     expect(replace).toHaveBeenCalledWith("/checkout?error=payment_canceled");
   });
 
@@ -97,7 +115,7 @@ describe("PaymentProcessingPoller", () => {
       status: "expired",
       paymentStatus: "unpaid",
     });
-    await tick();
+    await mount();
     expect(replace).toHaveBeenCalledWith("/checkout?error=session_expired");
   });
 
@@ -108,7 +126,7 @@ describe("PaymentProcessingPoller", () => {
       orderId: "12",
       orderKey: "k",
     });
-    await tick();
+    await mount();
     expect(replace).toHaveBeenCalledWith(
       "/checkout/success/12?key=k&session_id=cs_1",
     );

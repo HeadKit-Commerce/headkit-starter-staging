@@ -3,19 +3,18 @@ import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 /**
- * CI gate on the paid-finalize stock fail-over (checkout plan v3 Part 2 §3,
- * PR F): `integrations/wordpress/theme/inc/headkit-stock-failover.php`.
+ * CI gate on the paid-finalize stock fail-over + claim-before-capture
+ * (checkout plan v3 Part 2 §3, PR F): `integrations/wordpress/theme/inc/headkit-stock-failover.php`.
  *
- * WHY A STOREFRONT SUITE GUARDS A THEME MONEY PATH. When a signed, captured
- * finalize arrives and part of the bag is gone, the theme now creates the
- * order anyway, claims only what other shoppers' live holds leave free, parks
- * the order On hold, and refunds the short lines in a separate Action
- * Scheduler step: cash through the gateway capped at what was captured, the
- * rest to the gift card, one customer email. Before it, WooCommerce refused
- * the whole order (409 at validate_cart, 403 at the re-reserve) after the
- * money had moved. Nothing in the storefront can observe any of that, so this
- * suite drives the theme harness, which runs the REAL module against a
- * WooCommerce model (`tests/support/stock-failover-shims.php`).
+ * WHY A STOREFRONT SUITE GUARDS A THEME MONEY PATH. At finalize the theme
+ * claims against admin `stock_quantity` (POS/feeds win over the web hold). On
+ * a signed AUTHORIZED finalize (manual capture) it records
+ * `_headkit_stock_claim_short_total` and leaves the order pending so commerce
+ * can cancel the auth instead of capturing. On a signed PAID finalize when
+ * part of the bag is gone, it creates the order anyway, parks On hold, and
+ * refunds the short lines (safety net when money already stuck). Nothing in
+ * the storefront can observe any of that, so this suite drives the theme
+ * harness (`tests/support/stock-failover-shims.php`).
  *
  * The harness EXECUTES the claim statement by meaning, not as SQL; whether
  * MySQL/MariaDB accept it is a rehearsal-store check, named in the PR.
@@ -56,6 +55,7 @@ interface Scenario {
   status: string;
   statusHistory: string[];
   record: ShortfallRecord | null;
+  claimShortTotal: number | null;
   items: Record<
     string,
     { claimed: number | ""; short: number | ""; reduced: number | "" }
@@ -188,18 +188,47 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     });
   });
 
-  it.each(["unsigned_same_cart", "authorized_same_cart"])(
-    "changes nothing outside a signed, captured finalize (%s)",
-    (name) => {
-      const s = scenario(name);
-      expect(s.finalize).toMatchObject({
-        stopped: "validate_cart",
-        status: 409,
-      });
-      expect(s.claimSql).toEqual([]);
-      expect(s.record).toBeNull();
-    },
-  );
+  it("changes nothing on an unsigned finalize", () => {
+    const s = scenario("unsigned_same_cart");
+    expect(s.finalize).toMatchObject({
+      stopped: "validate_cart",
+      status: 409,
+    });
+    expect(s.claimSql).toEqual([]);
+    expect(s.record).toBeNull();
+  });
+
+  it("claims against admin stock on authorized finalize without capturing or refunding", () => {
+    const s = scenario("authorized_same_cart");
+    expect(s.finalize.stopped).toBe("authorized");
+    expect(s.status).toBe("pending");
+    expect(s.claimShortTotal).toBe(1);
+    expect(s.items["11"]).toMatchObject({ claimed: 0, short: 1 });
+    expect(s.gatewayCalls).toEqual([]);
+    expect(s.ran).toEqual([]);
+    expect(record(s).state).toBe("detected");
+  });
+
+  it("records claim_short_total=0 when authorized and fully covered so commerce may capture", () => {
+    const s = scenario("authorized_in_stock");
+    expect(s.finalize.stopped).toBe("authorized");
+    expect(s.claimShortTotal).toBe(0);
+    expect(s.items["11"]?.claimed).toBe(1);
+    expect(s.stock["101"]).toBe(5);
+    expect(s.rowsLeft).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not let the order's own hold invent units when admin stock is already 0", () => {
+    const auth = scenario("authorized_admin_zero_own_hold");
+    expect(auth.claimShortTotal).toBe(1);
+    expect(auth.items["11"]).toMatchObject({ claimed: 0, short: 1 });
+    expect(auth.stock["101"]).toBe(0);
+
+    const paid = scenario("paid_admin_zero_own_hold");
+    expect(paid.items["11"]).toMatchObject({ claimed: 0, short: 1 });
+    expect(paid.stock["101"]).toBe(0);
+    expect(paid.gatewayCalls.length).toBeGreaterThanOrEqual(1);
+  });
 
   it("does not let the order's own hold invent units when admin stock is already 0", () => {
     const s = scenario("paid_admin_zero_own_hold");

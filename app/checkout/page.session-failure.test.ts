@@ -30,6 +30,13 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/server", () => ({ connection: async () => undefined }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined, set: vi.fn() }),
+  // page.tsx resolves Stripe return_url from the request host when store
+  // domain / NEXT_PUBLIC_FRONTEND_URL are empty.
+  headers: async () =>
+    new Headers({
+      host: "shop.example",
+      "x-forwarded-proto": "https",
+    }),
 }));
 vi.mock("@/lib/cart-actions", () => ({
   getFullCartAction: async () => CART,
@@ -38,7 +45,9 @@ vi.mock("@/lib/checkout-stock-entry", () => ({
   correctCartAtEntry: async (cart: unknown) => cart,
 }));
 vi.mock("@/lib/branding", () => ({
-  getBranding: async () => ({ storeSettings: { checkoutType: "payment" } }),
+  getBranding: async () => ({
+    storeSettings: { checkoutType: "payment", domain: "shop.example" },
+  }),
 }));
 vi.mock("@/lib/stripe-config", () => ({
   getStripeConfig: async () => ({ bnplMessagingEnabled: false }),
