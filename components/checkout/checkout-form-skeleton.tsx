@@ -45,7 +45,9 @@ function StepChrome({
           {title}
         </span>
       </div>
-      {active && children ? <div className="mt-5 space-y-3">{children}</div> : null}
+      {active && children ? (
+        <div className="mt-5 space-y-3">{children}</div>
+      ) : null}
     </div>
   );
 }

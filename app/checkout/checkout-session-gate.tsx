@@ -79,8 +79,7 @@ export async function CheckoutSessionGate({
   const createSession = async (
     forCart: EntryCart,
   ): Promise<
-    | { ok: true; session: CheckoutSessionResult }
-    | { ok: false; error: unknown }
+    { ok: true; session: CheckoutSessionResult } | { ok: false; error: unknown }
   > => {
     try {
       const session = await createCheckoutSessionAction(

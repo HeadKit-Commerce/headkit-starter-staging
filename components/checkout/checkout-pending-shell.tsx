@@ -47,11 +47,7 @@ export function CheckoutPendingShell({ cart }: Props): React.ReactElement {
               </span>
               <span className="font-medium">{mobileTotal}</span>
             </div>
-            <Cart
-              cart={cart}
-              showDisplayShipping={true}
-              hideCoupon={true}
-            />
+            <Cart cart={cart} showDisplayShipping={true} hideCoupon={true} />
             <CheckoutPaymentIcons />
           </div>
         </div>
