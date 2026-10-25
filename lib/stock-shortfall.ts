@@ -10,6 +10,14 @@
  * without a shortfall and on a store whose theme predates the fail-over, and
  * the page must then render exactly what it renders today.
  *
+ * A HELD payment (hold-first) never reaches that refund: when only some lines
+ * are short at finalize, the theme drops them before capture and commerce
+ * captures the reduced total, so the record arrives as `NOT_CHARGED` — those
+ * items were never charged, and there is nothing to refund. For Afterpay the
+ * first instalment was taken at authorization on the full amount, so the copy
+ * says the instalments follow the reduced total instead of claiming nothing
+ * was ever taken.
+ *
  * Pure: the page passes the record and the order currency; the copy comes back.
  */
 
@@ -17,7 +25,7 @@ import { formatPrice, getFloatVal } from "@/lib/utils";
 
 /** The `Order.stockShortfall` selection the starter reads. */
 export interface StockShortfall {
-  refundStatus: "PENDING" | "REFUNDED" | "FAILED";
+  refundStatus: "PENDING" | "REFUNDED" | "FAILED" | "NOT_CHARGED";
   fullyRefunded: boolean;
   refundTotal: string;
   paymentRefund: string;
@@ -43,7 +51,7 @@ function joinNames(names: string[]): string {
 
 /** "the refund of A$17.27" phrased by where the refund is. */
 function refundPhrase(
-  status: StockShortfall["refundStatus"],
+  status: Exclude<StockShortfall["refundStatus"], "NOT_CHARGED">,
   amount: string,
   fully: boolean,
 ): string {
@@ -65,9 +73,13 @@ function refundPhrase(
 export function stockShortfallNotice(
   shortfall: StockShortfall | null | undefined,
   currency: string,
+  paymentMethodType?: string | null,
 ): StockShortfallNotice | null {
   if (!shortfall || shortfall.lines.length === 0) {
     return null;
+  }
+  if (shortfall.refundStatus === "NOT_CHARGED") {
+    return notChargedNotice(shortfall, paymentMethodType);
   }
   const money = (value: string): string =>
     formatPrice(getFloatVal(value), currency);
@@ -87,14 +99,43 @@ export function stockShortfallNotice(
       body: `The items in this order sold out while your payment was processing. ${refund}`,
     };
   }
-  const names = joinNames(
-    shortfall.lines.map((l) =>
-      l.quantity > 1 ? `${l.quantity} × ${l.name}` : l.name,
-    ),
-  );
+  const names = lineNames(shortfall);
   return {
     fullyRefunded: false,
     title: "Sorry — part of your order sold out",
     body: `${names} sold out while your payment was processing. ${refund} The rest of your order is confirmed below.`,
+  };
+}
+
+/** "2 × Gloves and Helmet" */
+function lineNames(shortfall: StockShortfall): string {
+  return joinNames(
+    shortfall.lines.map((l) =>
+      l.quantity > 1 ? `${l.quantity} × ${l.name}` : l.name,
+    ),
+  );
+}
+
+/**
+ * Lines dropped from a held payment before capture: only the in-stock items
+ * were charged. Afterpay and Klarna get a sentence about their plan, because
+ * Afterpay took the first instalment at authorization on the full amount.
+ */
+function notChargedNotice(
+  shortfall: StockShortfall,
+  paymentMethodType: string | null | undefined,
+): StockShortfallNotice {
+  const units = shortfall.lines.reduce((n, l) => n + l.quantity, 0);
+  const them = units === 1 ? "it" : "them";
+  const plan =
+    paymentMethodType === "afterpay_clearpay"
+      ? " Your Afterpay instalments are for the reduced total; Afterpay returns anything it already took for the sold-out items."
+      : paymentMethodType === "klarna"
+        ? " Your Klarna payments are for the reduced total."
+        : "";
+  return {
+    fullyRefunded: false,
+    title: "Sorry — part of your order sold out",
+    body: `${lineNames(shortfall)} sold out before your payment was taken, so you were not charged for ${them}.${plan} The rest of your order is confirmed below.`,
   };
 }

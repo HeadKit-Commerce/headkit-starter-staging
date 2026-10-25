@@ -26,6 +26,33 @@ describe("stockShortfallNotice", () => {
     expect(stockShortfallNotice({ ...partial, lines: [] }, "AUD")).toBeNull();
   });
 
+  it("says a held payment never charged the dropped items, and refunds nothing", () => {
+    const notCharged: StockShortfall = {
+      ...partial,
+      refundStatus: "NOT_CHARGED",
+      paymentRefund: "0.00",
+    };
+    const card = stockShortfallNotice(notCharged, "AUD", "card");
+    expect(card?.fullyRefunded).toBe(false);
+    expect(card?.title).toBe("Sorry — part of your order sold out");
+    expect(card?.body).toBe(
+      "Base layer - M sold out before your payment was taken, so you were not charged for it. The rest of your order is confirmed below.",
+    );
+    expect(card?.body).not.toMatch(/refund/i);
+
+    const afterpay = stockShortfallNotice(
+      { ...notCharged, lines: [{ name: "Gloves", quantity: 2 }] },
+      "AUD",
+      "afterpay_clearpay",
+    );
+    expect(afterpay?.body).toBe(
+      "2 × Gloves sold out before your payment was taken, so you were not charged for them. Your Afterpay instalments are for the reduced total; Afterpay returns anything it already took for the sold-out items. The rest of your order is confirmed below.",
+    );
+    expect(stockShortfallNotice(notCharged, "AUD", "klarna")?.body).toContain(
+      "Klarna payments are for the reduced total",
+    );
+  });
+
   it("names the sold-out line and keeps the rest confirmed", () => {
     const got = stockShortfallNotice(partial, "AUD");
     expect(got?.fullyRefunded).toBe(false);

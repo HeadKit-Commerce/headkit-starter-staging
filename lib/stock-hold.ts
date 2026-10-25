@@ -34,6 +34,11 @@ import {
   issueRequiresRemoval,
   type CartIssueLike,
 } from "./cart-issues";
+import {
+  parseReleasedBy,
+  releasedPaymentSentence,
+  type ReleasedByProvider,
+} from "./order-refusal";
 
 /** The extensions code of a hold that could not be placed at all. */
 export const STOCK_HOLD_UNAVAILABLE = "CHECKOUT_STOCK_HOLD_UNAVAILABLE";
@@ -48,10 +53,20 @@ export type HoldOutcome =
   | { status: "refused"; issues: CartIssueLike[] }
   | { status: "unavailable" };
 
-/** One alert box: an item removed, an item reduced, or the generic sentences. */
+/**
+ * One alert box: an item removed, an item reduced, or the generic sentences.
+ * `releasedBy` is set when the shopper arrives from a sold-out Afterpay or
+ * Klarna payment, which may already have taken money that the provider
+ * returns — so those alerts must not say "you have not been charged".
+ */
 export type StockAlert =
-  | { kind: "removed"; name: string }
-  | { kind: "reduced"; name: string; quantity: number }
+  | { kind: "removed"; name: string; releasedBy?: ReleasedByProvider }
+  | {
+      kind: "reduced";
+      name: string;
+      quantity: number;
+      releasedBy?: ReleasedByProvider;
+    }
   | { kind: "unnamed" }
   | { kind: "hold_failed" };
 
@@ -142,9 +157,9 @@ export function planStockCorrections(
 export function stockAlertText(alert: StockAlert): string {
   switch (alert.kind) {
     case "removed":
-      return `Unfortunately ${alert.name} is now unavailable and has been removed from your cart. You have not been charged.`;
+      return `Unfortunately ${alert.name} is now unavailable and has been removed from your cart. ${releasedPaymentSentence(alert.releasedBy)}`;
     case "reduced":
-      return `Unfortunately only ${alert.quantity} × ${alert.name} ${alert.quantity === 1 ? "is" : "are"} available. Your cart has been updated. You have not been charged.`;
+      return `Unfortunately only ${alert.quantity} × ${alert.name} ${alert.quantity === 1 ? "is" : "are"} available. Your cart has been updated. ${releasedPaymentSentence(alert.releasedBy)}`;
     case "unnamed":
       return "Unfortunately items in your cart are now unavailable. Your cart has been updated.";
     case "hold_failed":
@@ -190,14 +205,26 @@ export function bagAlertsFromSearch(search: string): StockAlert[] {
     const kind = (a as { kind?: unknown }).kind;
     const name = (a as { name?: unknown }).name;
     const quantity = (a as { quantity?: unknown }).quantity;
+    const releasedBy = parseReleasedBy(
+      (a as { releasedBy?: unknown }).releasedBy as string | undefined,
+    );
     if (kind === "removed" && typeof name === "string") {
-      out.push({ kind, name: name.slice(0, 200) });
+      out.push({
+        kind,
+        name: name.slice(0, 200),
+        ...(releasedBy ? { releasedBy } : {}),
+      });
     } else if (
       kind === "reduced" &&
       typeof name === "string" &&
       typeof quantity === "number"
     ) {
-      out.push({ kind, name: name.slice(0, 200), quantity });
+      out.push({
+        kind,
+        name: name.slice(0, 200),
+        quantity,
+        ...(releasedBy ? { releasedBy } : {}),
+      });
     } else if (kind === "unnamed" || kind === "hold_failed") {
       out.push({ kind });
     }

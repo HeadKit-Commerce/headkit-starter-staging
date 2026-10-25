@@ -10,6 +10,8 @@ import {
 import {
   isStockAuthReleasedRefusal,
   orderRefusalFromSession,
+  sessionPaymentMethodType,
+  stockRetryPath,
   type OrderRefusal,
 } from "@/lib/order-refusal";
 import { OrderRefused } from "@/components/checkout/order-refused";
@@ -24,9 +26,11 @@ const POLL_TIMEOUT_MS = 120_000;
  *
  * Polls immediately on mount, then every 2.5s for up to 120s, and acts on the
  * first terminal state:
- *  - stock auth released (`orderFailure` + authorization_released + out of
- *    stock) → `/checkout` immediately so `correctCartAtEntry` shows sold-out
- *    alerts. Never leave the shopper on this processing screen for that case.
+ *  - stock auth released (`orderFailure` + authorization_released or
+ *    authorization_release_pending + out of stock) → `/checkout` immediately
+ *    so `correctCartAtEntry` shows sold-out alerts. Never leave the shopper on
+ *    this processing screen for that case. Each read of a release-pending
+ *    session is also what makes commerce release it (the shopper is back).
  *  - other post-payment order refusal (`session.orderFailure`) → render
  *    <OrderRefused> in place of `children`.
  *  - paid + REAL orderId/orderKey → order confirmation page
@@ -81,7 +85,7 @@ export function PaymentProcessingPoller({
           if (refused) {
             stop();
             if (isStockAuthReleasedRefusal(refused)) {
-              router.replace("/checkout");
+              router.replace(stockRetryPath(refused.paymentMethodType));
               return;
             }
             setRefusal(refused);
@@ -104,7 +108,7 @@ export function PaymentProcessingPoller({
             // "payment cancelled / cart changed" banner that skips sold-out alerts.
             stop();
             logCheckoutFailure("payment_canceled");
-            router.replace("/checkout");
+            router.replace(stockRetryPath(sessionPaymentMethodType(session)));
             return;
           }
           if (session.status === "expired") {

@@ -16,6 +16,7 @@ import {
   logOrderRefusal,
   orderRefusalFromError,
   orderRefusalFromSession,
+  sessionPaymentMethodType,
 } from "@/lib/order-refusal";
 import {
   logOrderValidation,
@@ -114,6 +115,8 @@ export default async function Page({ params, searchParams }: Props) {
   let paymentCardLast4: string | undefined;
   let paymentMethod: string | undefined;
   let paymentWalletType: string | undefined;
+  // The confirmed method type: a partial capture's copy depends on it.
+  let paymentMethodType: string | null = null;
 
   if (sessionId) {
     let session: Awaited<ReturnType<typeof getCheckoutSessionAction>> | null =
@@ -185,6 +188,7 @@ export default async function Page({ params, searchParams }: Props) {
       paymentCardBrand = session.cardBrand ?? undefined;
       paymentCardLast4 = session.cardLast4 ?? undefined;
       paymentMethod = session.paymentMethod ?? undefined;
+      paymentMethodType = sessionPaymentMethodType(session);
       paymentWalletType = session.walletType ?? undefined;
 
       if (session.orderId && session.orderKey) {
@@ -436,7 +440,7 @@ export default async function Page({ params, searchParams }: Props) {
   // without one, which renders exactly as before.
   const shortfallNotice = isQuoteMode
     ? null
-    : stockShortfallNotice(order.stockShortfall, currency);
+    : stockShortfallNotice(order.stockShortfall, currency, paymentMethodType);
 
   const hasShippingMethod = shippingLines.length > 0;
   const hasShippingAddress =

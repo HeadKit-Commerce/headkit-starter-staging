@@ -79,8 +79,17 @@ export interface OrderRefusal {
   message?: string | null;
   /** Stripe refund id. Null when an authorization was released instead. */
   refundId?: string | null;
-  /** Stripe refund status, or `authorization_released`. */
+  /**
+   * Stripe refund status, or `authorization_released` /
+   * `authorization_release_pending` (see {@link isAuthorizationReleaseStatus}).
+   */
   refundStatus?: string | null;
+  /**
+   * The payment method type the shopper confirmed with (`card`,
+   * `afterpay_clearpay`, `klarna`, …), when the session reports it. Decides
+   * what a released authorization means for the money.
+   */
+  paymentMethodType?: string | null;
   /** RFC3339, for the log line only. */
   occurredAt?: string | null;
 }
@@ -133,9 +142,14 @@ export function orderRefusalBody(refusal: OrderRefusal): string {
 export function orderRefusalMoneySentence(
   refundStatus: string | null | undefined,
   amount?: string,
+  paymentMethodType?: string | null,
 ): string {
-  if (refundStatus === "authorization_released") {
-    return "Your card was not charged. The authorisation has been released.";
+  if (isAuthorizationReleaseStatus(refundStatus)) {
+    const provider = releasedByProvider(paymentMethodType);
+    if (provider) return releasedPaymentSentence(provider);
+    return refundStatus === "authorization_released"
+      ? "Your card was not charged. The authorisation has been released."
+      : "Your card was not charged. The authorisation is being released.";
   }
   if (refundStatus === "succeeded" || refundStatus === "pending") {
     return amount
@@ -145,8 +159,89 @@ export function orderRefusalMoneySentence(
   return "Your payment is being refunded. If it has not appeared within 5 business days, contact us.";
 }
 
+/**
+ * A refund status that means the payment was only AUTHORIZED and will never be
+ * captured. `authorization_release_pending` is a hold-first Afterpay or Klarna
+ * refusal whose release commerce makes once the shopper is back on the store
+ * (it cannot release while they are still on Stripe's return page without
+ * stranding them there); a read can land before that restamp, and it must
+ * route exactly like `authorization_released`.
+ */
+export function isAuthorizationReleaseStatus(
+  refundStatus: string | null | undefined,
+): boolean {
+  return (
+    refundStatus === "authorization_released" ||
+    refundStatus === "authorization_release_pending"
+  );
+}
+
+/** A provider that may already have taken money at authorization. */
+export type ReleasedByProvider = "afterpay" | "klarna";
+
+/**
+ * The provider that returns money for a released authorization of this
+ * payment method type, or null when nothing was taken (cards, wallets, Link).
+ * Afterpay takes the first instalment AT authorization and returns it when
+ * the payment is never captured; Klarna gets the same cautious treatment
+ * because its behaviour at authorization is unverified.
+ */
+export function releasedByProvider(
+  paymentMethodType: string | null | undefined,
+): ReleasedByProvider | null {
+  if (paymentMethodType === "afterpay_clearpay") return "afterpay";
+  if (paymentMethodType === "klarna") return "klarna";
+  return null;
+}
+
+/** What a shopper reads about the money after a release, by provider. */
+export function releasedPaymentSentence(
+  provider: ReleasedByProvider | null | undefined,
+): string {
+  if (provider === "afterpay")
+    return "Any payment taken will be returned by Afterpay.";
+  if (provider === "klarna")
+    return "Any payment taken will be returned by Klarna.";
+  return "You have not been charged.";
+}
+
+/** The `/checkout` search parameter that carries {@link ReleasedByProvider}. */
+export const RELEASED_BY_PARAM = "released_by";
+
+/** Parses {@link RELEASED_BY_PARAM}; anything unknown is null. */
+export function parseReleasedBy(
+  value: string | string[] | null | undefined,
+): ReleasedByProvider | null {
+  return value === "afterpay" || value === "klarna" ? value : null;
+}
+
+/**
+ * Where a sold-out authorized payment goes: `/checkout`, whose entry check
+ * shows the sold-out alerts — carrying the provider when one may have taken
+ * money, so those alerts do not claim "you have not been charged".
+ */
+export function stockRetryPath(
+  paymentMethodType: string | null | undefined,
+): string {
+  const provider = releasedByProvider(paymentMethodType);
+  return provider ? `/checkout?${RELEASED_BY_PARAM}=${provider}` : "/checkout";
+}
+
+/**
+ * The confirmed payment method type of a session, read structurally: the
+ * starter is also type-checked against the PUBLISHED @headkit/sdk, which may
+ * predate `paymentMethodType`.
+ */
+export function sessionPaymentMethodType(session: unknown): string | null {
+  if (!session || typeof session !== "object") return null;
+  const value = (session as { paymentMethodType?: unknown }).paymentMethodType;
+  return typeof value === "string" && value ? value : null;
+}
+
 /** The minimum of a Stripe session this module reads. */
 export interface OrderRefusalSessionLike {
+  /** The confirmed payment method type, when the gateway reports it. */
+  paymentMethodType?: string | null;
   orderFailure?: {
     reason?: string | null;
     message?: string | null;
@@ -166,12 +261,14 @@ export function orderRefusalFromSession(
 ): OrderRefusal | null {
   const failure = session?.orderFailure;
   if (!failure) return null;
+  const paymentMethodType = sessionPaymentMethodType(session);
   return {
     reason: failure.reason?.trim() || UNNAMED_ORDER_REFUSAL_REASON,
     message: failure.message ?? null,
     refundId: failure.refundId ?? null,
     refundStatus: failure.refundStatus ?? null,
     occurredAt: failure.occurredAt ?? null,
+    ...(paymentMethodType ? { paymentMethodType } : {}),
   };
 }
 
@@ -198,7 +295,7 @@ export function isStockAuthReleasedRefusal(
   refusal: OrderRefusal | null | undefined,
 ): boolean {
   if (!refusal) return false;
-  if (refusal.refundStatus !== "authorization_released") return false;
+  if (!isAuthorizationReleaseStatus(refusal.refundStatus)) return false;
   return (
     refusal.reason === "woocommerce_rest_product_out_of_stock" ||
     refusal.reason === "woocommerce_rest_product_partially_out_of_stock"

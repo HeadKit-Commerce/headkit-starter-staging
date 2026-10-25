@@ -9,6 +9,8 @@ import {
   orderRefusalFromError,
   orderRefusalFromSession,
   orderRefusalMoneySentence,
+  parseReleasedBy,
+  stockRetryPath,
 } from "./order-refusal";
 
 describe("orderRefusalFromSession", () => {
@@ -119,6 +121,68 @@ describe("copy", () => {
         refundStatus: "succeeded",
       }),
     ).toBe(false);
+  });
+
+  it("treats a pending authorization release like a released one", () => {
+    expect(
+      isStockAuthReleasedRefusal({
+        reason: "woocommerce_rest_product_out_of_stock",
+        refundStatus: "authorization_release_pending",
+      }),
+    ).toBe(true);
+    expect(
+      isStockAuthReleasedRefusal({
+        reason: "woocommerce_rest_product_partially_out_of_stock",
+        refundStatus: "authorization_release_pending",
+      }),
+    ).toBe(true);
+    expect(
+      isStockAuthReleasedRefusal({
+        reason: "woocommerce_rest_cart_coupon_error",
+        refundStatus: "authorization_release_pending",
+      }),
+    ).toBe(false);
+  });
+
+  it("never tells an Afterpay or Klarna shopper they were not charged", () => {
+    for (const status of [
+      "authorization_released",
+      "authorization_release_pending",
+    ]) {
+      expect(
+        orderRefusalMoneySentence(status, undefined, "afterpay_clearpay"),
+      ).toBe("Any payment taken will be returned by Afterpay.");
+      expect(orderRefusalMoneySentence(status, undefined, "klarna")).toBe(
+        "Any payment taken will be returned by Klarna.",
+      );
+      expect(orderRefusalMoneySentence(status, undefined, "card")).toMatch(
+        /not charged/,
+      );
+    }
+  });
+
+  it("sends a sold-out redirect payment back to checkout naming the provider", () => {
+    expect(stockRetryPath("afterpay_clearpay")).toBe(
+      "/checkout?released_by=afterpay",
+    );
+    expect(stockRetryPath("klarna")).toBe("/checkout?released_by=klarna");
+    expect(stockRetryPath("card")).toBe("/checkout");
+    expect(stockRetryPath(null)).toBe("/checkout");
+    expect(parseReleasedBy("afterpay")).toBe("afterpay");
+    expect(parseReleasedBy("zip")).toBeNull();
+    expect(parseReleasedBy(undefined)).toBeNull();
+  });
+
+  it("reads the confirmed payment method from the session", () => {
+    expect(
+      orderRefusalFromSession({
+        paymentMethodType: "afterpay_clearpay",
+        orderFailure: {
+          reason: "woocommerce_rest_product_out_of_stock",
+          refundStatus: "authorization_release_pending",
+        },
+      })?.paymentMethodType,
+    ).toBe("afterpay_clearpay");
   });
 
   it("says what happened to the money by refund status", () => {

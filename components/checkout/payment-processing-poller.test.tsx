@@ -129,6 +129,28 @@ describe("PaymentProcessingPoller", () => {
     expect(container.textContent).not.toContain("We couldn't place your order");
   });
 
+  it("routes a release-pending Afterpay refusal to /checkout naming Afterpay", async () => {
+    // Hold-first: commerce holds an Afterpay release until the shopper is
+    // back, so the first read after the return bridge can still be pending.
+    getCheckoutSessionAction.mockResolvedValue({
+      status: "complete",
+      paymentStatus: "unpaid",
+      paymentIntentStatus: "requires_capture",
+      paymentMethodType: "afterpay_clearpay",
+      orderFailure: {
+        reason: "woocommerce_rest_product_out_of_stock",
+        refundStatus: "authorization_release_pending",
+      },
+    });
+    await mount();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(replace).toHaveBeenCalledWith("/checkout?released_by=afterpay");
+    expect(container.textContent).not.toContain("We couldn't place your order");
+  });
+
   it("returns an expired session to /checkout, not the dead end", async () => {
     getCheckoutSessionAction.mockResolvedValue({
       status: "expired",
