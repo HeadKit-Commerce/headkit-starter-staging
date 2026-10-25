@@ -14,6 +14,7 @@ import { useCartContext } from "@/components/headkit-ui/cart-context";
 import { InstantLink } from "@/components/headkit-ui/instant-link";
 import { QuantityStepper } from "@/components/headkit-ui/quantity-stepper";
 import { stripTitleMarkers } from "@/lib/title-emphasis";
+import { markShopperRemovedLine } from "@/lib/shopper-cart-edit";
 import {
   GiftCardDetails,
   type GiftCardDisplay,
@@ -90,6 +91,7 @@ function QuoteCartItem({
   };
 
   const handleRemove = (): void => {
+    markShopperRemovedLine(item.key);
     startCartTransition(async () => {
       optimisticRemoveItem(item.key);
       const result = await removeCartItemAction(item.key);

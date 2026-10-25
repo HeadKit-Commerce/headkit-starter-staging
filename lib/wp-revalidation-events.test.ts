@@ -1121,6 +1121,25 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
       expect(repair.paths).toBeUndefined();
     });
 
+    it("admin stock expires open checkouts in the save request, without waiting for the catalogue delay", () => {
+      const urls = urlsOf("stock_expire_immediate");
+      expect(urls).toEqual(["https://commerce.harness.invalid/catalog/sync"]);
+      const body = bodyOf("stock_expire_immediate", 0);
+      expect(body).toEqual({
+        provider: "woocommerce",
+        action: "stock_change",
+        expireOnly: true,
+        stock: [
+          {
+            id: "259987",
+            quantity: 0,
+            status: "outofstock",
+            backorders: "no",
+          },
+        ],
+      });
+    });
+
     it("branding still posts the storefront when commerce is configured", () => {
       const urls = urlsOf("branding_change_via_commerce");
       expect(urls).toEqual(["https://harness.invalid/api/revalidate"]);

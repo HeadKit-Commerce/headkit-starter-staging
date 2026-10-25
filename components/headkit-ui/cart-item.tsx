@@ -23,6 +23,7 @@ import { useIsQuoteMode } from "@/components/checkout/checkout-mode-provider";
 import { GiftCardDetails } from "@/components/checkout/gift-card-details";
 import { AddonDetails } from "@/components/checkout/addon-details";
 import { issueForLine, lineIssueMessage } from "@/lib/cart-issues";
+import { markShopperRemovedLine } from "@/lib/shopper-cart-edit";
 import type { CartFieldsFragment } from "@headkit/sdk";
 
 type CartItem = CartFieldsFragment["items"][number];
@@ -98,6 +99,7 @@ export function CartItemRow({
   };
 
   const handleRemove = () => {
+    markShopperRemovedLine(item.key);
     startCartTransition(async () => {
       optimisticRemoveItem(item.key);
       const result = await removeCartItemAction(item.key);

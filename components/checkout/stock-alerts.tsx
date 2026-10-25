@@ -30,29 +30,111 @@ interface StockAlertsValue {
 
 const StockAlertsContext = createContext<StockAlertsValue | null>(null);
 
+const STOCK_ALERTS_STORAGE_KEY = "hk-checkout-stock-alerts";
+
+function alertSignature(alerts: readonly StockAlert[]): string {
+  return JSON.stringify(alerts);
+}
+
+function readStoredAlerts(
+  sessionId: string | null | undefined,
+): StockAlert[] | null {
+  if (!sessionId || typeof sessionStorage === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(STOCK_ALERTS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { sessionId?: unknown; alerts?: unknown };
+    if (parsed.sessionId !== sessionId || !Array.isArray(parsed.alerts)) {
+      return null;
+    }
+    return parsed.alerts as StockAlert[];
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredAlerts(
+  sessionId: string | null | undefined,
+  alerts: readonly StockAlert[],
+): void {
+  if (!sessionId || typeof sessionStorage === "undefined") return;
+  try {
+    if (alerts.length === 0) {
+      const current = readStoredAlerts(sessionId);
+      if (current) sessionStorage.removeItem(STOCK_ALERTS_STORAGE_KEY);
+      return;
+    }
+    sessionStorage.setItem(
+      STOCK_ALERTS_STORAGE_KEY,
+      JSON.stringify({ sessionId, alerts }),
+    );
+  } catch {
+    /* private mode */
+  }
+}
+
 /**
  * Holds the per-item stock alerts shown above the checkout steps (checkout
  * plan v3 §2). `initialAlerts` are the corrections the checkout page made at
  * entry (C1); C2 and C3 add theirs through `useStockRefusal`.
+ *
+ * A stock save while the shopper is on checkout re-renders the page, which
+ * removes the line and then remounts this tree with an empty `initialAlerts`.
+ * The alerts are kept against the Checkout Session so that remount still
+ * shows them.
  */
 export function StockAlertsProvider({
   initialAlerts = [],
+  sessionId = null,
   children,
 }: {
   initialAlerts?: StockAlert[];
+  sessionId?: string | null;
   children: ReactNode;
 }) {
-  const [alerts, setAlerts] = useState<StockAlert[]>(initialAlerts);
+  const [alerts, setAlerts] = useState<StockAlert[]>(() => {
+    if (initialAlerts.length > 0) {
+      // Remember them before a later refresh remounts this tree empty.
+      writeStoredAlerts(sessionId, initialAlerts);
+      return initialAlerts;
+    }
+    return readStoredAlerts(sessionId) ?? [];
+  });
   const [revision, setRevision] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const appliedInitial = useRef(alertSignature(initialAlerts));
 
-  const show = useCallback((next: StockAlert[]) => {
-    setAlerts(next);
+  const show = useCallback(
+    (next: StockAlert[]) => {
+      setAlerts(next);
+      setRevision((r) => r + 1);
+      writeStoredAlerts(sessionId, next);
+    },
+    [sessionId],
+  );
+  const dismiss = useCallback(
+    (index: number) => {
+      setAlerts((prev) => {
+        const next = prev.filter((_, i) => i !== index);
+        writeStoredAlerts(sessionId, next);
+        return next;
+      });
+    },
+    [sessionId],
+  );
+
+  // A refresh can deliver the correction's alerts as new props without
+  // remounting, or remount later with none. Apply a new non-empty set, and
+  // remember it for the remount.
+  useEffect(() => {
+    const signature = alertSignature(initialAlerts);
+    if (signature === appliedInitial.current) return;
+    appliedInitial.current = signature;
+    if (initialAlerts.length === 0) return;
+    setAlerts(initialAlerts);
     setRevision((r) => r + 1);
-  }, []);
-  const dismiss = useCallback((index: number) => {
-    setAlerts((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+    writeStoredAlerts(sessionId, initialAlerts);
+  }, [initialAlerts, sessionId]);
 
   // The Pay button sits at the bottom of the page and the alerts at the top:
   // bring a new set into view so the shopper sees why nothing was charged.

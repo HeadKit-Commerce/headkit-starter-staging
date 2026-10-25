@@ -52,7 +52,10 @@ let container: HTMLDivElement;
 let root: Root;
 let handle: ((outcome: HoldOutcome) => Promise<void>) | null = null;
 
-async function mount(initialAlerts: StockAlert[] = []): Promise<void> {
+async function mount(
+  initialAlerts: StockAlert[] = [],
+  sessionId: string | null = null,
+): Promise<void> {
   const { StockAlertsProvider, useStockRefusal } =
     await import("./stock-alerts");
   function Probe() {
@@ -61,7 +64,7 @@ async function mount(initialAlerts: StockAlert[] = []): Promise<void> {
   }
   await act(async () => {
     root.render(
-      <StockAlertsProvider initialAlerts={initialAlerts}>
+      <StockAlertsProvider initialAlerts={initialAlerts} sessionId={sessionId}>
         <Probe />
       </StockAlertsProvider>,
     );
@@ -76,6 +79,7 @@ async function refuse(outcome: HoldOutcome): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionStorage.clear();
   Element.prototype.scrollIntoView = vi.fn();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -210,6 +214,32 @@ describe("useStockRefusal", () => {
     expect(setCartData).toHaveBeenCalledWith({ itemsCount: 3, items: [] });
     expect(goToBag).not.toHaveBeenCalled();
   });
+});
+
+it("shows a correction that arrives after mount, and keeps it when checkout remounts", async () => {
+  const removed: StockAlert = { kind: "removed", name: "Hold Last Unit" };
+  const sentence =
+    "Unfortunately Hold Last Unit is now unavailable and has been removed from your cart. You have not been charged.";
+  await mount([], "cs_test");
+  expect(container.textContent).not.toContain("Hold Last Unit");
+  await mount([removed], "cs_test");
+  expect(container.textContent).toContain(sentence);
+
+  // The shipping step's server action re-renders checkout and remounts this
+  // tree with no alerts of its own.
+  await act(async () => {
+    root.unmount();
+  });
+  root = createRoot(container);
+  await mount([], "cs_test");
+  expect(container.textContent).toContain(sentence);
+
+  await act(async () => {
+    root.unmount();
+  });
+  root = createRoot(container);
+  await mount([], "cs_other");
+  expect(container.textContent).not.toContain("Hold Last Unit");
 });
 
 it("renders the entry corrections (C1) and lets each alert be dismissed", async () => {

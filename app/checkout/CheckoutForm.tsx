@@ -312,6 +312,11 @@ function CheckoutSteps({
   // checkout-page-content; the provider keyed by sessionId remounts cleanly
   // and resumes at the current step with the cart-changed notice.
   const sessionExpiredHandledRef = useRef<string | null>(null);
+  // Set when this session's sync already corrected a line the store will not
+  // sell. A stock-save expiry can still land after that correction; treating
+  // the dead session as a cart change recreates checkout, drops the per-item
+  // alert, and sends the shopper back to Contact.
+  const stockCorrectedSessionRef = useRef<string | null>(null);
   const handleSessionExpired = useCallback(() => {
     if (!onRefreshSession) return;
     if (sessionExpiredHandledRef.current === sessionId) return;
@@ -371,10 +376,17 @@ function CheckoutSteps({
           // v3 §2.2). Not the auto-recreate — that would be refused by the
           // same gate.
           if (body?.code === CART_ITEM_UNAVAILABLE) {
+            stockCorrectedSessionRef.current = sessionId;
             await handleStockRefusal({
               status: "refused",
               issues: issuesFromSyncBody(body),
             });
+            return;
+          }
+          // The corrected bag already showed its alert. A stock-save expiry that
+          // arrives in the same moment must not recreate the session: that
+          // remount drops the alert and returns the shopper to Contact.
+          if (stockCorrectedSessionRef.current === sessionId) {
             return;
           }
           handleSessionExpired();
@@ -388,6 +400,11 @@ function CheckoutSteps({
             stripeShippingRateId: string;
           }> | null;
         };
+        // The corrected bag is now on the still-open session. A later, real
+        // cart change may expire it and should recreate as usual.
+        if (stockCorrectedSessionRef.current === sessionId) {
+          stockCorrectedSessionRef.current = null;
+        }
         onSyncComplete?.(data.shippingOptionMapping ?? null);
       })
       .catch(() => {});

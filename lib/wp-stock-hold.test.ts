@@ -268,6 +268,39 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
       expect(got.draftStatus).toBe("checkout-draft");
     });
 
+    it("refuses a PayPal check when admin stock is 0 without creating an order", () => {
+      const got = scenario("check_admin_zero");
+      expect(got.status).toBe(409);
+      expect(got.code).toBe("headkit_stock_hold_refused");
+      expect(got.issues).toEqual([
+        expect.objectContaining({
+          product_id: 501,
+          code: "out_of_stock",
+          available: 0,
+        }),
+      ]);
+      expect(got.orders).toBe(0);
+      expect(got.rows).toEqual({});
+      expect(got.calls).not.toContain("reserve:300100");
+      expect(got.sessionDraft).toBe(0);
+    });
+
+    it("answers ok to a stock check the admin quantity covers, and reserves nothing", () => {
+      const got = scenario("check_admin_covers");
+      expect(got.status).toBe(200);
+      expect(got.result).toMatchObject({ status: "ok" });
+      expect(got.orders).toBe(0);
+      expect(got.rows).toEqual({});
+      expect(got.calls.filter((c) => c.startsWith("reserve:"))).toHaveLength(0);
+    });
+
+    it("answers ok to a stock check of an empty cart", () => {
+      const got = scenario("check_empty_cart");
+      expect(got.status).toBe(200);
+      expect(got.result).toMatchObject({ status: "ok" });
+      expect(got.orders).toBe(0);
+    });
+
     it("refuses Pay when admin stock is short of the bag under an existing hold", () => {
       const got = scenario("hold_admin_short_while_own_hold");
       expect(got.status).toBe(409);

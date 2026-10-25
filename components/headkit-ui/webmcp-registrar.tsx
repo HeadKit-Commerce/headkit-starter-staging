@@ -13,6 +13,7 @@ import { isQuoteMode } from "@/lib/checkout-mode";
 import { hostedCheckoutUrl } from "@/lib/hosted-checkout";
 import { searchProducts } from "@/lib/search-actions";
 import { getWebMcpProduct } from "@/lib/webmcp-actions";
+import { markShopperRemovedLine } from "@/lib/shopper-cart-edit";
 import {
   registerWebMcpTools,
   resolveCheckoutPlan,
@@ -81,6 +82,7 @@ export function WebMcpRegistrar({
           return { ok: true, cart: result.cart as WebMcpCartSource };
         }
         if (update.action === "set_quantity" && update.quantity === 0) {
+          markShopperRemovedLine(update.key);
           const result = await removeCartItemAction(update.key);
           if (!result.success) {
             return {
@@ -103,6 +105,7 @@ export function WebMcpRegistrar({
           }
           return { ok: true, cart: result.cart as WebMcpCartSource };
         }
+        markShopperRemovedLine(update.key);
         const result = await removeCartItemAction(update.key);
         if (!result.success) {
           return {
@@ -113,6 +116,7 @@ export function WebMcpRegistrar({
         return { ok: true, cart: result.cart as WebMcpCartSource };
       },
       removeLine: async (key) => {
+        markShopperRemovedLine(key);
         const result = await removeCartItemAction(key);
         if (!result.success) {
           return {

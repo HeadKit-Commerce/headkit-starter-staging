@@ -32,8 +32,17 @@ import { cartNeedsAttention } from "@/lib/cart-issues";
 import { Input } from "@/components/ui/input";
 import { CartChangedBanner } from "@/components/checkout/cart-changed-banner";
 import type { Step } from "@/app/checkout/CheckoutForm";
-import { StockAlertsProvider } from "@/components/checkout/stock-alerts";
-import type { StockAlert } from "@/lib/stock-hold";
+import {
+  StockAlertsProvider,
+  useStockAlerts,
+} from "@/components/checkout/stock-alerts";
+import { lineDisplayName, type StockAlert } from "@/lib/stock-hold";
+import {
+  previousCheckoutLines,
+  rememberCheckoutLines,
+  scheduleForgetCheckoutLines,
+  unseenRemovedLines,
+} from "@/lib/shopper-cart-edit";
 import { checkoutBannerMessage } from "@/lib/checkout-failure";
 /**
  * The ONE banner mechanism for a failure that arrived at `/checkout` as
@@ -141,7 +150,10 @@ export function CheckoutPageContent({
   ...props
 }: CheckoutPageContentProps) {
   return (
-    <StockAlertsProvider initialAlerts={initialStockAlerts}>
+    <StockAlertsProvider
+      initialAlerts={initialStockAlerts}
+      sessionId={props.checkoutSession?.sessionId ?? null}
+    >
       <CheckoutPageBody {...props} />
     </StockAlertsProvider>
   );
@@ -160,6 +172,10 @@ function CheckoutPageBody({
 }: Omit<CheckoutPageContentProps, "initialStockAlerts">) {
   const router = useRouter();
   const { cartData, setCartData, toggleCart } = useCartContext();
+  const { show: showStockAlerts, alerts: stockAlertsOnScreen } =
+    useStockAlerts();
+  const stockAlertsRef = useRef(stockAlertsOnScreen);
+  const seenLinesRef = useRef<Map<string, string> | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [checkoutSession, setCheckoutSession] =
@@ -421,6 +437,32 @@ function CheckoutPageBody({
   // because `cookies().set()` is illegal during an RSC render. Zero-total
   // checkouts have no session → no-op.
   const activeSessionId = checkoutSession?.sessionId;
+
+  // A stock save during Delivery re-renders checkout and removes the line in
+  // that render (C1). The render that built the sold-out sentence can be
+  // replaced by the shipping step's refresh before it commits, so the sentence
+  // is also raised from the cart the shopper was just looking at.
+  useEffect(() => {
+    return () => scheduleForgetCheckoutLines();
+  }, []);
+  useEffect(() => {
+    stockAlertsRef.current = stockAlertsOnScreen;
+  }, [stockAlertsOnScreen]);
+  useEffect(() => {
+    if (!cartData) return;
+    const sessionId = activeSessionId ?? null;
+    const next = new Map(
+      (cartData.items ?? []).map((item) => [item.key, lineDisplayName(item)]),
+    );
+    const prev = seenLinesRef.current ?? previousCheckoutLines(sessionId);
+    seenLinesRef.current = next;
+    rememberCheckoutLines(sessionId, next);
+    const fresh = unseenRemovedLines(prev, next, stockAlertsRef.current);
+    if (fresh.length > 0) {
+      showStockAlerts([...stockAlertsRef.current, ...fresh]);
+    }
+  }, [cartData, activeSessionId, showStockAlerts]);
+
   useEffect(() => {
     if (!activeSessionId) return;
     void registerSession(activeSessionId);
