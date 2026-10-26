@@ -1,5 +1,5 @@
 import {
-  isStockAuthReleasedRefusal,
+  isCheckoutStockRefusal,
   orderRefusalFromSession,
   type OrderRefusalSessionLike,
 } from "./order-refusal";
@@ -27,7 +27,9 @@ export interface CheckoutReturnSession extends OrderRefusalSessionLike {
 export function sessionReturn(session: CheckoutReturnSession): SessionReturn {
   const refusal = orderRefusalFromSession(session);
   if (refusal) {
-    return isStockAuthReleasedRefusal(refusal)
+    // Sold out: the checkout page's own alerts. A refund card is the wrong
+    // sentence when the shopper was not charged.
+    return isCheckoutStockRefusal(refusal)
       ? { to: "stock" }
       : { to: "refused" };
   }

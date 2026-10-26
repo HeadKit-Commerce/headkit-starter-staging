@@ -8,7 +8,7 @@ import {
   logCheckoutFailure,
 } from "@/lib/checkout-failure";
 import {
-  isStockAuthReleasedRefusal,
+  isCheckoutStockRefusal,
   orderRefusalFromSession,
   type OrderRefusal,
 } from "@/lib/order-refusal";
@@ -24,9 +24,9 @@ const POLL_TIMEOUT_MS = 120_000;
  *
  * Polls immediately on mount, then every 2.5s for up to 120s, and acts on the
  * first terminal state:
- *  - stock auth released (`orderFailure` + authorization_released + out of
- *    stock) → `/checkout` immediately so `correctCartAtEntry` shows sold-out
- *    alerts. Never leave the shopper on this processing screen for that case.
+ *  - stock sell-out (`orderFailure` reason out of stock, partial or whole) →
+ *    `/checkout` immediately so `correctCartAtEntry` shows the sold-out
+ *    alerts. Never the refund card, and never this processing screen.
  *  - other post-payment order refusal (`session.orderFailure`) → render
  *    <OrderRefused> in place of `children`.
  *  - paid + REAL orderId/orderKey → order confirmation page
@@ -80,7 +80,7 @@ export function PaymentProcessingPoller({
           const refused = orderRefusalFromSession(session);
           if (refused) {
             stop();
-            if (isStockAuthReleasedRefusal(refused)) {
+            if (isCheckoutStockRefusal(refused)) {
               router.replace("/checkout");
               return;
             }

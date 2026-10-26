@@ -189,20 +189,33 @@ export function orderRefusalFromError(error: unknown): OrderRefusal | null {
   return null;
 }
 
+const CHECKOUT_STOCK_REASONS = new Set([
+  "woocommerce_rest_product_out_of_stock",
+  "woocommerce_rest_product_partially_out_of_stock",
+]);
+
 /**
- * Stock sold out while authorized (not captured): shopper must return to
- * `/checkout` for sold-out alerts — never a processing interstitial and never
- * a standalone OrderRefused dead-end that skips cart correction.
+ * Stock sold out before the order was placed. The shopper goes to `/checkout`,
+ * where the existing sold-out alerts say which lines changed and that they
+ * have not been charged. That is the screen for this case, including when a
+ * refund status was stamped: the refund card claims money moved and came back.
+ */
+export function isCheckoutStockRefusal(
+  refusal: OrderRefusal | null | undefined,
+): boolean {
+  if (!refusal) return false;
+  return CHECKOUT_STOCK_REASONS.has(refusal.reason);
+}
+
+/**
+ * Stock sold out while authorized (not captured). Narrower than
+ * {@link isCheckoutStockRefusal}, which is what the return pages branch on.
  */
 export function isStockAuthReleasedRefusal(
   refusal: OrderRefusal | null | undefined,
 ): boolean {
-  if (!refusal) return false;
-  if (refusal.refundStatus !== "authorization_released") return false;
-  return (
-    refusal.reason === "woocommerce_rest_product_out_of_stock" ||
-    refusal.reason === "woocommerce_rest_product_partially_out_of_stock"
-  );
+  if (!isCheckoutStockRefusal(refusal) || !refusal) return false;
+  return refusal.refundStatus === "authorization_released";
 }
 
 /**

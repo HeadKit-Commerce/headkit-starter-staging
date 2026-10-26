@@ -120,30 +120,42 @@ describe("cart return page (/checkout/success)", () => {
   const visit = () =>
     CartReturnPage({ searchParams: Promise.resolve({ session_id: "cs_1" }) });
 
-  it("renders OrderRefused for a stamped session and finalizes nothing", async () => {
+  it("sends a sold-out stamp back to checkout and finalizes nothing", async () => {
     getCheckoutSessionAction.mockResolvedValue({
       ...PAID,
       orderId: "0",
       orderFailure: {
         reason: "woocommerce_rest_product_out_of_stock",
+        message: "This item sold out before the payment could be completed.",
+        refundStatus: "succeeded",
+      },
+    });
+    await expect(visit()).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(redirectMock).toHaveBeenCalledWith("/checkout");
+    expect(processCheckoutAction).not.toHaveBeenCalled();
+  });
+
+  it("sends a thrown stock refusal back to checkout", async () => {
+    getCheckoutSessionAction.mockResolvedValue({ ...PAID, orderId: "0" });
+    processCheckoutAction.mockRejectedValue(REFUSED);
+    await expect(visit()).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(redirectMock).toHaveBeenCalledWith("/checkout");
+    // No poll for an order that can never exist.
+    expect(getCheckoutSessionAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders OrderRefused for a non-stock stamp", async () => {
+    getCheckoutSessionAction.mockResolvedValue({
+      ...PAID,
+      orderId: "0",
+      orderFailure: {
+        reason: "woocommerce_rest_cart_coupon_error",
         refundStatus: "succeeded",
       },
     });
     const page = element(await visit());
     expect(page.type).toBe(OrderRefused);
     expect(processCheckoutAction).not.toHaveBeenCalled();
-  });
-
-  it("renders OrderRefused when its own finalize throws ORDER_REFUSED", async () => {
-    getCheckoutSessionAction.mockResolvedValue({ ...PAID, orderId: "0" });
-    processCheckoutAction.mockRejectedValue(REFUSED);
-    const page = element(await visit());
-    expect(page.type).toBe(OrderRefused);
-    expect(page.props["refusal"]).toEqual({
-      reason: "woocommerce_rest_product_out_of_stock",
-    });
-    // No poll for an order that can never exist.
-    expect(getCheckoutSessionAction).toHaveBeenCalledTimes(1);
   });
 
   it("renders CompleteOrder (no order id) when its finalize throws ORDER_VALIDATION", async () => {

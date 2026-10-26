@@ -15,7 +15,7 @@ import {
   logCheckoutFailure,
 } from "@/lib/checkout-failure";
 import {
-  isStockAuthReleasedRefusal,
+  isCheckoutStockRefusal,
   logOrderRefusal,
   orderRefusalFromError,
   orderRefusalFromSession,
@@ -43,7 +43,10 @@ import {
  *   (recoverable: the WooCommerce cart normally outlives the Stripe session,
  *   and `/checkout` mints a fresh one; only its null-cart gate decides a dead
  *   end — `lib/checkout-failure.ts`.)
- * - session carries `orderFailure`      → the shopper PAID and WooCommerce
+ * - session carries a stock `orderFailure` → /checkout. The checkout page's
+ *   sold-out alerts are the screen for that case. A refund card is the wrong
+ *   sentence when the shopper was not charged.
+ * - any other `orderFailure`            → the shopper paid and WooCommerce
  *   refused the order; commerce has already refunded or released the payment,
  *   so render <OrderRefused>. Checked BEFORE every branch below: a refused
  *   session is otherwise an ordinary complete+paid session whose order id
@@ -62,9 +65,10 @@ import {
  * asynchronously; whichever runs first wins (WC POST /checkout is safe to call
  * once the cart is active).
  *
- * That finalize can itself be refused after the payment: `ORDER_REFUSED`
- * (terminal, refunded → <OrderRefused>) or `ORDER_VALIDATION` (one detail to
- * correct, still paid → <CompleteOrder>, which retries the same session). Any
+ * That finalize can itself be refused after the payment: a stock
+ * `ORDER_REFUSED` goes to /checkout. Any other `ORDER_REFUSED` is terminal
+ * (refunded → <OrderRefused>). `ORDER_VALIDATION` asks for one detail
+ * (still paid → <CompleteOrder>, which retries the same session). Any
  * other failure keeps the poll-the-session path, and the last resort is the
  * processing screen — never the error boundary.
  */
@@ -78,7 +82,7 @@ type Disposition =
   | "retry" // session open (failed/canceled) → /checkout?error=payment_failed
   | "expired" // session expired → /checkout?error=session_expired
   | "cart_changed" // deliberately expired: cart drifted (ENG-784) → /checkout?error=cart_changed
-  | "stock_retry" // auth released for sold-out → /checkout (alerts via correctCartAtEntry)
+  | "stock_retry" // sold out → /checkout (alerts via correctCartAtEntry)
   | "order_refused" // paid, then WooCommerce refused + commerce refunded → render UI
   | "order_validation" // paid, then WooCommerce refused ONE detail → render the complete-order form
   | "pending" // async payment processing (or paid but unresolved) → render UI
@@ -115,9 +119,9 @@ export default async function CheckoutSuccessPage({
     refusal = orderRefusalFromSession(session);
     if (refusal) {
       logOrderRefusal(refusal);
-      // Sold-out under authorize-first: back to checkout with per-item alerts.
-      // Never PaymentProcessing, never a standalone OrderRefused dead-end.
-      disposition = isStockAuthReleasedRefusal(refusal)
+      // Sold out: the checkout page's alerts ("you have not been charged").
+      // The refund card is for a refusal that is not a stock sell-out.
+      disposition = isCheckoutStockRefusal(refusal)
         ? "stock_retry"
         : "order_refused";
     } else if (
@@ -285,7 +289,9 @@ export default async function CheckoutSuccessPage({
       }
 
       if (refusal) {
-        disposition = "order_refused";
+        disposition = isCheckoutStockRefusal(refusal)
+          ? "stock_retry"
+          : "order_refused";
       } else if (validationFailure) {
         disposition = "order_validation";
       } else if (orderId && orderId !== "0" && orderKey) {

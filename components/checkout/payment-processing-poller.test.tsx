@@ -75,14 +75,14 @@ describe("PaymentProcessingPoller", () => {
     expect(container.textContent).toBe("Your payment is processing");
   });
 
-  it("swaps to the refused screen in place when the session carries a refusal", async () => {
+  it("swaps to the refused screen in place when the session carries a non-stock refusal", async () => {
     getCheckoutSessionAction.mockResolvedValue({
       status: "complete",
       paymentStatus: "paid",
       orderId: "0",
       orderFailure: {
-        reason: "woocommerce_rest_product_out_of_stock",
-        message: "Item is out of stock.",
+        reason: "woocommerce_rest_cart_coupon_error",
+        message: "A discount code on your order is no longer valid.",
         refundStatus: "succeeded",
       },
     });
@@ -110,14 +110,14 @@ describe("PaymentProcessingPoller", () => {
     expect(replace).toHaveBeenCalledWith("/checkout");
   });
 
-  it("routes stock auth-released refusals to /checkout, not OrderRefused", async () => {
+  it("routes a sold-out refusal to /checkout, not the refund card", async () => {
     getCheckoutSessionAction.mockResolvedValue({
       status: "complete",
-      paymentStatus: "unpaid",
+      paymentStatus: "paid",
       orderFailure: {
         reason: "woocommerce_rest_product_out_of_stock",
-        message: "Item is out of stock.",
-        refundStatus: "authorization_released",
+        message: "This item sold out before the payment could be completed.",
+        refundStatus: "succeeded",
       },
     });
     await mount();

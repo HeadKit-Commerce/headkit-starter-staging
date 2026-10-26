@@ -38,28 +38,36 @@ describe("sessionReturn", () => {
     ).toEqual({ to: "cart_changed" });
   });
 
-  it("sends a released authorization back to the bag", () => {
-    expect(
-      sessionReturn({
-        ...open,
-        status: "complete",
-        paymentStatus: "unpaid",
-        orderFailure: {
-          reason: "woocommerce_rest_product_out_of_stock",
-          refundStatus: "authorization_released",
-        },
-      }),
-    ).toEqual({ to: "stock" });
+  it("sends a sold-out refusal to the checkout alerts, refund stamp or not", () => {
+    for (const refundStatus of [
+      "authorization_released",
+      "succeeded",
+      "pending",
+    ]) {
+      expect(
+        sessionReturn({
+          ...open,
+          status: "complete",
+          paymentStatus: "paid",
+          orderFailure: {
+            reason: "woocommerce_rest_product_out_of_stock",
+            message:
+              "This item sold out before the payment could be completed.",
+            refundStatus,
+          },
+        }),
+      ).toEqual({ to: "stock" });
+    }
   });
 
-  it("keeps a captured-then-refunded refusal on the refusal page", () => {
+  it("keeps a non-stock refusal on the refusal page", () => {
     expect(
       sessionReturn({
         ...open,
         status: "complete",
         paymentStatus: "paid",
         orderFailure: {
-          reason: "woocommerce_rest_product_out_of_stock",
+          reason: "woocommerce_rest_cart_coupon_error",
           refundStatus: "succeeded",
         },
       }),
