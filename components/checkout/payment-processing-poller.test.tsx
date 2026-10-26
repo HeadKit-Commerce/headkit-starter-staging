@@ -18,13 +18,21 @@ import { createRoot, type Root } from "react-dom/client";
 const replace = vi.fn();
 const getCheckoutSessionAction = vi.fn();
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+// One instance, as Next's own useRouter returns: a fresh object per render
+// would restart the poller's effect on every state change.
+const router = { replace };
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("@/app/checkout/actions", () => ({
   getCheckoutSessionAction: (...args: unknown[]) =>
     getCheckoutSessionAction(...args),
 }));
 
 const { PaymentProcessingPoller } = await import("./payment-processing-poller");
+const {
+  PAYMENT_TIMED_OUT_BODY,
+  PAYMENT_TIMED_OUT_HEADING,
+  PAYMENT_TIMED_OUT_REASSURANCE,
+} = await import("./payment-processing-timed-out");
 
 let container: HTMLDivElement;
 let root: Root;
@@ -63,10 +71,24 @@ async function mount(): Promise<void> {
   });
 }
 
-async function tick(): Promise<void> {
+async function tick(ms = 2_500): Promise<void> {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(ms);
   });
+}
+
+/** Runs out the fast window (120s) with the session still settling. */
+async function timeOut(): Promise<void> {
+  await mount();
+  await tick(120_000);
+}
+
+function checkAgainButton(): HTMLButtonElement {
+  const button = [...container.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Check again"),
+  );
+  if (!button) throw new Error("no Check again button");
+  return button;
 }
 
 describe("PaymentProcessingPoller", () => {
@@ -171,5 +193,94 @@ describe("PaymentProcessingPoller", () => {
     expect(replace).toHaveBeenCalledWith(
       "/checkout/success/12?key=k&session_id=cs_1",
     );
+  });
+
+  describe("when the fast window runs out", () => {
+    it("keeps the processing screen up until 120s", async () => {
+      await mount();
+      await tick(117_500);
+      expect(container.textContent).toBe("Your payment is processing");
+    });
+
+    it("replaces the processing screen with copy that is true either way", async () => {
+      await timeOut();
+      const text = container.textContent ?? "";
+      expect(text).not.toContain("Your payment is processing");
+      expect(text).toContain(PAYMENT_TIMED_OUT_HEADING);
+      expect(text).toContain(PAYMENT_TIMED_OUT_BODY);
+      expect(text).toContain(PAYMENT_TIMED_OUT_REASSURANCE);
+      // Never a success or a failure claim.
+      expect(text).not.toMatch(/order (has been|was) (confirmed|placed)/i);
+      expect(text).not.toMatch(/couldn't place|not placed|failed|declined/i);
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it("keeps checking behind it and routes a late paid order immediately", async () => {
+      await timeOut();
+      getCheckoutSessionAction.mockResolvedValue({
+        status: "complete",
+        paymentStatus: "paid",
+        orderId: "12",
+        orderKey: "k",
+      });
+      await tick(15_000);
+      expect(replace).toHaveBeenCalledWith(
+        "/checkout/success/12?key=k&session_id=cs_1",
+      );
+    });
+
+    it("shows the refusal when commerce stamps a refused capture later", async () => {
+      await timeOut();
+      getCheckoutSessionAction.mockResolvedValue({
+        status: "complete",
+        paymentStatus: "unpaid",
+        paymentIntentStatus: "canceled",
+        paymentMethodType: "card",
+        orderFailure: {
+          reason: "headkit_capture_refused",
+          message:
+            "We couldn't complete your payment with your payment provider, so your order was not placed.",
+          refundStatus: "authorization_released",
+        },
+      });
+      await tick(15_000);
+      const text = container.textContent ?? "";
+      expect(text).toContain("We couldn't place your order");
+      expect(text).toContain(
+        "We couldn't complete your payment with your payment provider",
+      );
+      expect(text).toContain("Your card was not charged.");
+      expect(text).not.toContain(PAYMENT_TIMED_OUT_HEADING);
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it("checks again straight away when asked", async () => {
+      await timeOut();
+      const reads = getCheckoutSessionAction.mock.calls.length;
+      getCheckoutSessionAction.mockResolvedValue({
+        status: "expired",
+        paymentStatus: "unpaid",
+      });
+      await act(async () => {
+        checkAgainButton().click();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(getCheckoutSessionAction.mock.calls.length).toBe(reads + 1);
+      expect(replace).toHaveBeenCalledWith("/checkout?error=session_expired");
+    });
+
+    it("stops the background checks after 15 minutes but still checks on request", async () => {
+      await timeOut();
+      await tick(15 * 60_000);
+      const reads = getCheckoutSessionAction.mock.calls.length;
+      await tick(60_000);
+      expect(getCheckoutSessionAction.mock.calls.length).toBe(reads);
+      await act(async () => {
+        checkAgainButton().click();
+        await Promise.resolve();
+      });
+      expect(getCheckoutSessionAction.mock.calls.length).toBe(reads + 1);
+    });
   });
 });
