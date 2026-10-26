@@ -8,11 +8,9 @@ import { beforeAll, describe, expect, it } from "vitest";
  *
  * WHY A STOREFRONT SUITE GUARDS A THEME MONEY PATH. At finalize the theme
  * claims against admin `stock_quantity` (POS/feeds win over the web hold). On
- * a signed AUTHORIZED finalize (a Stripe hold or a PayPal authorization) it
- * leaves the order pending for commerce to capture; when only part of the bag
- * is covered it first REDUCES the order to what can ship (theme 0.4.99), and
- * when nothing is covered it refuses with 409 before any order exists so
- * commerce releases the hold. On a signed PAID finalize when
+ * a signed AUTHORIZED finalize (manual capture) it records
+ * `_headkit_stock_claim_short_total` and leaves the order pending so commerce
+ * can cancel the auth instead of capturing. On a signed PAID finalize when
  * part of the bag is gone, it creates the order anyway, parks On hold, and
  * refunds the short lines (safety net when money already stuck). Nothing in
  * the storefront can observe any of that, so this suite drives the theme
@@ -48,12 +46,7 @@ interface ShortfallRecord {
   cashAmount: string;
   giftCardAmount: string;
   attempts: number;
-  lines: {
-    itemId: number;
-    quantity: number;
-    ordered?: number;
-    refundAmount: string;
-  }[];
+  lines: { itemId: number; quantity: number; refundAmount: string }[];
 }
 
 /** What one scenario left behind, as the harness reports it. */
@@ -76,20 +69,6 @@ interface Scenario {
   ran: { delay: number }[];
   notes: string[];
   claimSql: string[];
-  /** Order total after the finalize (the capture amount on the authorized path). */
-  total: number | string;
-  /** Line item ids left on the order, and those the finalize removed. */
-  itemIds: number[];
-  removedItems: number[];
-  lineState: Record<
-    string,
-    {
-      qty: number;
-      total: number | string;
-      subtotal: number | string;
-      taxes: Record<string, number | string>;
-    }
-  >;
 }
 
 interface HarnessOutput {
@@ -219,66 +198,19 @@ describe.skipIf(SKIPPING)(SUITE_TITLE, () => {
     expect(s.record).toBeNull();
   });
 
-  it("reduces a partly short Stripe-held bag to the covered line instead of refusing it", () => {
+  it("refuses authorized shortfall with 409 before a customer order or claim meta", () => {
     const s = scenario("authorized_same_cart");
-    expect(s.finalize.stopped).toBe("authorized");
-    expect(s.status).toBe("pending");
-    expect(s.itemIds).toEqual([12]);
-    expect(s.removedItems).toEqual([11]);
-    expect(Number(s.total)).toBe(201);
-    // The reduced order is claimed in full; the record says what was dropped.
-    expect(s.claimShortTotal).toBe(0);
-    expect(record(s)).toMatchObject({
-      state: "dropped",
-      refundTotal: "17.27",
-      cashAmount: "0.00",
-      lines: [{ itemId: 11, quantity: 1, refundAmount: "17.27" }],
-    });
-    expect(s.gatewayCalls).toEqual([]);
-    expect(s.refunds).toEqual([]);
-    expect(s.ran).toEqual([]);
-  });
-
-  it("reduces a partly short PayPal-authorized line to the units left, totals recalculated", () => {
-    const s = scenario("paypal_authorized_partly_short");
-    expect(s.finalize.stopped).toBe("authorized");
-    expect(s.itemIds).toEqual([11, 12]);
-    expect(s.lineState["11"]).toMatchObject({
-      qty: 2,
-      total: "10.47",
-      taxes: { "1": "1.05" },
-    });
-    expect(Number(s.total)).toBe(55.52);
-    expect(s.items["11"]).toMatchObject({ claimed: 2, short: 1 });
-    expect(record(s)).toMatchObject({
-      state: "dropped",
-      refundTotal: "5.75",
-      lines: [{ itemId: 11, quantity: 1, ordered: 3 }],
-    });
-    expect(s.stock["101"]).toBe(2);
-    expect(s.claimShortTotal).toBe(0);
-  });
-
-  it("never refunds a dropped record, even when the settle step runs", () => {
-    const s = scenario("paypal_authorized_partly_short_settle");
-    expect(s.gatewayCalls).toEqual([]);
-    expect(s.refunds).toEqual([]);
-    expect(record(s).state).toBe("dropped");
-  });
-
-  it("refuses an entirely short PayPal-authorized bag with 409 before any order", () => {
-    const s = scenario("paypal_authorized_all_short");
-    expect(s.finalize).toMatchObject({
-      stopped: "update_order",
-      status: 409,
-      code: "woocommerce_rest_product_out_of_stock",
-    });
-    expect(s.status).toBe("checkout-draft");
-    expect(s.removedItems).toEqual([]);
+    expect(s.finalize.status).toBe(409);
+    expect([
+      "woocommerce_rest_product_out_of_stock",
+      "woocommerce_rest_product_partially_out_of_stock",
+    ]).toContain(s.finalize.code);
+    expect(s.finalize.stopped).toBe("validate_cart");
+    expect(s.items["11"]?.claimed).toBe("");
+    expect(s.items["11"]?.short).toBe("");
     expect(s.record).toBeNull();
-    expect(s.claimShortTotal).toBeNull();
-    expect(Object.keys(s.emails)).toEqual([]);
     expect(s.gatewayCalls).toEqual([]);
+    expect(s.ran).toEqual([]);
   });
 
   it("records claim_short_total=0 when authorized and fully covered so commerce may capture", () => {

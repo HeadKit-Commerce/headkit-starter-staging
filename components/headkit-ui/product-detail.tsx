@@ -202,14 +202,6 @@ const ADDON_FORM_ERROR_COPY =
  */
 const ADDON_DRIFT_CODE = "headkit_addon_option_drift";
 
-/**
- * Commerce's code for an add-to-cart WooCommerce refused for stock — out of
- * stock, or more than is left once other checkouts' holds are counted. It is
- * not an add-on rejection: it names no group, and its sentence is commerce's
- * own, written for a shopper, so it is shown as it is and never attributed.
- */
-const CART_STOCK_CODE = "CART_STOCK_UNAVAILABLE";
-
 /** Anchors the disabled CTA to the reason it is disabled. */
 const ADDON_UPLOAD_NOTICE_ID = "addon-upload-notice";
 
@@ -764,12 +756,6 @@ export function ProductDetail({
     if (!addonError) {
       setAddonErrors({});
       setAddonFormError(null);
-      return;
-    }
-
-    if (addonError.code === CART_STOCK_CODE) {
-      setAddonErrors({});
-      setAddonFormError(decodeHtmlEntities(addonError.message));
       return;
     }
 

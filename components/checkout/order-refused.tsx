@@ -59,11 +59,7 @@ export function OrderRefused({
         </h1>
         <p className="text-gray-600">{orderRefusalBody(refusal)}</p>
         <p className="text-gray-600">
-          {orderRefusalMoneySentence(
-            refusal.refundStatus,
-            amount,
-            refusal.paymentMethodType,
-          )}
+          {orderRefusalMoneySentence(refusal.refundStatus, amount)}
         </p>
 
         <div className="space-y-4">

@@ -9,12 +9,9 @@ import { PaymentProcessingPoller } from "@/components/checkout/payment-processin
  * /checkout/success/[orderId], ENG-789).
  *
  * ENG-784: when `sessionId` is provided, a client poller upgrades this static
- * screen — it polls the session every 2.5s (≤120s) and auto-routes to the order
- * confirmation once paid, or back to `/checkout` on cancel/expiry. When that
- * window runs out it swaps this screen for <PaymentProcessingTimedOut>, whose
- * copy holds whether the payment is still settling or was released, and keeps
- * checking slowly behind it. The poller only reads/routes; the webhook remains
- * the sole capture authority (D4).
+ * screen — it polls the session every 2.5s (≤60s) and auto-routes to the order
+ * confirmation once paid, or back to `/checkout` on cancel/expiry. The poller
+ * only reads/routes; the webhook remains the sole capture authority (D4).
  *
  * The poller WRAPS this screen rather than sitting beside it, which is what
  * lets a post-payment order refusal replace it with no flash of "processing":
@@ -36,7 +33,7 @@ export function PaymentProcessing({
 } = {}): React.ReactElement {
   if (!sessionId) return <PaymentProcessingScreen orderId={orderId} />;
   return (
-    <PaymentProcessingPoller sessionId={sessionId} orderId={orderId}>
+    <PaymentProcessingPoller sessionId={sessionId}>
       <PaymentProcessingScreen orderId={orderId} />
     </PaymentProcessingPoller>
   );

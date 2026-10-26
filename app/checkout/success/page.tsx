@@ -16,8 +16,6 @@ import {
 } from "@/lib/checkout-failure";
 import {
   isStockAuthReleasedRefusal,
-  sessionPaymentMethodType,
-  stockRetryPath,
   logOrderRefusal,
   orderRefusalFromError,
   orderRefusalFromSession,
@@ -101,9 +99,6 @@ export default async function CheckoutSuccessPage({
   let resolvedOrderId: string | undefined;
   let resolvedOrderKey: string | undefined;
   let refusal: OrderRefusal | null = null;
-  // The confirmed payment method of a sold-out authorized payment, so the
-  // `/checkout` alerts can say who returns any money already taken.
-  let stockRetryMethod: string | null = null;
   // Not refunded — which is why it is its own disposition, not a refusal reason.
   let validationFailure: OrderValidationFailure | null = null;
   let validationBilling: OrderValidationAddressLike | null = null;
@@ -124,7 +119,6 @@ export default async function CheckoutSuccessPage({
       disposition = isStockAuthReleasedRefusal(refusal)
         ? "stock_retry"
         : "order_refused";
-      stockRetryMethod = refusal.paymentMethodType ?? null;
     } else if (session.status === "open") {
       // Payment failed or canceled (Afterpay decline/cancel returns here with
       // the session still open and remountable). Send the shopper back to
@@ -143,7 +137,6 @@ export default async function CheckoutSuccessPage({
       // PaymentProcessing for that. Async BNPL still settling stays pending.
       if (session.paymentIntentStatus === "canceled") {
         disposition = "stock_retry";
-        stockRetryMethod = sessionPaymentMethodType(session);
       } else {
         disposition = "pending";
       }
@@ -320,7 +313,7 @@ export default async function CheckoutSuccessPage({
     redirect("/checkout?error=cart_changed");
   }
   if (disposition === "stock_retry") {
-    redirect(stockRetryPath(stockRetryMethod));
+    redirect("/checkout");
   }
   if (disposition === "error") {
     redirect(checkoutFailurePath("processing_error"));

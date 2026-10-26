@@ -25,8 +25,6 @@ import {
   setOption,
   setStock,
   stockOf,
-  stripeAccount,
-  stripeApi,
   wooOrder,
 } from "./stock-hold-helpers";
 
@@ -163,30 +161,6 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
       session.metadata.headkit_hold_order_id,
       "the session names the held draft",
     ).toBe(String(orderId));
-
-    // The e2e store is hold-first (scripts/e2e-ci-stack.sh): the card was only
-    // AUTHORIZED at confirm and commerce's webhook captured it after the stock
-    // re-check — the paid path this spec now exercises.
-    const account = await stripeAccount(api);
-    const read = await stripeApi<{ payment_intent: string | null }>(
-      api,
-      "GET",
-      `checkout/sessions/${sessionId}`,
-      {},
-      account,
-    );
-    const intent = await stripeApi<{
-      status: string;
-      amount_received: number;
-      payment_method_options?: { card?: { capture_method?: string } };
-    }>(api, "GET", `payment_intents/${read.payment_intent}`, {}, account);
-    expect(
-      intent.payment_method_options?.card?.capture_method,
-      "hold-first: the card was held, not captured at confirm",
-    ).toBe("manual");
-    expect(intent.status, "captured after the stock re-check").toBe(
-      "succeeded",
-    );
   });
 
   test("decline: the hold is released, the shopper stays on Payment, the retry completes the same draft (case 8)", async ({

@@ -116,14 +116,6 @@ describe("alert wording (plan v2 §2.3, starter says 'cart')", () => {
       "Unfortunately only 1 × Gloves is available. Your cart has been updated. You have not been charged.",
     ],
     [
-      { kind: "removed", name: "Gloves", releasedBy: "afterpay" },
-      "Unfortunately Gloves is now unavailable and has been removed from your cart. Any payment taken will be returned by Afterpay.",
-    ],
-    [
-      { kind: "reduced", name: "Gloves", quantity: 2, releasedBy: "klarna" },
-      "Unfortunately only 2 × Gloves are available. Your cart has been updated. Any payment taken will be returned by Klarna.",
-    ],
-    [
       { kind: "unnamed" },
       "Unfortunately items in your cart are now unavailable. Your cart has been updated.",
     ],

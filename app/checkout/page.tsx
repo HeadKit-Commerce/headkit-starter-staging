@@ -3,7 +3,6 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { correctCartAtEntry } from "@/lib/checkout-stock-entry";
-import { parseReleasedBy } from "@/lib/order-refusal";
 import { hasBlockingCartIssues } from "@/lib/cart-issues";
 import { bagUrl, type StockAlert } from "@/lib/stock-hold";
 import { CheckoutSessionGate } from "./checkout-session-gate";
@@ -32,7 +31,7 @@ import { normalizeSiteUrl, resolveSiteUrl } from "@/lib/site-url";
 export default async function CheckoutPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; released_by?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   // Nothing on this page may run before a real request. Every read below is
   // bound to the shopper's cookie-backed cart, and a null cart renders as a
@@ -51,7 +50,7 @@ export default async function CheckoutPage({
   // (e.g. Afterpay declines) back here with ?error=payment_failed for an
   // in-place retry. Reading searchParams keeps the page dynamic — it already
   // is (cookie-based cart fetch).
-  const { error, released_by: releasedByParam } = await searchParams;
+  const { error } = await searchParams;
   const paymentFailed = error === "payment_failed";
   // ENG-784: BNPL returns whose session was deliberately expired because the
   // cart drifted land here with ?error=cart_changed — cart intact, fresh
@@ -122,13 +121,7 @@ export default async function CheckoutPage({
 
   // Checkpoint C1: correct the cart before showing the page.
   const stockAlerts: StockAlert[] = [];
-  // A sold-out Afterpay/Klarna payment arrives with ?released_by= so the
-  // alerts say who returns any money taken (lib/order-refusal.ts).
-  cart = await correctCartAtEntry(
-    cart,
-    stockAlerts,
-    parseReleasedBy(releasedByParam),
-  );
+  cart = await correctCartAtEntry(cart, stockAlerts);
 
   // The store still reports a line it will not sell that could not be tied to
   // one cart line, so nothing above could correct it, and commerce refuses a
