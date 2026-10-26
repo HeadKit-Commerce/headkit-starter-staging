@@ -4,7 +4,12 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { correctCartAtEntry } from "@/lib/checkout-stock-entry";
 import { hasBlockingCartIssues } from "@/lib/cart-issues";
-import { bagUrl, type StockAlert } from "@/lib/stock-hold";
+import {
+  bagAlertsFromSearch,
+  bagUrl,
+  BAG_ALERTS_PARAM,
+  type StockAlert,
+} from "@/lib/stock-hold";
 import { CheckoutSessionGate } from "./checkout-session-gate";
 import type { CartFieldsFragment } from "@headkit/sdk";
 import { getFullCartAction } from "@/lib/cart-actions";
@@ -31,7 +36,7 @@ import { normalizeSiteUrl, resolveSiteUrl } from "@/lib/site-url";
 export default async function CheckoutPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; bag_alerts?: string }>;
 }) {
   // Nothing on this page may run before a real request. Every read below is
   // bound to the shopper's cookie-backed cart, and a null cart renders as a
@@ -50,7 +55,7 @@ export default async function CheckoutPage({
   // (e.g. Afterpay declines) back here with ?error=payment_failed for an
   // in-place retry. Reading searchParams keeps the page dynamic — it already
   // is (cookie-based cart fetch).
-  const { error } = await searchParams;
+  const { error, bag_alerts: bagAlerts } = await searchParams;
   const paymentFailed = error === "payment_failed";
   // ENG-784: BNPL returns whose session was deliberately expired because the
   // cart drifted land here with ?error=cart_changed — cart intact, fresh
@@ -119,8 +124,11 @@ export default async function CheckoutPage({
     redirect(shopifyCheckout);
   }
 
-  // Checkpoint C1: correct the cart before showing the page.
-  const stockAlerts: StockAlert[] = [];
+  // Checkpoint C1: correct the cart before showing the page. Alerts carried
+  // from /checkout/returning are shown even when this read is already clean.
+  const stockAlerts: StockAlert[] = bagAlertsFromSearch(
+    bagAlerts ? `?${BAG_ALERTS_PARAM}=${encodeURIComponent(bagAlerts)}` : "",
+  );
   cart = await correctCartAtEntry(cart, stockAlerts);
 
   // The store still reports a line it will not sell that could not be tied to
@@ -154,7 +162,11 @@ export default async function CheckoutPage({
       "Checkout return URL has no origin (store domain, request host, and NEXT_PUBLIC_FRONTEND_URL are all empty)",
     );
   }
-  const returnUrl = `${siteOrigin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
+  // Afterpay's first hop is Stripe's return bridge. While the session is
+  // open, that bridge forwards to this URL. /checkout/returning paints
+  // "Checking stock availability" before it sends a sold-out bag back to
+  // checkout or a successful payment on to /checkout/success.
+  const returnUrl = `${siteOrigin}/checkout/returning?session_id={CHECKOUT_SESSION_ID}`;
   const successBaseUrl = siteOrigin;
 
   // CKA-04 prefill + ENG-801: resolve the shopper's email server-side SOLELY

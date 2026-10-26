@@ -33,11 +33,12 @@ import {
  * after the embedded/redirect payment flow completes — success OR failure.
  * The page branches on the Stripe session status (ENG-789):
  *
- * - status "open"                       → payment failed or was canceled
- *   (redirect BNPL methods like Afterpay return here on decline/cancel).
- *   Redirect to /checkout?error=payment_failed — the checkout page creates a
- *   fresh Stripe session on load and the cart is preserved, so this is an
- *   in-place retry.
+ * - status "open"                       → payment failed, canceled, or the
+ *   shopper is back from Afterpay before the charge. Send them to
+ *   /checkout/returning, which shows "Checking stock availability" and then
+ *   either the sold-out bag or the payment-failed retry.
+ * - status "expired" + stock_unavailable → /checkout (the bag was already
+ *   corrected; C1 shows the sold-out alert)
  * - status "expired"                    → /checkout?error=session_expired
  *   (recoverable: the WooCommerce cart normally outlives the Stripe session,
  *   and `/checkout` mints a fresh one; only its null-cart gate decides a dead
@@ -119,10 +120,14 @@ export default async function CheckoutSuccessPage({
       disposition = isStockAuthReleasedRefusal(refusal)
         ? "stock_retry"
         : "order_refused";
-    } else if (session.status === "open") {
-      // Payment failed or canceled (Afterpay decline/cancel returns here with
-      // the session still open and remountable). Send the shopper back to
-      // /checkout for an in-place retry with a fresh session + preserved cart.
+    } else if (
+      session.status === "open" &&
+      session.paymentStatus !== "paid" &&
+      session.paymentStatus !== "no_payment_required"
+    ) {
+      // Afterpay decline/cancel, or a return before the charge. The returning
+      // page checks the bag and shows the stock spinner. A paid session must
+      // not take this hop: it would bounce straight back here.
       disposition = "retry";
     } else if (session.status === "expired") {
       // ENG-784: expired_reason=cart_changed means mechanism 1 deliberately
@@ -131,7 +136,11 @@ export default async function CheckoutSuccessPage({
       // fresh session on load — send them there with the cart-changed banner
       // instead of the dead-end session_expired error page.
       disposition =
-        session.expiredReason === "cart_changed" ? "cart_changed" : "expired";
+        session.expiredReason === "cart_changed"
+          ? "cart_changed"
+          : session.expiredReason === "stock_unavailable"
+            ? "stock_retry"
+            : "expired";
     } else if (session.paymentStatus === "unpaid") {
       // Authorize-first stock refuse cancels the PI before capture — never show
       // PaymentProcessing for that. Async BNPL still settling stays pending.
@@ -304,7 +313,7 @@ export default async function CheckoutSuccessPage({
     );
   }
   if (disposition === "retry") {
-    redirect("/checkout?error=payment_failed");
+    redirect(`/checkout/returning?session_id=${encodeURIComponent(sessionId)}`);
   }
   if (disposition === "expired") {
     redirect(checkoutFailurePath("session_expired"));
