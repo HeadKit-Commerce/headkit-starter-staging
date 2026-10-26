@@ -37,6 +37,7 @@ import {
   personalSavedShippingAddress,
 } from "@/lib/checkout-address-seed";
 import { useCheckoutActions } from "@/app/checkout/checkout-actions-context";
+import { personNameFromAddressValue } from "@/lib/person-name";
 import { useToast } from "@/hooks/use-toast";
 
 interface PickupLocation {
@@ -647,8 +648,13 @@ const DeliveryMethodStep: React.FC<DeliveryMethodStepProps> = ({
                   }
                   if (event.complete && event.value) {
                     const { address, firstName, lastName, name } = event.value;
-                    const first = (name?.split(" ")?.[0] || firstName) ?? "";
-                    const last = (name?.split(" ")?.[1] || lastName) ?? "";
+                    const parsed = personNameFromAddressValue({
+                      name,
+                      firstName,
+                      lastName,
+                    });
+                    const first = parsed.firstName;
+                    const last = parsed.lastName;
                     const addr = address ?? {};
                     const existingPhone =
                       form.getValues("shippingAddress.phone") ?? "";

@@ -37,6 +37,10 @@ import {
   expressShippingRatesFromCart,
 } from "@/lib/express-pi-shipping";
 import { buildCheckoutAppearance } from "@/lib/stripe-appearance";
+import {
+  personNameFromAddressValue,
+  surnameFromDonor,
+} from "@/lib/person-name";
 
 function hasAvailableWallet(
   paymentMethods:
@@ -265,10 +269,19 @@ function ExpressCheckoutPiInner({
 
       const ship = event.shippingAddress;
       const dest = expressSheetDestination(ship);
-      const billingName = event.billingDetails?.name ?? ship?.name ?? "";
-      const nameParts = billingName.trim().split(/\s+/);
-      const firstName = nameParts[0] ?? "";
-      const lastName = nameParts.slice(1).join(" ");
+      const parsed = personNameFromAddressValue({
+        name: event.billingDetails?.name ?? ship?.name ?? "",
+      });
+      const firstName = parsed.firstName;
+      const lastName =
+        surnameFromDonor(
+          {
+            firstName,
+            lastName: parsed.lastName,
+            address1: event.billingDetails?.address?.line1 ?? dest?.address1,
+          },
+          dest,
+        ) || parsed.lastName;
 
       try {
         const checkout = await processCheckoutAction({

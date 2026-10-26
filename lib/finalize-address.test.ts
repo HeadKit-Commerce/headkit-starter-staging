@@ -134,6 +134,44 @@ describe("buildFinalizeAddresses", () => {
     ).toBe("0411111111");
   });
 
+  it("replaces a repeated billing given name with the shipping surname on the same street", () => {
+    const { billingAddress, shippingAddress } = buildFinalizeAddresses({
+      billingCookie: { ...FULL, lastName: "Ada" },
+      sessionShipping: { ...FULL, lastName: "Lovelace" },
+    });
+    expect(billingAddress.firstName).toBe("Ada");
+    expect(billingAddress.lastName).toBe("Lovelace");
+    expect(shippingAddress.lastName).toBe("Lovelace");
+  });
+
+  it("fills an empty billing surname from shipping", () => {
+    const { billingAddress } = buildFinalizeAddresses({
+      billingCookie: { ...FULL, lastName: "" },
+      sessionShipping: FULL,
+    });
+    expect(billingAddress.lastName).toBe("Lovelace");
+  });
+
+  it("keeps a real billing surname", () => {
+    const { billingAddress } = buildFinalizeAddresses({
+      billingCookie: { ...FULL, lastName: "Byron" },
+      sessionShipping: { ...FULL, lastName: "Lovelace" },
+    });
+    expect(billingAddress.lastName).toBe("Byron");
+  });
+
+  it("does not borrow a surname from a different street", () => {
+    const { billingAddress } = buildFinalizeAddresses({
+      billingCookie: {
+        ...FULL,
+        lastName: "Ada",
+        address1: "9 Other Street",
+      },
+      sessionShipping: FULL,
+    });
+    expect(billingAddress.lastName).toBe("Ada");
+  });
+
   it("keeps the whole-address precedence the pages used", () => {
     const shippingCookie = { ...FULL, city: "Darwin" };
     const sessionBilling = { ...FULL, city: "Hobart" };

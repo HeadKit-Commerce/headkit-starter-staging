@@ -15,6 +15,10 @@ import { writeBillingAddressCookie } from "@/lib/checkout-billing-cookie";
 import { isCheckoutSessionDead } from "@/lib/checkout-session-status";
 import { buildCheckoutBillingAddressElementOptions } from "@/lib/checkout-address-seed";
 import {
+  personNameFromAddressValue,
+  surnameFromDonor,
+} from "@/lib/person-name";
+import {
   holdCheckoutStockAction,
   releaseCheckoutStockAction,
 } from "@/app/checkout/actions";
@@ -417,12 +421,44 @@ export function StripePaymentStep({
           onChange={(event) => {
             if (event.complete && event.value) {
               const { address, firstName, lastName, name } = event.value;
-              const first = (name?.split(" ")?.[0] || firstName) ?? "";
-              const last = (name?.split(" ")?.[1] || lastName) ?? "";
               const addr = address ?? {};
+              const parsed = personNameFromAddressValue({
+                name,
+                firstName,
+                lastName,
+              });
+              const sameStreet =
+                addressCompareKey({
+                  line1: addr.line1,
+                  city: addr.city,
+                  state: addr.state,
+                  country: addr.country,
+                  postalCode: addr.postal_code,
+                }) ===
+                addressCompareKey({
+                  line1: shippingAddress?.address1,
+                  city: shippingAddress?.city,
+                  state: shippingAddress?.state,
+                  country: shippingAddress?.country,
+                  postalCode: shippingAddress?.postcode,
+                });
+              const borrowed = sameStreet
+                ? surnameFromDonor(
+                    {
+                      firstName: parsed.firstName,
+                      lastName: parsed.lastName,
+                      address1: addr.line1,
+                    },
+                    {
+                      firstName: shippingAddress?.firstName,
+                      lastName: shippingAddress?.lastName,
+                      address1: shippingAddress?.address1,
+                    },
+                  )
+                : "";
               const value: BillingValue = {
-                firstName: first,
-                lastName: last,
+                firstName: parsed.firstName,
+                lastName: borrowed || parsed.lastName,
                 line1: addr.line1 ?? "",
                 line2: addr.line2 ?? "",
                 city: addr.city ?? "",

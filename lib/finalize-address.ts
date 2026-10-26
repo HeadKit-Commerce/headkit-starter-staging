@@ -1,5 +1,6 @@
 import type { AddressInput } from "@headkit/sdk";
 import { countryCodeFrom } from "@/lib/country-names";
+import { surnameFromDonor } from "@/lib/person-name";
 
 /**
  * The ONE place the two Stripe return pages build the address pair they hand
@@ -221,6 +222,23 @@ export function buildFinalizeAddresses(
       : {}),
   };
 
+  // Afterpay, and the billing-same-as-shipping checkbox, sometimes leave the
+  // billing surname empty or equal to the given name while shipping still has
+  // "Firstname Lastname". Borrow that surname only for the same person on the
+  // same street. A different billing name is left untouched.
+  restoreRepeatedGivenName(billingAddress, [
+    sources.billingCookie,
+    sources.sessionBilling,
+    sources.shippingCookie,
+    sources.sessionShipping,
+  ]);
+  restoreRepeatedGivenName(shippingAddress, [
+    sources.shippingCookie,
+    sources.sessionShipping,
+    sources.billingCookie,
+    sources.sessionBilling,
+  ]);
+
   if (omittedFields.length > 0) {
     // ONE line, no personal data: field names plus which sources were present
     // and whether each carried a usable value. That is what makes the next
@@ -241,6 +259,28 @@ export function buildFinalizeAddresses(
   }
 
   return { billingAddress, shippingAddress, omittedFields };
+}
+
+function restoreRepeatedGivenName(
+  address: AddressInput,
+  donors: Array<FinalizeAddressSourceLike | null | undefined>,
+): void {
+  const first = text(address.firstName);
+  const last = text(address.lastName);
+  if (last && last.toLowerCase() !== first.toLowerCase()) return;
+  for (const donor of donors) {
+    const repaired = surnameFromDonor(
+      { firstName: first, lastName: last, address1: address.address1 },
+      donor,
+    );
+    if (!repaired) continue;
+    address.lastName = repaired;
+    if (!first) {
+      const donorFirst = text(donor?.firstName);
+      if (donorFirst) address.firstName = donorFirst;
+    }
+    return;
+  }
 }
 
 /** Presence only — never a value, so no address ever reaches a log. */

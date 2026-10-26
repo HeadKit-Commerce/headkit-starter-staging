@@ -8,6 +8,7 @@ import {
   buildCheckoutShippingAddressElementOptions,
   buildCheckoutShippingContacts,
 } from "@/lib/checkout-address-seed";
+import { personNameFromAddressValue } from "@/lib/person-name";
 import * as z from "zod";
 import {
   Form,
@@ -244,8 +245,13 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
               if (event.complete && event.value) {
                 const { address, phone, firstName, lastName, name } =
                   event.value;
-                const first = (name?.split(" ")?.[0] || firstName) ?? "";
-                const last = (name?.split(" ")?.[1] || lastName) ?? "";
+                const parsed = personNameFromAddressValue({
+                  name,
+                  firstName,
+                  lastName,
+                });
+                const first = parsed.firstName;
+                const last = parsed.lastName;
                 const addr = address ?? {};
                 const value = {
                   firstName: first,
