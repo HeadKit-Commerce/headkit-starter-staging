@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import type { SeoData } from "@headkit/sdk";
 import { notFound, unstable_rethrow } from "next/navigation";
 import { cacheLife, cacheTag } from "next/cache";
 import { headkit as sdk } from "@/lib/sdk";
+import { env } from "@/lib/env";
 import { TAG } from "@/lib/cache-tags";
 import { getCatalogFilters } from "@/lib/catalog-filters";
 import { collectAllBrands } from "@/lib/brand-list";
+import {
+  brandHeaderFromSummaries,
+  brandPrerenderUsesList,
+} from "@/lib/brand-prerender";
+import { getPrerenderBrandIndex } from "@/lib/brand-prerender-index";
 import { BrandHeader } from "@/components/headkit-ui/brand/brand-header";
 import { CollectionPage } from "@/components/headkit-ui/collection/collection-page";
 import {
@@ -35,15 +42,46 @@ const PER_PAGE = CATALOG_PAGE_SIZE;
  * Components can prerender it into the HTML shell AND so the read survives
  * across serverless instances. Mirrors collections `getCategoryData`.
  *
+ * During `phase-production-build` the header comes from the brand LIST (name,
+ * description, thumbnail). `seo` is absent until this same function runs again
+ * with `NEXT_PHASE` unset — a runtime request, or the `days` revalidation — and
+ * calls `brands.get`. It is ONE cached function on purpose: two would
+ * revalidate the list forever and never upgrade. A thrown read still
+ * propagates; only a null brand is a genuine miss. Do not catch a 429 into
+ * `notFound()`.
+ *
  * Keeps a finite `cacheLife("days")` and a plain literal, never
- * `cacheLifeForProfile`: this read feeds the route's 404 gate, so pinning it
- * at `max` would pin a wrong status code until the next deploy
- * (`lib/cache-profile-call-sites.test.ts`).
+ * `cacheLifeForProfile` and never a profile chosen from `NEXT_PHASE`: this read
+ * feeds the route's 404 gate, so pinning it at `max` would pin a wrong status
+ * code until the next deploy (`lib/cache-profile-call-sites.test.ts`).
  */
-async function getBrandShell(brandSlug: string) {
+async function getBrandShell(brandSlug: string): Promise<{
+  brand: {
+    name: string;
+    description: string;
+    thumbnail: string;
+    seo?: SeoData | null;
+  } | null;
+}> {
   "use cache: remote";
   cacheLife("days");
   cacheTag(TAG.brand(brandSlug), TAG.brands);
+  if (brandPrerenderUsesList(env.NEXT_PHASE)) {
+    const summary = brandHeaderFromSummaries(
+      brandSlug,
+      await getPrerenderBrandIndex(),
+    );
+    return {
+      brand: summary
+        ? {
+            name: summary.name,
+            description: summary.description,
+            thumbnail: summary.thumbnail,
+            seo: null,
+          }
+        : null,
+    };
+  }
   return { brand: await sdk.brands.get(brandSlug) };
 }
 

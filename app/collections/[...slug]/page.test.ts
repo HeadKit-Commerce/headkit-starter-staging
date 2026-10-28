@@ -34,6 +34,10 @@ vi.mock("next/cache", () => ({
   cacheTag: (): void => {},
 }));
 
+// `getCachedProductBrand` reads `NEXT_PHASE` to pick the build-time list. Unset
+// here: this file exercises the runtime path, which is `brands.get`.
+vi.mock("@/lib/env", () => ({ env: { NEXT_PHASE: undefined } }));
+
 vi.mock("next/navigation", () => ({
   notFound: (): never => {
     throw new Error("notFound");

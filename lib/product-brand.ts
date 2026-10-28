@@ -3,6 +3,12 @@ import { cacheLifeForProfile } from "@/lib/cache-profile";
 import { TAG } from "@/lib/cache-tags";
 import { errorFields, logger } from "@/lib/logger";
 import { headkit } from "@/lib/sdk";
+import { env } from "@/lib/env";
+import {
+  brandHeaderFromSummaries,
+  brandPrerenderUsesList,
+} from "@/lib/brand-prerender";
+import { getPrerenderBrandIndex } from "@/lib/brand-prerender-index";
 
 /** The lightweight brand term the product payload carries. */
 export interface ProductBrandTerm {
@@ -79,6 +85,13 @@ export function resolveDisplayBrand(
  * the page, the logo is decoration. `brands.get` answers the brand detail
  * (with a page of its products), so only the three fields the PDP needs are
  * returned — a "use cache" entry stores its return value.
+ *
+ * During `phase-production-build` the name and logo come from the CDN-cached
+ * brand LIST instead (`lib/brand-prerender.ts`): `brands.get` is an
+ * edge-bypassing origin read, and this entry runs once per distinct brand the
+ * prerendered products carry. The three fields are identical on both routes, so
+ * nothing is lost by it, and the entry is refreshed from the detail read like
+ * any other.
  */
 export async function getCachedProductBrand(
   slug: string,
@@ -87,6 +100,18 @@ export async function getCachedProductBrand(
   cacheLifeForProfile("days", "max");
   cacheTag(TAG.brands);
   try {
+    if (brandPrerenderUsesList(env.NEXT_PHASE)) {
+      const summary = brandHeaderFromSummaries(
+        slug,
+        await getPrerenderBrandIndex(),
+      );
+      if (!summary) return null;
+      return {
+        name: summary.name,
+        slug: summary.slug,
+        logoUrl: summary.imageSrc || summary.thumbnail || null,
+      };
+    }
     const brand = await headkit.brands.get(slug);
     if (!brand) return null;
     const logoUrl = brand.image?.src || brand.thumbnail || null;

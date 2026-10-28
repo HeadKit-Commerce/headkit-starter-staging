@@ -12,20 +12,30 @@ import { isValidElement, Suspense, type ReactNode } from "react";
  * build, `scripts/static-shell-split.ts` and the JS-off browser checks cover
  * those.
  */
-const { brandGet, list, filters, cacheLife, cacheTag, cacheLifeForProfile } =
-  vi.hoisted(() => ({
-    brandGet: vi.fn(),
-    list: vi.fn(),
-    filters: vi.fn(),
-    cacheLife: vi.fn(),
-    cacheTag: vi.fn(),
-    cacheLifeForProfile: vi.fn(),
-  }));
+const {
+  brandGet,
+  brandList,
+  list,
+  filters,
+  cacheLife,
+  cacheTag,
+  cacheLifeForProfile,
+  envState,
+} = vi.hoisted(() => ({
+  brandGet: vi.fn(),
+  brandList: vi.fn(),
+  list: vi.fn(),
+  filters: vi.fn(),
+  cacheLife: vi.fn(),
+  cacheTag: vi.fn(),
+  cacheLifeForProfile: vi.fn(),
+  envState: { NEXT_PHASE: undefined as string | undefined },
+}));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/sdk", () => ({
   headkit: {
-    brands: { get: brandGet },
+    brands: { get: brandGet, list: brandList },
     collections: {
       list,
       getFilters: filters,
@@ -34,6 +44,7 @@ vi.mock("@/lib/sdk", () => ({
     },
   },
 }));
+vi.mock("@/lib/env", () => ({ env: envState }));
 vi.mock("next/cache", () => ({ cacheLife, cacheTag }));
 vi.mock("@/lib/cache-profile", () => ({ cacheLifeForProfile }));
 vi.mock("next/navigation", () => ({
@@ -64,6 +75,7 @@ const facets = { attributes: [], categories: [] };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  envState.NEXT_PHASE = undefined;
   brandGet.mockImplementation(async (slug: string) => {
     // Bind the finite lifetime and both purge tags to the existence read,
     // rather than merely finding a "days" call somewhere in the composition.
@@ -179,5 +191,81 @@ describe("brand page-one static shell", () => {
       } as Parameters<typeof BrandPageContent>[0]),
     ).rejects.toBe(failure);
     expect(list).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The production build reads brand headers from the CDN-cached LIST so a large
+ * catalogue is not N edge-bypassing origin reads (`lib/brand-prerender.ts`).
+ * Runtime keeps `brands.get`, which carries Yoast `seo` and 404 authority.
+ */
+describe("brand header source by phase", () => {
+  const page = (slug: string) =>
+    ({
+      params: Promise.resolve({ slug: [slug] }),
+      searchParams: queryThatMustNotBeRead(),
+    }) as Parameters<typeof BrandPageContent>[0];
+
+  const summary = (slug: string) => ({
+    slug,
+    name: `Brand ${slug}`,
+    description: `About ${slug}`,
+    thumbnail: `https://cdn.example/${slug}.png`,
+  });
+
+  beforeEach(() => {
+    envState.NEXT_PHASE = "phase-production-build";
+    brandList.mockResolvedValue({
+      brands: [summary("acme"), summary("zipp")],
+      page: 1,
+      perPage: 100,
+      total: 2,
+      totalPages: 1,
+    });
+  });
+
+  it("renders the header from the list and never calls brands.get", async () => {
+    const result = await grids(await BrandPageContent(page("zipp")));
+    expect(result).toHaveLength(1);
+    expect(brandGet).not.toHaveBeenCalled();
+    expect(brandList).toHaveBeenCalledWith({ page: 1, perPage: 100 });
+    expect(brandList.mock.calls.every(([arg]) => arg.page === 1)).toBe(true);
+    // The list entry and the shell entry are both finite, and the shell keeps
+    // its per-brand purge tag so a revalidation re-enters it with NEXT_PHASE
+    // unset and upgrades it to the detail read.
+    expect(cacheLife).not.toHaveBeenCalledWith("max");
+    expect(cacheTag.mock.calls).toContainEqual([
+      "headkit:brand:zipp",
+      "headkit:brands",
+    ]);
+  });
+
+  it("does not use the list outside the build", async () => {
+    envState.NEXT_PHASE = "phase-production-server";
+    brandGet.mockResolvedValue({
+      slug: "zipp",
+      name: "Zipp",
+      description: "",
+      thumbnail: "",
+    });
+    await grids(await BrandPageContent(page("zipp")));
+    // No `"use cache"` dedupe in a unit test: the gate and the route each read.
+    expect(brandGet).toHaveBeenCalledWith("zipp");
+    expect(brandList).not.toHaveBeenCalled();
+  });
+
+  it("404s a slug absent from a completed list walk", async () => {
+    await expect(BrandPageContent(page("unknown"))).rejects.toThrow(
+      "NEXT_HTTP_ERROR_FALLBACK;404",
+    );
+    expect(brandGet).not.toHaveBeenCalled();
+  });
+
+  it("throws, not 404s, when the list walk is incomplete", async () => {
+    brandList.mockRejectedValue(new Error("commerce unavailable"));
+    await expect(BrandPageContent(page("acme"))).rejects.toThrow(
+      "brand list walk incomplete",
+    );
+    expect(brandGet).not.toHaveBeenCalled();
   });
 });
