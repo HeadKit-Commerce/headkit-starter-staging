@@ -8,6 +8,7 @@ import {
   isCheckboxChecked,
   isCheckedDefault,
   isDescriptionAbove,
+  isFieldLabelRedundant,
   isLabelVisible,
   resolvableTextDefault,
   selectedChoiceValues,
@@ -286,5 +287,60 @@ describe("hasRenderableChoices", () => {
     expect(hasRenderableChoices(field({ type: "checkbox", choices: [] }))).toBe(
       false,
     );
+  });
+});
+
+describe("isFieldLabelRedundant", () => {
+  const SENTENCE =
+    "Email me with the latest news, products and special offers.";
+  const one = (label: string, text: string): FormFieldSettings =>
+    field({ type: "checkbox", label, choices: [{ text, value: text }] });
+
+  it("is true when the one choice repeats the label", () => {
+    expect(isFieldLabelRedundant(one(SENTENCE, SENTENCE))).toBe(true);
+  });
+
+  it("is true when the label is the choice text plus stray wording", () => {
+    expect(isFieldLabelRedundant(one(`${SENTENCE}Untitled`, SENTENCE))).toBe(
+      true,
+    );
+  });
+
+  it("is true when the label is the shorter of the two", () => {
+    expect(isFieldLabelRedundant(one("Email me", SENTENCE))).toBe(true);
+  });
+
+  it("compares wording, not bytes: case and whitespace are folded", () => {
+    expect(
+      isFieldLabelRedundant(one("  JOIN   our list ", "join our list")),
+    ).toBe(true);
+  });
+
+  it("is false when the label asks something the box does not say", () => {
+    expect(
+      isFieldLabelRedundant(
+        one("Which services interest you?", "Bike fitting"),
+      ),
+    ).toBe(false);
+  });
+
+  it("is false for an empty choice text, leaving the box with a name", () => {
+    expect(isFieldLabelRedundant(one("Join our list", ""))).toBe(false);
+  });
+
+  it("is false for several choices or none", () => {
+    expect(
+      isFieldLabelRedundant(
+        field({
+          type: "checkbox",
+          label: "Bike fitting",
+          choices: [
+            { text: "Bike fitting", value: "a" },
+            { text: "Servicing", value: "b" },
+          ],
+        }),
+      ),
+    ).toBe(false);
+    expect(isFieldLabelRedundant(field({ type: "checkbox" }))).toBe(false);
   });
 });

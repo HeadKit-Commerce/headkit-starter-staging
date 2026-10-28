@@ -72,13 +72,51 @@ export function getPriceDisplay({
  * Card price for variable products: min–max across variation prices.
  * Includes $0 (free) variations — filtering `p > 0` dropped them and hid
  * ranges like "$0.00 – $2.00".
+ *
+ * It also resolves the card's REGULAR price, and that half is load-bearing.
+ * A variable product's PARENT carries `regularPrice: ""` on the WooCommerce
+ * provider even while it is on sale (measured on every one of the 24 products
+ * on Bike Society's `/sale` page 1, 2026-10-12) — the regular lives on the
+ * VARIATIONS. This function returned `""` for every variable product, so
+ * `getPriceDisplay` computed `regular = 0` and no card could ever strike a
+ * was-price, while the PDP buy box and the cart line (which read their own
+ * paths) were correct.
+ *
+ * The card claims the regular belonging to the MIN-priced variation: the card
+ * prices itself from that variation, so its regular is the honest counterpart.
+ * Several variations tied at the min take the LARGEST of their regulars — the
+ * discounted one rather than an undiscounted sibling. When no variation at the
+ * min carries a regular the regular stays unknown and no strike renders.
+ *
+ * That subsumes "the common regular when every variation shares one", which is
+ * why there is no second rule: a min-priced variation always exists, so a
+ * regular shared by every variation is by definition on one of them.
+ *
+ * A RANGE collapses to its min-price pair when — and only when — the parent is
+ * on sale and that regular is a genuine discount. `getPriceDisplay` refuses a
+ * strike alongside a range (`!hasRange`), and a card shows one pair rather
+ * than a range-to-range strike. Without a real discount the range is left
+ * intact.
+ *
+ * This never invents a regular: the `regular > current` guard in
+ * `getPriceDisplay` still owns whether a strike renders, so a product whose
+ * regular equals its price cannot produce a fake "~~$24.00~~ $24.00" row.
  */
 export function getVariationCardPrice(input: {
-  variations: Array<{ price?: string | null | undefined }>;
+  variations: Array<{
+    price?: string | null | undefined;
+    regularPrice?: string | null | undefined;
+  }>;
   fallbackPrice?: string | null | undefined;
   fallbackRegularPrice?: string | null | undefined;
+  /**
+   * Parent on-sale flag. Only an on-sale card may collapse a price range to
+   * its min-price pair; without it a non-sale range would lose its upper
+   * bound for a strike `getPriceDisplay` would refuse anyway.
+   */
+  onSale?: boolean;
 }): { price: string; regularPrice: string } {
-  const { variations, fallbackPrice, fallbackRegularPrice } = input;
+  const { variations, fallbackPrice, fallbackRegularPrice, onSale } = input;
   if (variations.length === 0) {
     return {
       price: pickFirstPrice(fallbackPrice) || "0",
@@ -86,25 +124,54 @@ export function getVariationCardPrice(input: {
     };
   }
 
-  const prices = variations
-    .map((v) => {
-      const raw = (v.price ?? "").trim();
-      if (raw === "") return Number.NaN;
-      return Number.parseFloat(raw);
-    })
-    .filter((p) => Number.isFinite(p) && p >= 0);
+  const entries = variations
+    .map((v) => ({
+      price: parseVariationPrice(v.price),
+      regular: parseVariationPrice(v.regularPrice),
+    }))
+    .filter(
+      (e): e is { price: number; regular: number | null } => e.price !== null,
+    );
 
-  if (prices.length === 0) {
+  if (entries.length === 0) {
     return {
       price: pickFirstPrice(fallbackPrice) || "0",
       regularPrice: pickFirstPrice(fallbackRegularPrice) || "0",
     };
   }
 
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
+  const minPrice = Math.min(...entries.map((e) => e.price));
+  const maxPrice = Math.max(...entries.map((e) => e.price));
+  const regular = cardRegularPrice(entries, minPrice);
+  const regularOut = regular === null ? "" : String(regular);
+
   if (minPrice === maxPrice) {
-    return { price: String(minPrice), regularPrice: "" };
+    return { price: String(minPrice), regularPrice: regularOut };
+  }
+
+  const discounted = onSale === true && regular !== null && regular > minPrice;
+  if (discounted) {
+    return { price: String(minPrice), regularPrice: String(regular) };
   }
   return { price: `${minPrice} - ${maxPrice}`, regularPrice: "" };
+}
+
+/** A variation price as a non-negative finite number, else null. */
+function parseVariationPrice(raw: string | null | undefined): number | null {
+  const trimmed = (raw ?? "").trim();
+  if (trimmed === "") return null;
+  const value = Number.parseFloat(trimmed);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/** See `getVariationCardPrice`'s docblock. */
+function cardRegularPrice(
+  entries: Array<{ price: number; regular: number | null }>,
+  minPrice: number,
+): number | null {
+  const atMin = entries
+    .filter((e) => e.price === minPrice)
+    .map((e) => e.regular)
+    .filter((r): r is number => r !== null);
+  return atMin.length > 0 ? Math.max(...atMin) : null;
 }

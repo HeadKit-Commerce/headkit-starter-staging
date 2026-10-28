@@ -44,6 +44,7 @@ import {
   hasRenderableChoices,
   isCheckboxChecked,
   isDescriptionAbove,
+  isFieldLabelRedundant,
   isLabelVisible,
   validationMessage,
   type FormChoiceSettings,
@@ -147,10 +148,13 @@ interface RenderFieldProps {
 const FieldShell = ({
   field,
   className,
+  labelRedundant = false,
   children,
 }: {
   field: FormFieldConfig;
   className?: string;
+  /** The single choice already says what the label says: take it out of flow. */
+  labelRedundant?: boolean;
   children: React.ReactNode;
 }) => {
   const description = field.description?.trim();
@@ -158,7 +162,9 @@ const FieldShell = ({
 
   return (
     <FormItem className={className}>
-      <FormLabel className={cn(!isLabelVisible(field) && "sr-only")}>
+      <FormLabel
+        className={cn((!isLabelVisible(field) || labelRedundant) && "sr-only")}
+      >
         {field.label}
       </FormLabel>
       {description && above && <FormDescription>{description}</FormDescription>}
@@ -313,7 +319,11 @@ const RenderField = ({ field, control }: RenderFieldProps) => {
               };
 
               return (
-                <FieldShell field={field} className="space-y-3">
+                <FieldShell
+                  field={field}
+                  className="space-y-3"
+                  labelRedundant={isFieldLabelRedundant(field)}
+                >
                   <div className="space-y-1">
                     {(field.choices ?? []).map((choice) => (
                       <FormItem

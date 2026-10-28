@@ -108,6 +108,7 @@ export function ProductSlide({
         variations: product.variations ?? [],
         fallbackPrice: product.price,
         fallbackRegularPrice: product.regularPrice,
+        onSale: product.onSale ?? false,
       })
     : {
         price: product.price ?? "",

@@ -223,6 +223,10 @@ export const ProductCard = ({
       variations: product.variations ?? [],
       fallbackPrice: product?.price,
       fallbackRegularPrice: product?.regularPrice,
+      // The regular price of a variable product lives on its VARIATIONS, not
+      // the parent — see `getVariationCardPrice`. `onSale` is what lets a
+      // price range collapse to its min-price pair.
+      onSale: product?.onSale ?? false,
     });
   };
 

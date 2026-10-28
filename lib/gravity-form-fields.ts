@@ -102,6 +102,46 @@ export function hasRenderableChoices(field: FormFieldSettings): boolean {
   return (field.choices?.length ?? 0) > 0;
 }
 
+/** Compare two labels as WORDING: whitespace collapsed, case folded. */
+function labelWording(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * True when drawing the FIELD label above a Checkboxes field's boxes would
+ * repeat what the single box already says.
+ *
+ * A Gravity Forms Checkboxes field labels the GROUP and each box labels its own
+ * choice, which is right for "Which services interest you?" over three boxes.
+ * A single-choice consent box is the degenerate case: the group and the box say
+ * the same sentence, so showing both prints it twice.
+ *
+ * The rule is CONTAINMENT rather than equality: exactly one choice, and one of
+ * the two texts contains the other as wording. Equality was too narrow on a
+ * live form (Bike Society, 2026-10-02): the PDP enquiry opt-in's field `label`
+ * was the choice's sentence plus a stray `Untitled` while the choice `text` was
+ * clean. That word is WordPress data — the theme emits `$field->label` verbatim
+ * — so the merchant's own fix is to correct the label in the Gravity Forms
+ * editor; this rule only stops the storefront repeating it on screen. A label
+ * that says something genuinely different ("Which services interest you?" over
+ * "Bike fitting") still shows, because neither contains the other.
+ *
+ * Two guards are load-bearing. A multi-choice field is untouched, because
+ * hiding its group label would lose the question. And an EMPTY choice text
+ * keeps the group label: a box with no label of its own is the one case where
+ * the group label is the only wording the shopper has. The label is never
+ * REMOVED either way, only taken out of the visual flow (`sr-only`), so the
+ * group keeps its accessible name.
+ */
+export function isFieldLabelRedundant(field: FormFieldSettings): boolean {
+  const choices = field.choices ?? [];
+  if (choices.length !== 1) return false;
+  const choiceText = labelWording(choices[0]?.text ?? "");
+  const label = labelWording(field.label);
+  if (!choiceText || !label) return false;
+  return label.includes(choiceText) || choiceText.includes(label);
+}
+
 /** Pack a Checkboxes field's selected choice values into one form value. */
 export function encodeCheckboxSelection(values: ReadonlyArray<string>): string {
   return values.join(CHECKBOX_VALUE_SEPARATOR);

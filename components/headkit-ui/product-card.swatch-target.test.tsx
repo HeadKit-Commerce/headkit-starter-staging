@@ -215,6 +215,31 @@ describe("product card colourway dots — target size", () => {
   });
 });
 
+describe("product card colourway dots — the ring stays inside the dot box", () => {
+  /**
+   * Bike Society issue #98, second report: the selected / hover ring was
+   * sliced flat on its left side in Safari when a dot sat flush at the card
+   * edge. A negative `outline-offset` puts the ring in the outermost pixel of
+   * the dot, so nothing is painted outside the dot's own box for an engine to
+   * clip.
+   *
+   * WHERE THIS STOPS: it resolves no CSS and measures no box, so "the painted
+   * extent equals the dot box" is a browser claim, quoted in the PR.
+   */
+  it("draws the ring with a NEGATIVE outline offset, never outside the dot", () => {
+    const html = render(3);
+    const dots = html.match(/<span class="[^"]*\bh-4 w-4\b[^"]*"/g) ?? [];
+    expect(dots).toHaveLength(3);
+    for (const dot of dots) {
+      expect(dot).toContain("-outline-offset-1");
+      // `-outline-offset-1` contains `outline-offset-1` as a substring, so the
+      // check has to be anchored on the class boundary or it is green under
+      // the defect.
+      expect(dot).not.toMatch(/(^|\s)outline-offset-/);
+    }
+  });
+});
+
 describe("product card colourway dots — the row cap", () => {
   it("defaults to ten dots, which is what every store renders today", () => {
     const html = render(12);

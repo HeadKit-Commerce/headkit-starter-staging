@@ -88,6 +88,43 @@ export interface ButtonProps
   loadingText?: string;
 }
 
+const REACT_LAZY_TYPE: symbol = Symbol.for("react.lazy");
+
+/**
+ * The one element `asChild` styles.
+ *
+ * A child written in a Server Component reaches this client Button during
+ * prerender as a `react.lazy` flight wrapper, and `Children.only` rejects
+ * that wrapper (`$$typeof` is `react.lazy`, not `react.element`). `toArray`
+ * unwraps it. A child created in a client component is already an element
+ * and stays on the `Children.only` path.
+ */
+function isLazyFlightChild(children: React.ReactNode): boolean {
+  return (
+    children != null &&
+    typeof children === "object" &&
+    "$$typeof" in children &&
+    (children as { $$typeof?: unknown }).$$typeof === REACT_LAZY_TYPE
+  );
+}
+
+function asChildRender(children: React.ReactNode): React.ReactElement {
+  // Client-created children stay on Children.only. toArray clones them and
+  // stamps a `.0` key, which would change the element identity.
+  const candidate = isLazyFlightChild(children)
+    ? unwrapFlightChild(children)
+    : React.Children.only(children);
+  if (!React.isValidElement(candidate)) {
+    throw new Error("Button asChild expected a single React element child.");
+  }
+  return candidate;
+}
+
+function unwrapFlightChild(children: React.ReactNode): React.ReactNode {
+  const unwrapped = React.Children.toArray(children);
+  return unwrapped.length === 1 ? (unwrapped[0] ?? null) : null;
+}
+
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
@@ -113,9 +150,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const IconComponent = rightIcon ? RightIconMap[rightIcon] : null;
     return useRender({
       defaultTagName: "button",
-      ...(asChild
-        ? { render: React.Children.only(children) as React.ReactElement }
-        : {}),
+      ...(asChild ? { render: asChildRender(children) } : {}),
       ref: ref as React.Ref<HTMLElement>,
       props: {
         className: cn(

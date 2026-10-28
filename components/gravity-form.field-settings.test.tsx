@@ -634,3 +634,78 @@ describe("a field definition carrying none of the new settings", () => {
     expect(container.textContent).toContain("Name is required");
   });
 });
+
+describe("a single-choice Checkboxes field whose box repeats its label", () => {
+  // Bike Society, 2026-10-02: form 2's opt-in label is byte-identical to its
+  // one choice's text; form 3's is that sentence plus a stray `Untitled` (WordPress
+  // data) while the choice text is clean. Both printed the sentence twice.
+  const SENTENCE =
+    "Email me with the latest news, products and special offers.";
+
+  /** Labels a sighted shopper reads — i.e. those not taken out of flow. */
+  const visibleLabels = (): string[] =>
+    [...container.querySelectorAll("label")]
+      .filter((l) => !l.className.split(/\s+/).includes("sr-only"))
+      .map((l) => l.textContent?.trim() ?? "");
+
+  const optIn = (label: string, text: string = SENTENCE) =>
+    field({
+      databaseId: 9,
+      type: "checkbox",
+      label,
+      choices: { nodes: [choice(text, { inputId: "9.1" })] },
+    });
+
+  it("draws the sentence once when the label equals the choice text", async () => {
+    await mount([optIn(SENTENCE)]);
+
+    expect(visibleLabels().filter((t) => t === SENTENCE)).toHaveLength(1);
+    // Hidden, not removed: the group label is still in the DOM.
+    const group = [...container.querySelectorAll("label")].find((l) =>
+      l.className.split(/\s+/).includes("sr-only"),
+    );
+    expect(group?.textContent?.trim()).toBe(SENTENCE);
+    // And the box keeps its own accessible name.
+    expect([...controlsByLabel("checkbox").keys()]).toEqual([SENTENCE]);
+  });
+
+  it("draws it once when the label is the sentence plus stray text", async () => {
+    await mount([optIn(`${SENTENCE}Untitled`)]);
+
+    expect(visibleLabels()).toEqual([SENTENCE]);
+    expect(visibleLabels().join("\n")).not.toContain("Untitled");
+    const group = [...container.querySelectorAll("label")].find(
+      (l) => l.textContent?.trim() === `${SENTENCE}Untitled`,
+    );
+    expect(group?.className.split(/\s+/)).toContain("sr-only");
+  });
+
+  it("keeps a group label that says something different", async () => {
+    await mount([optIn("Which services interest you?", "Bike fitting")]);
+
+    expect(visibleLabels()).toContain("Which services interest you?");
+    expect(visibleLabels()).toContain("Bike fitting");
+  });
+
+  it("keeps the group label when the box carries no text of its own", async () => {
+    await mount([optIn("Join our mailing list", "")]);
+
+    expect(visibleLabels()).toContain("Join our mailing list");
+  });
+
+  it("keeps the group label over several choices", async () => {
+    await mount([
+      field({
+        databaseId: 10,
+        type: "checkbox",
+        label: "Bike fitting",
+        choices: {
+          nodes: [choice("Bike fitting"), choice("Bike servicing")],
+        },
+      }),
+    ]);
+
+    expect(visibleLabels()).toContain("Bike fitting");
+    expect(visibleLabels().filter((t) => t === "Bike fitting")).toHaveLength(2);
+  });
+});
