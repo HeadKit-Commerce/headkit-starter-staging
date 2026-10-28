@@ -13,9 +13,10 @@ import {
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { resetUserPassword } from "@/lib/account-actions";
+import { withoutResetCredentials } from "@/lib/reset-password-link";
 
 const schema = z
   .object({
@@ -42,8 +43,22 @@ function ResetPasswordForm() {
     defaultValues: { password: "", confirmPassword: "" },
   });
 
-  const key = searchParams.get("key");
-  const loginParam = searchParams.get("login");
+  // Captured once. The effect below removes both from the address bar, and
+  // Next syncs `useSearchParams` with `history.replaceState`, so reading the
+  // live params after that would flip a valid form to "Invalid link".
+  const [credentials] = useState(() => ({
+    key: searchParams.get("key"),
+    login: searchParams.get("login"),
+  }));
+  const { key, login: loginParam } = credentials;
+
+  // GTM / GA4 send the full page URL on every page_view and history change.
+  // Keep the reset key out of the address bar once it is in memory.
+  useEffect(() => {
+    const clean = withoutResetCredentials(window.location.href);
+    if (clean !== null)
+      window.history.replaceState(window.history.state, "", clean);
+  }, []);
 
   if (!key || !loginParam) {
     return (
