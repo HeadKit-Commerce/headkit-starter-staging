@@ -100,6 +100,7 @@ export function Filter() {
     productFilter,
     facetStatus,
     isLoading,
+    isUpdating,
     setFilterValues,
   } = useCollection();
   const isQuoteMode = useIsQuoteMode();
@@ -181,6 +182,11 @@ export function Filter() {
       >
         In Stock
       </span>
+      {isUpdating ? (
+        <span role="status" className="text-sm font-semibold text-primary">
+          Updating…
+        </span>
+      ) : null}
     </div>
   );
 

@@ -53,6 +53,7 @@ export function ProductGrid({
   const {
     products,
     isLoading,
+    isUpdating,
     isLoadingBefore,
     isLoadingAfter,
     hasMore,
@@ -126,11 +127,30 @@ export function ProductGrid({
   }
 
   return (
-    <div className="px-5 md:px-10 z-5">
+    <div className="px-5 md:px-10 z-5" aria-busy={isUpdating || undefined}>
       {/* Section heading so card titles can be h3 (same depth as carousels)
           without skipping a level after the collection h1. */}
       <h2 className="sr-only">Products</h2>
-      <div className={CATALOG_GRID_CLASS}>
+      {/* A filter, sort or page change keeps the previous products on screen
+          until the new ones arrive, and the skeletons below sit under the last
+          row. Without this the grid looks frozen. */}
+      {isUpdating ? (
+        <p
+          role="status"
+          className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary px-3 py-1.5 text-sm font-semibold text-on-primary"
+        >
+          <span
+            className="inline-block size-3.5 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
+            aria-hidden
+          />
+          Updating products
+        </p>
+      ) : null}
+      <div
+        className={
+          isUpdating ? `${CATALOG_GRID_CLASS} opacity-40` : CATALOG_GRID_CLASS
+        }
+      >
         {isLoadingBefore && (
           <LoadingSkeleton
             count={CATALOG_ROW_QUANTUM}

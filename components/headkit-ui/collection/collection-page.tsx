@@ -145,8 +145,12 @@ export function CollectionPage({
         scopedSearchFacets={scopedSearchFacets}
       >
         {header}
+        {/* `scroll-mt-20` is the fixed header's height (the filter bar sticks at
+            the same `top-20`): `scrollCollectionToTop` aligns this element to
+            the top of the viewport, and without the margin the header covers
+            the "Updating products" notice it exists to bring into view. */}
         <div
-          className="headkit-collection flex flex-col gap-4"
+          className="headkit-collection flex scroll-mt-20 flex-col gap-4"
           data-headkit-collection
         >
           <Filter />

@@ -48,6 +48,13 @@ interface CollectionContextType {
   currentPage: number;
   itemsPerPage: number;
   isLoading: boolean;
+  /**
+   * A filter change is on its way to the screen: an in-place fetch
+   * (`isLoading`) OR a navigation to a new `/f/<slug>` path. The grid's
+   * "Updating products" notice reads this one; `isLoading` stays the narrower
+   * "a fetch is in flight" that the skeletons and the search hold key on.
+   */
+  isUpdating: boolean;
   isLoadingBefore: boolean;
   isLoadingAfter: boolean;
   hasMore: boolean;
@@ -110,11 +117,14 @@ type PrefetchBuffer = {
 /** Scroll the listing chrome into view after a full grid replace (sort/filter). */
 function scrollCollectionToTop(): void {
   const el = document.querySelector<HTMLElement>("[data-headkit-collection]");
-  if (el) {
+  if (el && typeof el.scrollIntoView === "function") {
     el.scrollIntoView({ block: "start", behavior: "instant" });
     return;
   }
-  window.scrollTo({ top: 0, behavior: "instant" });
+  // jsdom implements neither `scrollIntoView` nor `scrollTo`.
+  if (typeof window.scrollTo === "function") {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
 }
 
 export function CollectionProvider({
@@ -162,7 +172,7 @@ export function CollectionProvider({
   // link click, so nothing in `InstantLink` fires for it, and React keeps a
   // transition pending across a `router.push` until the destination's RSC payload
   // has arrived and committed.
-  const [, startNavigationTransition] = useTransition();
+  const [isNavigating, startNavigationTransition] = useTransition();
 
   const [products, setProducts] = useState(initialProducts);
   const [totalProducts, setTotalProducts] = useState(initialTotal);
@@ -423,6 +433,11 @@ export function CollectionProvider({
         isLoadingRef.current = true;
         setIsLoading(true);
         clearPrefetch();
+        // The "Updating products" notice sits at the top of the grid. Scroll
+        // there as the request STARTS, so a shopper mid-page sees the toggle
+        // is working instead of the previous products sitting still; the
+        // scroll after the results commit (below) only settles the position.
+        scrollCollectionToTop();
       }
 
       try {
@@ -650,6 +665,9 @@ export function CollectionProvider({
       // also the seam a guard uses — a mocked `push` returning a promise is the only
       // way to hold a transition open in jsdom, where there is no router to suspend
       // on a real payload.
+      // The path change re-renders this whole route, so nothing in the grid
+      // changes until its payload arrives: say so, and bring the notice into view.
+      scrollCollectionToTop();
       startNavigationTransition(() =>
         router.push(`${categoryBasePath}${filterPath}${qs ? `?${qs}` : ""}`),
       );
@@ -819,6 +837,7 @@ export function CollectionProvider({
         currentPage,
         itemsPerPage,
         isLoading,
+        isUpdating: isLoading || isNavigating,
         isLoadingBefore,
         isLoadingAfter,
         hasMore,
