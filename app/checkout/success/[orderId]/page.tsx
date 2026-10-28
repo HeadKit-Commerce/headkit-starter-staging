@@ -429,7 +429,12 @@ export default async function Page({ params, searchParams }: Props) {
   // transitioning, and it resolves to this render on the redirect that follows.
   const purchaseEvent = isQuoteMode
     ? null
-    : buildPurchaseFromOrder(order, shippingCost, getStoreCurrency());
+    : buildPurchaseFromOrder(
+        order,
+        shippingCost,
+        getStoreCurrency(),
+        order.stockShortfall,
+      );
 
   // Items that sold out after payment (checkout plan v3 §3): the theme
   // refunded them and the order carries the record. Null for every order

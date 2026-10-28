@@ -44,6 +44,11 @@
 
 import { lineDisplayTotal, type DisplayTotalsSource } from "@/lib/cart-prices";
 import { getFloatVal } from "@/lib/utils";
+import {
+  shortfallNetTax,
+  splitOrderLines,
+  type StockShortfall,
+} from "@/lib/stock-shortfall";
 
 declare global {
   interface Window {
@@ -505,26 +510,75 @@ export function buildViewCartFromCart(
  *
  * Returns `null` when the order carries no id to deduplicate on: a `purchase`
  * without `transaction_id` is worse than none, because Google Ads cannot
- * collapse repeats of it.
+ * collapse repeats of it. Also `null` for an order whose items ALL sold out
+ * during payment and were refunded (`shortfall.fullyRefunded`).
+ *
+ * `shortfall` changes WHEN the event fires and with what numbers, never its
+ * name or fields: a partly refunded order reports what was KEPT (see below).
  */
 export function buildPurchaseFromOrder(
   order: Ga4OrderLike,
   shippingTotal: number,
   fallbackCurrency: string,
+  shortfall?: StockShortfall | null,
 ): Ga4EcommerceEvent | null {
   const transactionId =
     order.orderNumber?.trim() ||
     (order.databaseId ? String(order.databaseId) : "");
   if (!transactionId) return null;
+  const coupon = order.coupons?.[0]?.code?.trim();
+  const currency = cartCurrency(order, fallbackCurrency);
+  const total = getFloatVal(order.totals?.totalPrice);
+  const tax = getFloatVal(order.totals?.totalTax);
+
+  if (shortfall && shortfall.lines.length > 0) {
+    // Items sold out while the payment was processing and the theme refunded
+    // them (`lib/stock-shortfall.ts`). A fully refunded order is not a sale,
+    // so it reports none — a `purchase` here would book a Google Ads
+    // conversion for money that went straight back. A partly refunded one
+    // reports what was KEPT: the kept units of each line, and the total less
+    // the refund. Tax is `shortfallNetTax` because the record does not split
+    // the refund's tax out; shipping is refunded only with a full refund, so
+    // it is reported as charged less `shippingRefund`.
+    if (shortfall.fullyRefunded) return null;
+    const lines = order.items ?? [];
+    const splits = splitOrderLines(
+      lines.map((line) => ({
+        id: line.id,
+        name: line.name,
+        quantity: line.quantity,
+        lineTotal: lineDisplayTotal(line.totals, line.prices?.price, order),
+      })),
+      shortfall,
+    );
+    const keptItems = lines.flatMap((line, index) => {
+      const kept = splits[index]?.keptQuantity ?? line.quantity;
+      if (kept <= 0) return [];
+      return [{ ...lineToGa4Item(line, order, index), quantity: kept }];
+    });
+    if (keptItems.length === 0) return null;
+    return buildPurchase({
+      transactionId,
+      currency,
+      value: Math.max(total - getFloatVal(shortfall.refundTotal), 0),
+      tax: shortfallNetTax(shortfall, total, tax),
+      shipping: Math.max(
+        shippingTotal - getFloatVal(shortfall.shippingRefund),
+        0,
+      ),
+      items: keptItems,
+      ...(coupon ? { coupon } : {}),
+    });
+  }
+
   const items = (order.items ?? []).map((line, index) =>
     lineToGa4Item(line, order, index),
   );
-  const coupon = order.coupons?.[0]?.code?.trim();
   return buildPurchase({
     transactionId,
-    currency: cartCurrency(order, fallbackCurrency),
-    value: getFloatVal(order.totals?.totalPrice),
-    tax: getFloatVal(order.totals?.totalTax),
+    currency,
+    value: total,
+    tax,
     shipping: shippingTotal,
     items,
     ...(coupon ? { coupon } : {}),

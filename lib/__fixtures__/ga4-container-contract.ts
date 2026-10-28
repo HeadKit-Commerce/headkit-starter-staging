@@ -107,3 +107,28 @@ export const CONTAINER_ALLOWED_ECOMMERCE_KEYS = [
   "item_list_name",
   "items",
 ] as const;
+
+/**
+ * WHEN `purchase` fires for an order whose items sold out during payment.
+ *
+ * Event and field names do not change for these orders — only whether the
+ * event fires and with what numbers, and that is also something the 12 Google
+ * Ads conversion tags rely on: a `purchase` for money that went straight back
+ * books a conversion that never happened.
+ *
+ * - `fully_refunded`: no `purchase` at all. The tags never see the order.
+ * - `partly_refunded`: one `purchase` for the KEPT units only. `value` is the
+ *   order total less `refundTotal`, `tax` is the order tax scaled to that kept
+ *   share, `shipping` is the shipping charged less `shippingRefund`, and
+ *   `items[].quantity` is the kept quantity (a fully short line is omitted).
+ * - `no_shortfall`: the event exactly as it was before this case existed.
+ *
+ * `lib/ga4-purchase-shortfall.test.ts` asserts each row against
+ * `buildPurchaseFromOrder`. Changing a row means the container's conversion
+ * tags need the matching edit.
+ */
+export const CONTAINER_PURCHASE_SHORTFALL_RULES = {
+  fully_refunded: { fires: false },
+  partly_refunded: { fires: true, valueIs: "total - refundTotal" },
+  no_shortfall: { fires: true, valueIs: "total" },
+} as const;
