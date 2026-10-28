@@ -9,6 +9,7 @@ import {
   storefrontUrl,
 } from "@/lib/make-metadata";
 import { getBranding } from "@/lib/branding";
+import { isAssetLikeSlug } from "@/lib/catch-all-slug-guard";
 import { cmsPlaceholderVerdict } from "@/lib/cms-placeholder-pages";
 import { getPostsBasePath, postsIndexPath } from "@/lib/posts-base-path";
 import { TAG } from "@/lib/cache-tags";
@@ -198,6 +199,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (slug[0] === STATIC_GEN_PLACEHOLDER_SLUG) {
     return { robots: { index: false, follow: false } };
   }
+  // Asset-like paths (old WP image URLs, bot probes) must never reach the CMS
+  // read below — see `lib/catch-all-slug-guard.ts`.
+  if (isAssetLikeSlug(slug)) {
+    return { robots: { index: false, follow: false } };
+  }
   const path = slug.join("/");
   const [page, { seoSettings, storeSettings }] = await Promise.all([
     getPageData(path),
@@ -249,6 +255,9 @@ export default async function Page({ params }: Props) {
   // trip.
   const { slug } = await params;
   if (slug[0] === STATIC_GEN_PLACEHOLDER_SLUG) notFound();
+  // Asset-like paths must 404 above every CMS read — see
+  // `lib/catch-all-slug-guard.ts`.
+  if (isAssetLikeSlug(slug)) notFound();
   const contentSlug = slug.join("/");
 
   // Empty WordPress/WooCommerce placeholder pages — see
@@ -281,6 +290,7 @@ export default async function Page({ params }: Props) {
 async function CmsRoute({ params }: Props) {
   const { slug } = await params;
   if (slug[0] === STATIC_GEN_PLACEHOLDER_SLUG) return notFound();
+  if (isAssetLikeSlug(slug)) return notFound();
   const contentSlug = slug.join("/");
 
   const placeholder = cmsPlaceholderVerdict(contentSlug);

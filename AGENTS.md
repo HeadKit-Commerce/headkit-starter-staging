@@ -1014,9 +1014,10 @@ while the re-read burns in the **streamed tail**, which no header describes. Two
   `app/new`, `app/featured` and `app/shop/page.tsx` are the same scope by construction —
   same directive, same `catalog:filters` tag, no key.
 
-The cost of `cacheLife("max")` under `catalog:filters` is that `isKnownTag`
-(`lib/cache-tags.ts`) rejects that tag, so nothing purges the facet options before a
-redeploy. That is one staleness class shared by every consumer, not a per-route decision.
+`isKnownTag` (`lib/cache-tags.ts`) rejects `catalog:filters`, so nothing purges the facet
+options: the entry's lifetime is its only refresh path, which is why `getCatalogFilters` is
+`"hours"` by default and `CATALOG_FACET_CACHE_LIFE` (24 h `revalidate`) on the `aggressive`
+profile, never `max`. That is one staleness class shared by every consumer, not a per-route decision.
 
 ### Cache lifetimes and prerender shape are PER-STORE levers, not constants
 

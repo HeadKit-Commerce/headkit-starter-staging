@@ -33,6 +33,7 @@ import {
 } from "@/lib/branding";
 import { BrandingUnavailableError } from "@/lib/branding-cache-policy";
 import { env } from "@/lib/env";
+import { errorFields, logger } from "@/lib/logger";
 import { isShopifyStorefront } from "@/lib/shopify-storefront";
 import { resolveSiteUrl } from "@/lib/site-url";
 import { normalizeCheckoutMode } from "@/lib/checkout-mode";
@@ -122,6 +123,40 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
+/**
+ * The footer read with a last-resort guard.
+ *
+ * `getFooterMenus` handles a failed MENU read itself, inside its cache scope
+ * (retry once, then empty sections under a short life). What can still throw
+ * out of it is a read it awaits and does not own — the category tree behind the
+ * hrefs, or branding. For that, this renders an empty footer for THIS request
+ * only, rather than failing the whole layout, and nothing is cached by the
+ * catch. It cannot rescue a BUILD: a throw inside a `"use cache"` scope fails
+ * the prerender whether or not a caller catches it, which is why the real fix
+ * lives inside `getFooterMenus`. `BrandingUnavailableError` is rethrown so the
+ * layout's own branding fallback below still sees it.
+ *
+ * `unstable_rethrow` runs first so a Next-internal interruption (a redirect, a
+ * `notFound()`, a prefetch abort) is never swallowed as a read failure.
+ */
+async function safeGetFooterMenus(): ReturnType<typeof getFooterMenus> {
+  try {
+    return await getFooterMenus();
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof BrandingUnavailableError) throw error;
+    // ONE line, no error object, no stack: a build renders thousands of pages
+    // against one log budget.
+    logger.error("menu_read_failed", {
+      caller: "RootLayout",
+      locations: "FOOTER,FOOTER_2,FOOTER_3,FOOTER_4,FOOTER_POLICY",
+      action: "fallback-this-request",
+      ...errorFields(error),
+    });
+    return [];
+  }
+}
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -141,7 +176,7 @@ export default async function RootLayout({
   try {
     const [bundle, menus, assets, email] = await Promise.all([
       getBranding(),
-      getFooterMenus(),
+      safeGetFooterMenus(),
       getBrandingAssets(),
       getEmailMarketingStatus(),
     ]);

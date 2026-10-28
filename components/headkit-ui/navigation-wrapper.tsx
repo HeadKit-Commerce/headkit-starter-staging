@@ -1,10 +1,12 @@
 import type { ReactElement } from "react";
-import type { MenuLocation } from "@headkit/sdk";
-import { cacheTag } from "next/cache";
+import type { ClientSDK, MenuLocation } from "@headkit/sdk";
+import { cacheLife, cacheTag } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { cacheLifeForProfile } from "@/lib/cache-profile";
 import { convertToRelativePath } from "@/lib/convert-uri";
 import { TAG } from "@/lib/cache-tags";
-import { headkit } from "@/lib/sdk";
+import { headkit, headkitRetry } from "@/lib/sdk";
+import { errorFields, logger } from "@/lib/logger";
 import {
   NavigationBar,
   type NavMenuItem,
@@ -12,6 +14,7 @@ import {
 import { MobileHeaderActions } from "@/components/headkit-ui/header-actions";
 import { BrandLogo } from "@/components/icon/brand-logo";
 import { getBranding, getBrandingAssets } from "@/lib/branding";
+import { BrandingUnavailableError } from "@/lib/branding-cache-policy";
 import { resolveStoreName } from "@/lib/make-metadata";
 import {
   filterMenuItemsByNonEmptyCollections,
@@ -150,17 +153,20 @@ async function collectionPathLookup(): Promise<CollectionPathLookup> {
  * entries below so each cached fn owns its OWN `cacheTag` — the by-location menu
  * tag vs the isolated footer tag — without a nested `use cache` boundary (nested
  * tags don't bubble, so the tag must sit on the data-producing cache entry).
+ *
+ * It THROWS on a failed read. It used to swallow into `[]`, which the calling
+ * `"use cache"` entry then stored under the healthy lifetime — an empty menu
+ * pinned for the whole life of the entry. Every call site wraps it in
+ * {@link readMenusWithRetry}, which retries and then degrades under a short
+ * lifetime instead.
  */
 async function loadMenu(
   location: MenuLocation,
   canonicalPath: CollectionPathLookup,
+  client: ClientSDK,
 ): Promise<NavMenuItem[]> {
-  try {
-    const tree = await headkit.menu.get(location);
-    return normalizeMenu(tree, canonicalPath);
-  } catch {
-    return [];
-  }
+  const tree = await client.menu.get(location);
+  return normalizeMenu(tree, canonicalPath);
 }
 
 const HEADER_LOCATIONS = [
@@ -185,28 +191,127 @@ const EMPTY_MENU: NavigationMenuLike = {
 
 /**
  * One GraphQL round-trip for the given locations (commerce fetches WP in
- * parallel). Degrades to empty menus on failure. Result order matches
- * `locations`.
+ * parallel). Result order matches `locations`. THROWS on a failed read — see
+ * {@link loadMenu}; a location the response simply lacks is an empty menu.
  */
 async function loadMenusBatch(
   locations: readonly MenuLocation[],
+  client: ClientSDK,
 ): Promise<NavigationMenuLike[]> {
-  try {
-    const menus = await headkit.menu.getMenus([...locations]);
-    return locations.map((_, i) => {
-      const menu = menus[i];
-      if (!menu) {
-        return { ...EMPTY_MENU };
-      }
+  const menus = await client.menu.getMenus([...locations]);
+  return locations.map((_, i) => {
+    const menu = menus[i];
+    if (!menu) {
+      return { ...EMPTY_MENU };
+    }
+    return {
+      name: menu.name,
+      description: menu.description ?? null,
+      items: menu.items,
+    };
+  });
+}
+
+/**
+ * Pause before the ONE retry {@link readMenusWithRetry} gives a failed menu
+ * read.
+ */
+const MENU_READ_RETRY_DELAY_MS = 500;
+
+/**
+ * Cache life for a DEGRADED (empty) menu result.
+ *
+ * `minutes` is `{ stale: 300, revalidate: 60, expire: 3600 }`, so the degraded
+ * entry refreshes in the background a minute later and the next request after
+ * that paints real menus. The `expire` deliberately stays at an hour rather
+ * than "a few minutes": Next omits any entry whose `expire` is UNDER 300 s
+ * (`MIN_PRERENDERABLE_EXPIRE`, `next/dist/server/use-cache/constants.js`) from
+ * a static prerender and replaces it with a hanging promise. These reads are
+ * awaited by the ROOT LAYOUT, which renders no `<Suspense>`, so a shorter
+ * `expire` would turn a dynamic hole loose above every boundary and cost every
+ * route its static document. Never `seconds`; never a hand-written sub-300 s
+ * `expire`.
+ *
+ * Plain `cacheLife`, not `cacheLifeForProfile`: a degraded result must be
+ * short-lived under BOTH cache profiles, so there is no aggressive value to
+ * name.
+ */
+const DEGRADED_MENU_CACHE_LIFE = "minutes";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type MenuReadResult<T> = { ok: true; value: T } | { ok: false };
+
+/**
+ * Run a menu read INSIDE a `"use cache"` scope, retrying once and reporting the
+ * outcome instead of throwing.
+ *
+ * WHY A THROW MAY NEVER LEAVE A CACHE SCOPE. Under Next 16 Cache Components an
+ * error thrown inside a `"use cache"` function during a build prerender fails
+ * THAT PAGE's prerender even when the caller outside the boundary catches it,
+ * and the cache fill is deduplicated across concurrent page prerenders — so one
+ * failed menu read fails every page waiting on the fill, and its error dump
+ * (a GraphQL error per page) can overrun the build-log limit. A catch in the
+ * caller changes nothing. So the failure is decided HERE, on the inside: retry
+ * once, then degrade to an empty result stored under
+ * {@link DEGRADED_MENU_CACHE_LIFE}. The old behaviour — swallow into `[]` and
+ * let the entry keep its healthy lifetime — pinned an empty header or footer
+ * for as long as the entry lived (`max` on the `aggressive` profile).
+ *
+ * `cacheLife` is chosen EXACTLY ONCE per invocation, by the caller, after this
+ * returns: Next's reference asks for one call per invocation ("Conditional
+ * cache lifetimes"), and its min-per-field behaviour is an implementation
+ * detail not to build on.
+ *
+ * The retry goes through `headkitRetry`, for two reasons. The SDK transport
+ * already retries 429s, 5xx statuses and connection errors with backoff
+ * (~30 s), so repeating that would double the time one shared cache fill can
+ * hold every waiting page; this retry exists for the failure shapes the transport
+ * does not classify as transient (a GraphQL error body — an undecodable or
+ * timed-out subgraph response), and one more plain attempt is all it needs. And
+ * that same shape is an HTTP 200, which Next's fetch cache stores and replays to
+ * an identical request, so a retry that was the SAME request would be answered
+ * from the failure it is retrying and never reach the gateway (see
+ * `retryGatewayUrl` in `lib/sdk.ts`).
+ *
+ * `unstable_rethrow(error)` is the FIRST statement of the catch, so a
+ * Next-internal interruption (a prefetch abort, `notFound()`, a redirect) keeps
+ * propagating and is never retried or counted as a menu failure.
+ *
+ * ONE log line, no error object, no stack: a build renders thousands of pages
+ * against one log budget, and a per-page error dump is what overruns it.
+ */
+async function readMenusWithRetry<T>(
+  read: (client: ClientSDK) => Promise<T>,
+  caller: string,
+  locations: readonly MenuLocation[],
+): Promise<MenuReadResult<T>> {
+  const attempts = 2;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
       return {
-        name: menu.name,
-        description: menu.description ?? null,
-        items: menu.items,
+        ok: true,
+        value: await read(attempt === 0 ? headkit : headkitRetry),
       };
-    });
-  } catch {
-    return locations.map(() => ({ ...EMPTY_MENU }));
+    } catch (error) {
+      unstable_rethrow(error);
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await sleep(MENU_READ_RETRY_DELAY_MS);
+      }
+    }
   }
+  logger.error("menu_read_failed", {
+    caller,
+    locations: locations.join(","),
+    attempts,
+    action: "degrade-empty-short-life",
+    ...errorFields(lastError),
+  });
+  return { ok: false };
 }
 
 /**
@@ -221,17 +326,31 @@ async function loadMenusBatch(
  *
  * Prefer {@link NavigationWrapper}'s batched `getMenus` for chrome that needs
  * several locations; keep this for single-location callers.
+ *
+ * A FAILED read does not throw out of this scope — see
+ * {@link readMenusWithRetry}. It retries once, then returns an empty menu under
+ * {@link DEGRADED_MENU_CACHE_LIFE} so the next minute's request repopulates it.
  */
 export async function fetchMenu(
   location: MenuLocation,
 ): Promise<NavMenuItem[]> {
   "use cache: remote";
-  cacheLifeForProfile("hours", "max");
   // `TAG.collections` because the hrefs are re-derived from the category tree
   // (see `collectionPathLookup`): a category rename or re-parent changes this
   // entry's output even when the menu itself never moves.
   cacheTag(TAG.menu(location), TAG.collections);
-  return loadMenu(location, await collectionPathLookup());
+  const canonicalPath = await collectionPathLookup();
+  const read = await readMenusWithRetry(
+    (client) => loadMenu(location, canonicalPath, client),
+    "fetchMenu",
+    [location],
+  );
+  if (!read.ok) {
+    cacheLife(DEGRADED_MENU_CACHE_LIFE);
+    return [];
+  }
+  cacheLifeForProfile("hours", "max");
+  return read.value;
 }
 
 /**
@@ -251,6 +370,13 @@ export async function fetchMenu(
  *
  * Tags: `TAG.footer` plus each location's `TAG.menu(...)` so any of the
  * menu edits (or the legacy footer tag) invalidate this entry.
+ *
+ * A FAILED read is handled INSIDE this scope by {@link readMenusWithRetry} —
+ * retry once, then five empty sections under {@link DEGRADED_MENU_CACHE_LIFE}.
+ * It must never throw out: see that function's header for why a catch in the
+ * caller does not help. `app/layout.tsx`'s `safeGetFooterMenus` stays as an
+ * OUTER guard for the reads this one does not own (the category tree,
+ * branding), not as the normal failure path.
  */
 export async function getFooterMenus(): Promise<
   {
@@ -260,7 +386,6 @@ export async function getFooterMenus(): Promise<
   }[]
 > {
   "use cache: remote";
-  cacheLifeForProfile("hours", "max");
   cacheTag(
     TAG.footer,
     TAG.menu("FOOTER"),
@@ -272,10 +397,28 @@ export async function getFooterMenus(): Promise<
     TAG.collections,
   );
 
-  const [menus, canonicalPath] = await Promise.all([
-    loadMenusBatch(FOOTER_LOCATIONS),
+  const [read, canonicalPath] = await Promise.all([
+    readMenusWithRetry(
+      (client) => loadMenusBatch(FOOTER_LOCATIONS, client),
+      "getFooterMenus",
+      FOOTER_LOCATIONS,
+    ),
     collectionPathLookup(),
   ]);
+  if (!read.ok) {
+    // Empty SECTIONS, not `[]`: the five slots are this function's contract and
+    // `Footer` drops a section with no items. Under
+    // `DEGRADED_MENU_CACHE_LIFE`, for about a minute.
+    cacheLife(DEGRADED_MENU_CACHE_LIFE);
+    return FOOTER_LOCATIONS.map((location) => ({
+      location,
+      name: "",
+      items: [],
+    }));
+  }
+  cacheLifeForProfile("hours", "max");
+
+  const menus = read.value;
   const footer = menus[0] ?? EMPTY_MENU;
   const footer2 = menus[1] ?? EMPTY_MENU;
   const footer3 = menus[2] ?? EMPTY_MENU;
@@ -325,10 +468,20 @@ export async function getFooterMenus(): Promise<
  */
 export async function getFooterMenu(): Promise<NavMenuItem[]> {
   "use cache: remote";
-  cacheLifeForProfile("hours", "max");
   // `TAG.collections` — same reason as `fetchMenu`.
   cacheTag(TAG.footer, TAG.menu("FOOTER"), TAG.collections);
-  return loadMenu("FOOTER", await collectionPathLookup());
+  const canonicalPath = await collectionPathLookup();
+  const read = await readMenusWithRetry(
+    (client) => loadMenu("FOOTER", canonicalPath, client),
+    "getFooterMenu",
+    ["FOOTER"],
+  );
+  if (!read.ok) {
+    cacheLife(DEGRADED_MENU_CACHE_LIFE);
+    return [];
+  }
+  cacheLifeForProfile("hours", "max");
+  return read.value;
 }
 
 /**
@@ -351,9 +504,12 @@ export function fallbackNavigation(): ReactElement {
   );
 }
 
-export async function NavigationWrapper() {
+/**
+ * Cached PRIMARY/SECONDARY/PRE_HEADER chrome read — see {@link NavigationWrapper}
+ * for the uncached caller that absorbs a failure this scope does not own.
+ */
+async function NavigationWrapperCached(): Promise<ReactElement> {
   "use cache: remote";
-  cacheLifeForProfile("hours", "max");
   // Subscribe to exactly what this wrapper composes: primary + secondary +
   // pre-header menus AND branding (the wrapper renders the logo from
   // getBrandingAssets / getBranding, and nested tags don't bubble — without
@@ -370,13 +526,44 @@ export async function NavigationWrapper() {
 
   // One menus(locations:) GraphQL RTT for PRIMARY + SECONDARY + PRE_HEADER
   // (commerce fetches WP in parallel). Branding stays parallel with that batch.
-  const [headerMenus, canonicalPath, { logoUrl }, { storeSettings, branding }] =
+  const [read, canonicalPath, { logoUrl }, { storeSettings, branding }] =
     await Promise.all([
-      loadMenusBatch(HEADER_LOCATIONS),
+      readMenusWithRetry(
+        (client) => loadMenusBatch(HEADER_LOCATIONS, client),
+        "NavigationWrapper",
+        HEADER_LOCATIONS,
+      ),
       collectionPathLookup(),
       getBrandingAssets(),
       getBranding(),
     ]);
+
+  const { layout } = getStoreTheme();
+
+  // `cacheLife` is chosen ONCE per invocation — see {@link readMenusWithRetry}.
+  // A failed read renders the logo-only header under the short life, so the nav
+  // repopulates about a minute later instead of staying empty until the entry
+  // expires.
+  if (!read.ok) {
+    cacheLife(DEGRADED_MENU_CACHE_LIFE);
+    return (
+      <NavigationBar
+        primaryMenuItems={[]}
+        secondaryMenuItems={[]}
+        navLayout={layout.navLayout}
+        navStyle={layout.navStyle}
+        logo={
+          <BrandLogo
+            logoUrl={logoUrl}
+            siteName={resolveStoreName(storeSettings.name)}
+          />
+        }
+        mobileActions={<MobileHeaderActions />}
+      />
+    );
+  }
+  cacheLifeForProfile("hours", "max");
+  const headerMenus = read.value;
 
   const nonEmptySlugs = branding.hideEmptyCollections
     ? await getNonEmptyCollectionSlugs()
@@ -409,8 +596,6 @@ export async function NavigationWrapper() {
     (preheaderTitle !== undefined && preheaderTitle.length > 0) ||
     preheaderLinks.length > 0;
 
-  const { layout } = getStoreTheme();
-
   return (
     <NavigationBar
       primaryMenuItems={primaryItems}
@@ -436,4 +621,62 @@ export async function NavigationWrapper() {
       mobileActions={<MobileHeaderActions />}
     />
   );
+}
+
+/**
+ * Uncached LAST-RESORT guard around {@link NavigationWrapperCached}.
+ *
+ * It is no longer the normal failure path for a menu read: that is handled
+ * inside the cache scope by {@link readMenusWithRetry}, because a throw
+ * crossing a `"use cache"` boundary fails the prerender of every page waiting
+ * on the deduplicated fill, caught or not. What reaches here is a failure in
+ * one of the OTHER reads the cached function awaits and does not own: the
+ * category tree (`collectionPathLookup`, which propagates on purpose) or
+ * branding.
+ *
+ * It rethrows any Next-internal interruption first, logs ONE line, and renders
+ * a minimal header for THAT request only — never cached. The logo and store name
+ * are re-read when they can be, so a category-tree failure does not swap the
+ * store's wordmark for the Demo one. `BrandingUnavailableError` is left to
+ * propagate: the root layout already routes it to {@link fallbackNavigation}.
+ */
+export async function NavigationWrapper(): Promise<ReactElement> {
+  try {
+    return await NavigationWrapperCached();
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof BrandingUnavailableError) throw error;
+    logger.error("chrome_read_failed", {
+      caller: "NavigationWrapper",
+      action: "fallback-this-request",
+      ...errorFields(error),
+    });
+    const { layout } = getStoreTheme();
+    let logoUrl: string | null = null;
+    let siteName = resolveStoreName(null);
+    try {
+      const [assets, { storeSettings }] = await Promise.all([
+        getBrandingAssets(),
+        getBranding(),
+      ]);
+      logoUrl = assets.logoUrl;
+      siteName = resolveStoreName(storeSettings.name);
+    } catch (brandingError) {
+      unstable_rethrow(brandingError);
+      if (brandingError instanceof BrandingUnavailableError)
+        throw brandingError;
+      // Branding is a separate failure domain from the read above; failing too
+      // just means this one request renders the fallback wordmark.
+    }
+    return (
+      <NavigationBar
+        primaryMenuItems={[]}
+        secondaryMenuItems={[]}
+        navLayout={layout.navLayout}
+        navStyle={layout.navStyle}
+        logo={<BrandLogo logoUrl={logoUrl} siteName={siteName} />}
+        mobileActions={<MobileHeaderActions />}
+      />
+    );
+  }
 }

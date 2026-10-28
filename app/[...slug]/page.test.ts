@@ -80,7 +80,7 @@ vi.mock("@/components/headkit-ui/cms-page-body", () => ({
   CmsPageBody: (): null => null,
 }));
 
-import { getPageData, generateMetadata } from "./page";
+import Page, { getPageData, generateMetadata } from "./page";
 
 const SLUG = "about/team";
 const EXPECTED_TAGS = ["headkit:page:about/team", "headkit:pages"] as const;
@@ -179,5 +179,41 @@ describe("generateMetadata — canonical + indexing switch", () => {
     // Forwarded so the same origin decides whether Yoast's canonical is
     // same-host, and so metadataBase agrees with the canonical.
     expect(fallback["siteUrl"]).toBe("customer.com");
+  });
+});
+
+/**
+ * Asset-like paths (old WordPress image URLs, bot probes) must 404 BEFORE the
+ * CMS read — `lib/catch-all-slug-guard.ts`. Commerce decodes whatever
+ * WordPress returns for that path without a content-type check, so an image
+ * body or a 403 throws a decode error and the shopper gets a 500, not a 404.
+ */
+describe("asset-like slugs never reach the CMS read", () => {
+  it("generateMetadata noindexes without calling the content loader", async () => {
+    const metadata = await generateMetadata({
+      params: Promise.resolve({
+        slug: ["wp-content", "uploads", "2019", "photo.jpg"],
+      }),
+    });
+    expect(metadata.robots).toEqual({ index: false, follow: false });
+    expect(contentGet).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [["wp-content", "x"]],
+    [["wp-admin"]],
+    [[".well-known", "x"]],
+    [["favicon-96x96.png"]],
+  ])("Page() 404s %j without calling the content loader", async (slug) => {
+    await expect(Page({ params: Promise.resolve({ slug }) })).rejects.toThrow();
+    expect(contentGet).not.toHaveBeenCalled();
+  });
+
+  it("still serves a genuine nested CMS slug with no extension", async () => {
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: ["legal", "privacy-policy"] }),
+    });
+    expect(contentGet).toHaveBeenCalledWith("legal/privacy-policy", "PAGE");
+    expect(metadata.robots).toBeUndefined();
   });
 });

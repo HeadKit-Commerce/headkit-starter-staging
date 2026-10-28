@@ -65,7 +65,7 @@ const LAYOUT_AWAITED_READS: ReadonlyArray<{
 }> = [
   { call: "getBranding()", carrier: "lib/branding.ts" },
   {
-    call: "getFooterMenus()",
+    call: "safeGetFooterMenus()",
     carrier: "components/headkit-ui/navigation-wrapper.tsx",
   },
   { call: "getBrandingAssets()", carrier: "lib/branding.ts" },

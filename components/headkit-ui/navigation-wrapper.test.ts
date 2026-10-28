@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { notFound } from "next/navigation";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * navigation-wrapper cache-tag/life realignment guard (09.5-03, CACHE-03).
@@ -19,6 +20,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  *    `/collections/...` hrefs are re-derived from the category tree rather than
  *    taken from the CMS (see `lib/menu-canonical-href.ts`), so a category
  *    re-parent changes a menu entry's output with no menu edit.
+ *
+ * Failure handling (the "menu read failure" blocks): a failed menu read retries
+ * ONCE, then degrades to an empty result under the short `minutes` life with one
+ * log line, and never throws out of the cache scope. These are source-level
+ * claims — a `cacheLife` spy cannot show that Next serves the degraded entry
+ * stale and refreshes it, nor that a build survives; those are measured in the
+ * Docker stack.
  *
  * `next/cache` is mocked so `cacheTag` / `cacheLife` calls are captured; the SDK
  * + UI components are stubbed so the module imports cleanly in a node env.
@@ -54,17 +62,30 @@ vi.mock("next/cache", () => ({
   cacheLife: (profile: string): void => cacheLife(profile),
 }));
 
-vi.mock("@/lib/sdk", () => ({
-  headkit: {
+// `headkit` and `headkitRetry` are two clients over the SAME stubs, so a test
+// can tell WHICH one a read went through without a second set of fixtures:
+// `retryRead` is called (with the method name) by the retry client only.
+const { retryRead } = vi.hoisted(() => ({
+  retryRead: vi.fn<(method: string) => void>(),
+}));
+
+vi.mock("@/lib/sdk", () => {
+  const client = (onRead: (method: string) => void) => ({
     menu: {
-      get: (location: string): Promise<unknown[]> => menuGet(location),
+      get: (location: string): Promise<unknown[]> => {
+        onRead("menu.get");
+        return menuGet(location);
+      },
       getMenu: (
         location: string,
       ): Promise<{
         name: string;
         description?: string | null;
         items: unknown[];
-      }> => menuGetMenu(location),
+      }> => {
+        onRead("menu.getMenu");
+        return menuGetMenu(location);
+      },
       getMenus: (
         locations: string[],
       ): Promise<
@@ -73,13 +94,20 @@ vi.mock("@/lib/sdk", () => ({
           description?: string | null;
           items: unknown[];
         }>
-      > => menuGetMenus(locations),
+      > => {
+        onRead("menu.getMenus");
+        return menuGetMenus(locations);
+      },
     },
     collections: {
       getCategories: (): Promise<unknown[]> => getCategories(),
     },
-  },
-}));
+  });
+  return {
+    headkit: client(() => undefined),
+    headkitRetry: client((method) => retryRead(method)),
+  };
+});
 
 vi.mock("@/components/headkit-ui/navigation-bar", () => ({
   NavigationBar: (): null => null,
@@ -99,6 +127,7 @@ vi.mock("@/lib/branding", () => ({
   getBrandingAssets: vi.fn(async () => ({ logoUrl: null })),
 }));
 
+import { logger } from "@/lib/logger";
 import {
   fetchMenu,
   getFooterMenu,
@@ -106,11 +135,24 @@ import {
   NavigationWrapper,
 } from "./navigation-wrapper";
 
+const logError = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+
+/**
+ * The lives THIS module chose. `collectionPathIndex` is a nested cache entry
+ * with its own `cacheLife("days")`, which the same spy also records; it is not a
+ * decision these reads make, so it is filtered out.
+ */
+function chromeLives(): string[] {
+  return cacheLife.mock.calls.flat().filter((life) => life !== "days");
+}
+
 function allTags(): string[] {
   return cacheTag.mock.calls.flat();
 }
 
 beforeEach(() => {
+  retryRead.mockClear();
+  logError.mockClear();
   getCategories.mockReset();
   getCategories.mockResolvedValue([]);
   cacheTag.mockClear();
@@ -153,11 +195,6 @@ describe("fetchMenu — tagged by location, hours backstop", () => {
       "headkit:menu:PRE_HEADER",
       "headkit:collections",
     );
-  });
-
-  it("degrades to [] when the SDK read throws", async () => {
-    menuGet.mockRejectedValueOnce(new Error("boom"));
-    await expect(fetchMenu("PRIMARY")).resolves.toEqual([]);
   });
 });
 
@@ -229,11 +266,6 @@ describe("getFooterMenu — legacy FOOTER-only helper", () => {
       "headkit:collections",
     );
     expect(cacheLife).toHaveBeenCalledWith("hours");
-  });
-
-  it("degrades to [] when the SDK read throws", async () => {
-    menuGet.mockRejectedValueOnce(new Error("boom"));
-    await expect(getFooterMenu()).resolves.toEqual([]);
   });
 });
 
@@ -409,5 +441,137 @@ describe("category hrefs are re-derived from the tree, not taken from the CMS", 
       "/collections/socks",
       "/collections/hats",
     ]);
+  });
+});
+
+/**
+ * A failed menu read is decided INSIDE the cache scope: retry once, then an
+ * empty result stored under the short `minutes` life — never the healthy
+ * lifetime (`max` on the aggressive profile), and never a throw, because a throw
+ * leaving a `"use cache"` function fails the prerender of every page waiting on
+ * the deduplicated fill whether or not a caller catches it.
+ */
+describe("menu read failure — retry once, then degrade briefly", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Drive a promise to completion across the retry's real-timer sleep. */
+  async function settle<T>(promise: Promise<T>): Promise<T> {
+    await vi.runAllTimersAsync();
+    return promise;
+  }
+
+  const FIVE_EMPTY = [
+    "FOOTER",
+    "FOOTER_2",
+    "FOOTER_3",
+    "FOOTER_4",
+    "FOOTER_POLICY",
+  ].map((location) => ({ location, name: "", items: [] }));
+
+  it("retries ONCE after a failure and keeps the healthy life when the retry succeeds", async () => {
+    menuGet.mockRejectedValueOnce(new Error("decoding: EOF"));
+    menuGet.mockResolvedValueOnce([
+      { id: "1", label: "Bikes", uri: "/bikes", children: [] },
+    ]);
+    const menu = await settle(fetchMenu("PRIMARY"));
+    expect(menuGet).toHaveBeenCalledTimes(2);
+    expect(menu.map((item) => item.label)).toEqual(["Bikes"]);
+    expect(chromeLives()).toEqual(["hours"]);
+    expect(logError).not.toHaveBeenCalled();
+  });
+
+  it("makes the retry through the retry client — no SDK backoff, and a request identity of its own", async () => {
+    menuGetMenus.mockRejectedValueOnce(new Error("decoding: EOF"));
+    await settle(getFooterMenus());
+    expect(menuGetMenus).toHaveBeenCalledTimes(2);
+    expect(retryRead.mock.calls).toEqual([["menu.getMenus"]]);
+  });
+
+  it("fetchMenu degrades to [] under the short life after two failures, with one log line", async () => {
+    menuGet.mockRejectedValue(new Error("boom"));
+    await expect(settle(fetchMenu("PRIMARY"))).resolves.toEqual([]);
+    expect(menuGet).toHaveBeenCalledTimes(2);
+    expect(chromeLives()).toEqual(["minutes"]);
+    expect(logError).toHaveBeenCalledTimes(1);
+    expect(logError.mock.calls[0]?.[0]).toBe("menu_read_failed");
+  });
+
+  it("getFooterMenu degrades to [] under the short life after two failures", async () => {
+    menuGet.mockRejectedValue(new Error("boom"));
+    await expect(settle(getFooterMenu())).resolves.toEqual([]);
+    expect(chromeLives()).toEqual(["minutes"]);
+    expect(logError).toHaveBeenCalledTimes(1);
+  });
+
+  it("getFooterMenus degrades to its five empty slots under the short life, never throwing", async () => {
+    menuGetMenus.mockRejectedValue(new Error("boom"));
+    await expect(settle(getFooterMenus())).resolves.toEqual(FIVE_EMPTY);
+    expect(menuGetMenus).toHaveBeenCalledTimes(2);
+    expect(chromeLives()).toEqual(["minutes"]);
+    expect(logError).toHaveBeenCalledTimes(1);
+  });
+
+  it("NavigationWrapper renders a logo-only header under the short life", async () => {
+    menuGetMenus.mockRejectedValue(new Error("boom"));
+    const nav = (await settle(NavigationWrapper())) as {
+      props: { primaryMenuItems: unknown[]; secondaryMenuItems: unknown[] };
+    };
+    expect(nav.props.primaryMenuItems).toEqual([]);
+    expect(nav.props.secondaryMenuItems).toEqual([]);
+    expect(chromeLives()).toEqual(["minutes"]);
+    expect(logError).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs no error object and no stack — one bounded line", async () => {
+    menuGetMenus.mockRejectedValue(new Error("boom"));
+    await settle(getFooterMenus());
+    const fields = logError.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(Object.keys(fields).sort()).toEqual([
+      "action",
+      "attempts",
+      "caller",
+      "locations",
+      "message",
+      "name",
+    ]);
+    expect(JSON.stringify(fields)).not.toContain("stack");
+  });
+
+  it("never lets the degraded entry take a healthy life", async () => {
+    menuGet.mockRejectedValue(new Error("boom"));
+    menuGetMenus.mockRejectedValue(new Error("boom"));
+    await settle(fetchMenu("PRIMARY"));
+    await settle(getFooterMenu());
+    await settle(getFooterMenus());
+    await settle(NavigationWrapper());
+    expect(chromeLives()).toEqual(["minutes", "minutes", "minutes", "minutes"]);
+  });
+
+  it("a Next-internal interruption propagates: not retried, not logged", async () => {
+    menuGet.mockImplementation(() => {
+      notFound();
+    });
+    await expect(fetchMenu("PRIMARY")).rejects.toThrow();
+    expect(menuGet).toHaveBeenCalledTimes(1);
+    expect(logError).not.toHaveBeenCalled();
+    expect(chromeLives()).toEqual([]);
+  });
+});
+
+describe("NavigationWrapper — last-resort guard for reads the cached scope does not own", () => {
+  it("a category-tree failure renders a fallback header for that request, logged once and not cached", async () => {
+    getCategories.mockRejectedValue(new Error("tree down"));
+    const nav = (await NavigationWrapper()) as {
+      props: { primaryMenuItems: unknown[] };
+    };
+    expect(nav.props.primaryMenuItems).toEqual([]);
+    expect(logError).toHaveBeenCalledTimes(1);
+    expect(logError.mock.calls[0]?.[0]).toBe("chrome_read_failed");
+    expect(chromeLives()).toEqual([]);
   });
 });
