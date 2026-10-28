@@ -11,24 +11,42 @@ import type { ProductFilters } from "@headkit/sdk";
  * Those are measured in the Docker stack and against a production build.
  */
 
-const { cacheLife, cacheTag, getFilters, retryGetFilters, logInfo, logError } =
-  vi.hoisted(() => ({
-    cacheLife: vi.fn<(life: unknown) => void>(),
-    cacheTag: vi.fn<(...tags: string[]) => void>(),
-    getFilters: vi.fn<() => Promise<unknown>>(),
-    retryGetFilters: vi.fn<() => Promise<unknown>>(),
-    logInfo: vi.fn<(event: string, fields?: Record<string, unknown>) => void>(),
-    logError:
-      vi.fn<(event: string, fields?: Record<string, unknown>) => void>(),
-  }));
+const {
+  cacheLife,
+  cacheTag,
+  getFilters,
+  getFiltersWithSwatches,
+  retryGetFilters,
+  logInfo,
+  logError,
+} = vi.hoisted(() => ({
+  cacheLife: vi.fn<(life: unknown) => void>(),
+  cacheTag: vi.fn<(...tags: string[]) => void>(),
+  // The swatch-FREE read: nothing here may call it (see the test below).
+  getFilters: vi.fn<() => Promise<unknown>>(),
+  getFiltersWithSwatches: vi.fn<() => Promise<unknown>>(),
+  retryGetFilters: vi.fn<() => Promise<unknown>>(),
+  logInfo: vi.fn<(event: string, fields?: Record<string, unknown>) => void>(),
+  logError: vi.fn<(event: string, fields?: Record<string, unknown>) => void>(),
+}));
 
 vi.mock("next/cache", () => ({
   cacheLife: (life: unknown): void => cacheLife(life),
   cacheTag: (...tags: string[]): void => cacheTag(...tags),
 }));
 vi.mock("@/lib/sdk", () => ({
-  headkit: { collections: { getFilters: () => getFilters() } },
-  headkitRetry: { collections: { getFilters: () => retryGetFilters() } },
+  headkit: {
+    collections: {
+      getFilters: () => getFilters(),
+      getFiltersWithSwatches: () => getFiltersWithSwatches(),
+    },
+  },
+  headkitRetry: {
+    collections: {
+      getFilters: () => getFilters(),
+      getFiltersWithSwatches: () => retryGetFilters(),
+    },
+  },
 }));
 vi.mock("@/lib/logger", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/logger")>()),
@@ -47,6 +65,7 @@ beforeEach(() => {
   cacheLife.mockReset();
   cacheTag.mockReset();
   getFilters.mockReset();
+  getFiltersWithSwatches.mockReset();
   retryGetFilters.mockReset();
   logInfo.mockReset();
   logError.mockReset();
@@ -92,19 +111,30 @@ describe("fetchCatalogFilters — one bounded retry", () => {
     expect(logError.mock.calls[0]?.[0]).toBe("catalog_filters_failed");
   });
 
-  it("reads sdk.collections.getFilters() with no arguments, first on `headkit`, then on `headkitRetry`", async () => {
-    getFilters.mockRejectedValueOnce(new Error("boom"));
+  it("reads sdk.collections.getFiltersWithSwatches() with no arguments, first on `headkit`, then on `headkitRetry`", async () => {
+    getFiltersWithSwatches.mockRejectedValueOnce(new Error("boom"));
     retryGetFilters.mockResolvedValueOnce(FACETS);
     const delay = vi.fn().mockResolvedValue(undefined);
     await expect(fetchCatalogFilters({ delay })).resolves.toBe(FACETS);
-    expect(getFilters).toHaveBeenCalledExactlyOnceWith();
+    expect(getFiltersWithSwatches).toHaveBeenCalledExactlyOnceWith();
     expect(retryGetFilters).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it("never reads the swatch-free `getFilters`, which would draw no colour dot and still type-check", async () => {
+    // `swatchColor` is on the generated `ProductFilterOption` type either way,
+    // but `getFilters` does not SELECT it: a facet wired against it compiles
+    // and is `undefined` on every option. The opt-in read is the only one that
+    // carries the colours.
+    getFiltersWithSwatches.mockResolvedValue(FACETS);
+    const delay = vi.fn().mockResolvedValue(undefined);
+    await expect(fetchCatalogFilters({ delay })).resolves.toBe(FACETS);
+    expect(getFilters).not.toHaveBeenCalled();
   });
 });
 
 describe("getCatalogFilters — the shared entry's lifetime", () => {
   it("keeps the finite `hours` life on the default (conservative) profile", async () => {
-    getFilters.mockResolvedValue(FACETS);
+    getFiltersWithSwatches.mockResolvedValue(FACETS);
     await expect(getCatalogFilters()).resolves.toBe(FACETS);
     expect(cacheLife.mock.calls).toEqual([["hours"]]);
     expect(cacheTag).toHaveBeenCalledWith("catalog:filters");
@@ -115,7 +145,7 @@ describe("getCatalogFilters — the shared entry's lifetime", () => {
     vi.stubEnv("HEADKIT_CACHE_PROFILE", "aggressive");
     try {
       const fresh = await import("./catalog-filters");
-      getFilters.mockResolvedValue(FACETS);
+      getFiltersWithSwatches.mockResolvedValue(FACETS);
       await fresh.getCatalogFilters();
       expect(cacheLife.mock.calls).toEqual([[fresh.CATALOG_FACET_CACHE_LIFE]]);
       expect(cacheLife).not.toHaveBeenCalledWith("max");

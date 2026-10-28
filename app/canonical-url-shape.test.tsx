@@ -238,6 +238,9 @@ vi.mock("@/lib/sdk", () => ({
       getCategory: (slug: string): Promise<unknown> =>
         Promise.resolve(COLLECTION_BY_SLUG[slug] ?? null),
       getFilters: (): Promise<unknown> => Promise.resolve({ attributes: [] }),
+      // The listing routes read the swatch-capable method (`getCategoryData`).
+      getFiltersWithSwatches: (): Promise<unknown> =>
+        Promise.resolve({ attributes: [] }),
     },
     brands: { list: (): Promise<unknown> => Promise.resolve({ brands: [] }) },
     posts: { list: (): Promise<unknown> => Promise.resolve({ posts: [] }) },

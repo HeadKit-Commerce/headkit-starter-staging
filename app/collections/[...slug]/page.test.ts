@@ -75,6 +75,9 @@ vi.mock("@/lib/sdk", () => ({
         return getCategory(slug);
       },
       getFilters: (slug: string): unknown => getFilters(slug),
+      // `getCategoryData` reads the swatch-capable method; same payload, so it
+      // answers from the same spy and every assertion below keeps its meaning.
+      getFiltersWithSwatches: (slug: string): unknown => getFilters(slug),
       getCategories: (): unknown => getCategories(),
     },
     brands: {

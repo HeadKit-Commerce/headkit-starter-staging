@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   NavigationMenu,
   NavigationMenuItem,
@@ -22,10 +22,11 @@ import { useCollection } from "./collection-context";
 import { FilterMenuItem } from "./filter-menu-item";
 import { CategoryFilter } from "./category-filter";
 import { AttributeFilter } from "./attribute-filter";
-import { BrandFilter } from "./brand-filter";
+import { BrandFilter, brandFacetOptions } from "./brand-filter";
 import { PriceFilter } from "./price-filter";
 import { ClearFiltersButton } from "./clear-filters-button";
 import { FACET_DROPDOWN_GRID_CLASS } from "./facet-panel";
+import { FILTER_BACKDROP_Z_CLASS, FILTER_BAR_Z_CLASS } from "./filter-overlay";
 import { SortMenu, MobileSortMenu } from "./sort-menu";
 import type { ProductFilterAttribute } from "@headkit/sdk";
 
@@ -102,8 +103,50 @@ export function Filter() {
     setFilterValues,
   } = useCollection();
   const isQuoteMode = useIsQuoteMode();
-  const [menuOpen, setMenuOpen] = useState(false);
+  // CONTROLLED, because the only two ways to dismiss an open panel are ours.
+  // Base UI's `NavigationMenu.Root` lists `outsidePress` and `escapeKey` among
+  // its change reasons but raises neither here: those are the floating
+  // behaviours of a `Popup`/`Positioner`, and this menu renders neither (the
+  // panel lives in the bar's own subtree so it cannot anchor to the trigger and
+  // run off the right). With the Category panel open, a click on the backdrop
+  // and an Escape with the trigger focused both left `aria-expanded="true"`.
+  // Holding the value here is what lets the backdrop and the key handler below
+  // close it.
+  const [openPanel, setOpenPanel] = useState<string | null>(null);
+  const menuOpen = openPanel !== null;
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const barRef = useRef<HTMLElement>(null);
+
+  /**
+   * Close the open panel, returning focus to the trigger that opened it when
+   * the dismissal came from the keyboard. The panel is not kept mounted, so an
+   * Escape pressed while focus sits on a facet checkbox would otherwise drop
+   * focus to `<body>`. Base UI stamps `data-popup-open` on the open trigger,
+   * which is the one element still in the DOM after this runs.
+   */
+  const closePanel = useCallback((restoreFocus: boolean) => {
+    if (restoreFocus) {
+      barRef.current?.querySelector<HTMLElement>("[data-popup-open]")?.focus();
+    }
+    setOpenPanel(null);
+  }, []);
+
+  // Escape closes. A pointer leaving the panel onto the backdrop does NOT, so
+  // nothing here listens for that. This is also the keyboard path for the
+  // backdrop, which stays `aria-hidden` and unfocusable — the same split
+  // `components/ui/sheet.tsx` relies on, where Base UI's own `Dialog.Backdrop`
+  // is an inert `<div>` and the key handling belongs to the primitive.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closePanel(true);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen, closePanel]);
+
   // Price + In Stock are commerce facets — hide for HeadKit Quote checkout.
   const showCommerceFacets = !isQuoteMode;
   const activeCount = useActiveFacetCount(showCommerceFacets);
@@ -116,11 +159,11 @@ export function Filter() {
     (attr): attr is ProductFilterAttribute & { slug: string } => !!attr?.slug,
   );
 
-  // Scoped (search) options carry their own brand list; with none of the
-  // matches branded there is nothing to offer, so the button goes. The
-  // un-scoped bar keeps the store's brand list (BrandFilter) as before.
-  const showBrand =
-    facetStatus !== "ready" || (productFilter.brands ?? []).length > 0;
+  // The route's own scoped brand list — `brandFacetOptions` is the one
+  // derivation, shared with the panel, so the guard and the list cannot
+  // disagree. A category that stocks no branded product has nothing to offer,
+  // so the trigger goes rather than opening onto an empty message.
+  const showBrand = brandFacetOptions(productFilter).length > 0;
 
   const inStockToggle = (
     <div className="flex min-h-10 items-center gap-2 px-2">
@@ -143,18 +186,32 @@ export function Filter() {
 
   return (
     <>
+      {/* The dim behind an open panel. It is a CLICK TARGET and `aria-hidden`:
+          a pointer press anywhere outside the bar dismisses the panel, while
+          the keyboard path is the Escape handler above rather than a focusable
+          overlay. Its layer, and the stack it sits in, is written out in
+          `./filter-overlay.ts`. */}
       {menuOpen && (
         <div
-          className="fixed inset-0 z-9 bg-black/50 backdrop-blur-xs"
+          className={cn(
+            "fixed inset-0 bg-black/50 backdrop-blur-xs",
+            FILTER_BACKDROP_Z_CLASS,
+          )}
+          onClick={() => closePanel(false)}
           aria-hidden
         />
       )}
 
       {/* Desktop / tablet: inline facet nav (sidebar-style dropdowns) */}
       <NavigationMenu
-        onValueChange={(v) => setMenuOpen(!!v)}
+        ref={barRef}
+        value={openPanel}
+        onValueChange={(v) => setOpenPanel((v as string | null) ?? null)}
         className={cn(
-          "sticky top-20 z-10 hidden w-full items-center justify-between px-5 md:flex md:px-10",
+          // `z-12` is not a free number: it has to clear every element inside
+          // `<main>` (they top out at 10) and stay under the header's own
+          // mega-menu scrim at 15. `./filter-overlay.ts` carries the stack.
+          `sticky top-20 ${FILTER_BAR_Z_CLASS} hidden w-full items-center justify-between px-5 md:flex md:px-10`,
           menuOpen
             ? "bg-brand-bg"
             : "bg-brand-bg/80 hover:bg-brand-bg backdrop-blur-xs",

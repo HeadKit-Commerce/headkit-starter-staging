@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { BrandSummary } from "@headkit/sdk";
+import type { ProductFilterOption, ProductFilters } from "@headkit/sdk";
 import { cn, decodeHtmlEntities } from "@/lib/utils";
-import { listFilterBrands } from "@/lib/collection-actions";
 import { useCollection } from "./collection-context";
 import { FACET_DRAWER_GRID_CLASS } from "./facet-panel";
 
@@ -13,53 +11,59 @@ interface BrandFilterProps {
 }
 
 /**
+ * The Brand options for a listing route — ONE derivation, read by the facet
+ * itself and by the trigger guard in `filter.tsx`.
+ *
+ * Two copies of this rule is how the defect below could come back halfway: a
+ * guard that hides the trigger on an empty list, over a panel still reading a
+ * different list, puts the two back out of agreement.
+ */
+export function brandFacetOptions(
+  productFilter: Pick<ProductFilters, "brands">,
+): ProductFilterOption[] {
+  return (productFilter.brands ?? []).filter(
+    (brand): brand is ProductFilterOption => !!brand?.slug && !!brand?.name,
+  );
+}
+
+/**
  * Brand facet (multi-select, URL-synced via collection-context `brands[]`).
  *
- * Brand options are NOT part of `ProductFilters` on an un-scoped listing —
- * they come from `headkit.brands.list()` (commerce BrandsDomain). On a search
- * with scoped facets (`facetStatus === "ready"`) they are
- * `productFilter.brands`, the brands of the matched products. The UI/URL carry a
- * multi-select array (D-02); per Open Q1 = single-ok, only the first selected
- * brand maps to the backend `ProductListFilter.brand` (see utils.ts).
+ * THE OPTIONS ARE THE ROUTE'S OWN SCOPED LIST, and used to be the whole store's.
+ * This component fetched `listFilterBrands()` from an effect on mount — a
+ * store-wide `headkit.brands.list({ perPage: 100 })` with no category scope
+ * anywhere in the chain — so every listing page offered a byte-identical panel,
+ * and ticking a brand the category does not stock navigated to
+ * `/collections/<cat>/f/brand.<slug>` and rendered "No products found".
+ *
+ * `productFilter.brands` is already in the payload every listing route awaits
+ * (`getFilters(mainCategory)` / `getCatalogFilters()`): scoped to the category,
+ * counted, and the same list `app/sitemap.ts` trusts for its brand-facet URLs.
+ * On a search with scoped facets (`facetStatus === "ready"`) the provider swaps
+ * that payload for the one counted over the matched products, so the same read
+ * serves both. This is a read of data the page already had, not a new request:
+ * the client round-trip is gone.
+ *
+ * Routes whose `productFilter` is the store-wide payload (`/shop`, `/sale`,
+ * `/new`, `/featured`, `/brand/*` and bare `/search`) still offer every brand
+ * the store lists; scoping those is a platform change (commerce, the gateway
+ * and the SDK expose only `mainCategory`).
+ *
+ * Counts arrive with every option and stay unrendered, as they were.
+ *
+ * The UI/URL carry a multi-select array (D-02); per Open Q1 = single-ok, only
+ * the first selected brand maps to the backend `ProductListFilter.brand` (see
+ * utils.ts).
  */
 export function BrandFilter({
   gridClassName = FACET_DRAWER_GRID_CLASS,
 }: BrandFilterProps = {}) {
-  const { filterValues, setFilterValues, productFilter, facetStatus } =
-    useCollection();
-  const [storeBrands, setStoreBrands] = useState<BrandSummary[]>([]);
-  // Scoped facets (a search's matches) carry their own brand list, counted
-  // over those products — the store's full list is exactly the wrong answer
-  // there, so it is not even fetched.
-  const scoped = facetStatus === "ready";
-  const brands: Pick<BrandSummary, "slug" | "name">[] = scoped
-    ? (productFilter.brands ?? []).flatMap((b) =>
-        b?.slug && b.name ? [{ slug: b.slug, name: b.name }] : [],
-      )
-    : storeBrands;
+  const { filterValues, setFilterValues, productFilter } = useCollection();
+  const brands = brandFacetOptions(productFilter);
 
-  useEffect(() => {
-    if (scoped) return;
-    let active = true;
-    void listFilterBrands()
-      .then((next) => {
-        if (active) setStoreBrands(next);
-      })
-      .catch(() => {
-        // Non-fatal: brand facet simply renders empty if the list fails.
-      });
-    return () => {
-      active = false;
-    };
-  }, [scoped]);
-
-  if (brands.length === 0) {
-    return (
-      <p className="px-1 py-2 text-sm text-muted-foreground">
-        No brands available
-      </p>
-    );
-  }
+  // `filter.tsx` guards the trigger on the same list, so this is not a
+  // reachable UI state there — it is the contract for any other mount site.
+  if (brands.length === 0) return null;
 
   return (
     <div className={gridClassName}>

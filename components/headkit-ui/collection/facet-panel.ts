@@ -21,23 +21,37 @@
  *    as bad as it was: at two columns a long facet list is twice as tall as it
  *    needs to be inside a panel that spans the whole viewport width.
  *
- * `70svh` rather than a larger cap: the facet bar is sticky near the top of
- * the viewport, so the panel's top edge already sits ~150 px down. At 80vh the
- * panel would still run past the bottom of a 900 px window and reintroduce an
- * unreachable tail; 70svh keeps the whole panel on screen at 900 px and on a
- * 600 px laptop. `svh` rather than `vh` so a mobile browser's retracting URL
- * bar cannot make the cap larger than the visible area.
+ * **The cap is a `calc()` of what sits above the panel, and the scroller does
+ * NOT contain overscroll.** The panel is most of the viewport (measured at
+ * 1440x900: 630px of a 900px screen), so once the option list reaches an end a
+ * wheel over it has almost nowhere else to land. `overscroll-behavior: contain`
+ * is the declaration whose whole purpose is to refuse scroll chaining, and with
+ * it the page could not be moved by any gesture started over the panel — which
+ * matters because the page scroll is what brings an over-long panel into view
+ * (the bar sticks, the panel stays pinned to it, and a shopper simply scrolls).
  *
- * `overscroll-contain` stops the scroll chaining to the page once the list
- * hits an end; it does NOT trap the page scroll, which continues to work
- * everywhere outside the panel.
+ * A viewport fraction (`70svh` was the first cap) cannot know how far down the
+ * panel starts. Its top is the sticky bar's bottom edge, so the cap is
+ *
+ *   100svh
+ *     - 5rem   the bar's top edge (`sticky top-20` in `filter.tsx`)
+ *     - 5rem   the bar's own height: `py-5` around an `h-10` trigger row
+ *     - 3rem   the panel's `p-4` (2rem) plus 1rem of clearance
+ *
+ * which ends the panel 16px clear of the fold at any window height. The bar's
+ * height is a literal because the bar has no way to publish it without a
+ * per-frame measurement and it is fixed by construction; change the bar's
+ * padding or the panel's `p-4` and this number moves with it.
+ *
+ * `svh` rather than `vh` so a mobile browser's retracting URL bar cannot make
+ * the cap larger than the visible area.
  *
  * A store that wants a different shape overrides these two rules from
  * `overrides/styles.css` against the panel's own markup rather than editing
  * this file.
  */
 export const FACET_PANEL_SCROLL_CLASS =
-  "max-h-[70svh] overflow-y-auto overscroll-contain";
+  "max-h-[calc(100svh_-_13rem)] overflow-y-auto";
 
 /**
  * Responsive column ladder for a checkbox facet inside a dropdown panel.

@@ -42,7 +42,6 @@ type SearchPage = {
 const actions = vi.hoisted(() => ({
   listSearchProducts: vi.fn(),
   listCollectionProducts: vi.fn(),
-  listFilterBrands: vi.fn(),
 }));
 vi.mock("@/lib/collection-actions", () => actions);
 
@@ -165,8 +164,6 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/search?q=helmet");
   actions.listSearchProducts.mockReset();
   actions.listCollectionProducts.mockReset();
-  actions.listFilterBrands.mockReset();
-  actions.listFilterBrands.mockResolvedValue([]);
   actions.listCollectionProducts.mockResolvedValue(page(null));
   resolveFacets = null;
   rejectFacets = null;

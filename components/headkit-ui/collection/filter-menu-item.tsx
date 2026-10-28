@@ -7,6 +7,7 @@ import {
   NavigationMenuContent,
 } from "@/components/ui/navigation-menu";
 import { FACET_PANEL_SCROLL_CLASS } from "./facet-panel";
+import { FILTER_PANEL_WIDTH_CLASS } from "./filter-overlay";
 
 interface FilterMenuItemProps {
   label: string;
@@ -35,7 +36,12 @@ export function FilterMenuItem({
           )}
         </div>
       </NavigationMenuTrigger>
-      <NavigationMenuContent className="rounded-none! p-4">
+      {/* The panel fills the BAR — see ./filter-overlay.ts for why the width is
+          declared here rather than on the shared primitive the site header
+          also renders through. */}
+      <NavigationMenuContent
+        className={cn("rounded-none! p-4", FILTER_PANEL_WIDTH_CLASS)}
+      >
         {/* The scroll container is INSIDE the panel, not on the Radix
             viewport: the viewport's height is measured from this content, so
             capping here clamps both at once and leaves the shared

@@ -48,13 +48,7 @@ import { createRoot } from "react-dom/client";
 
 vi.mock("server-only", () => ({}));
 
-// BrandFilter fetches its options through a server action on mount.
 vi.mock("@/lib/collection-actions", () => ({
-  listFilterBrands: (): Promise<{ slug: string; name: string }[]> =>
-    Promise.resolve([
-      { slug: "abus", name: "Abus" },
-      { slug: "zipp", name: "Zipp" },
-    ]),
   listCollectionProducts: (): Promise<never> => new Promise(() => {}),
 }));
 
@@ -72,7 +66,13 @@ vi.mock("@/components/headkit-ui/collection/collection-context", () => ({
   useCollection: () => ({
     filterValues,
     setFilterValues: (): void => {},
-    productFilter: {},
+    // The Brand facet reads the route's own scoped list from here.
+    productFilter: {
+      brands: [
+        { slug: "abus", name: "Abus", count: 2 },
+        { slug: "zipp", name: "Zipp", count: 1 },
+      ],
+    },
     isLoading: false,
   }),
 }));
@@ -125,8 +125,19 @@ describe("facet panel scroll container", () => {
     // string equality so the value can be retuned without a false failure.
     expect(FACET_PANEL_SCROLL_CLASS).toMatch(/\bmax-h-\[[^\]]+\]/);
     expect(FACET_PANEL_SCROLL_CLASS).toContain("overflow-y-auto");
-    // Chaining to the page is what makes the sticky bar scroll away mid-read.
-    expect(FACET_PANEL_SCROLL_CLASS).toContain("overscroll-contain");
+    // `overscroll-behavior: contain` refuses scroll chaining, and the panel is
+    // most of the viewport (measured 630px of 900px at 1440x900), so with it a
+    // wheel over the panel could not move the page at all — and the page
+    // scroll is what brings an over-long panel into view.
+    expect(FACET_PANEL_SCROLL_CLASS).not.toContain("overscroll");
+  });
+
+  it("derives its cap from the bar's position, not from a viewport fraction", () => {
+    // A bare `70svh` cannot know how far down the panel starts and ran past the
+    // fold on a short window. The cap must subtract the bar's top edge, the
+    // bar's own height and the panel's padding from the visible height.
+    expect(FACET_PANEL_SCROLL_CLASS).toContain("calc(100svh_-_13rem)");
+    expect(FACET_PANEL_SCROLL_CLASS).not.toMatch(/\bmax-h-\[\d+svh\]/);
   });
 
   it("is the wrapper FilterMenuItem puts every panel's children in", () => {
@@ -172,7 +183,7 @@ describe("facet option columns", () => {
     expect(FACET_DROPDOWN_GRID_CLASS).not.toContain("grid-cols-2");
   });
 
-  it("reaches the grid of all three checkbox facets", async () => {
+  it("reaches the grid of all three checkbox facets", () => {
     const category = gridOf(
       render(
         <CategoryFilter
@@ -192,9 +203,6 @@ describe("facet option columns", () => {
     const brandHost = render(
       <BrandFilter gridClassName={FACET_DROPDOWN_GRID_CLASS} />,
     );
-    // BrandFilter renders a placeholder until `listFilterBrands` resolves;
-    // flush that so the grid under test is the real one.
-    await act(async () => {});
 
     for (const grid of [category, attribute, gridOf(brandHost)]) {
       expect(grid.className).toBe(FACET_DROPDOWN_GRID_CLASS);
@@ -240,8 +248,8 @@ describe("keyboard reachability", () => {
         expect(label.querySelector("input.sr-only")).not.toBeNull();
       }
     }
-    // BrandFilter's labels render only after its action resolves; source is the
-    // only reading available synchronously.
+    // Brand's labels need a scoped list in the provider; its row class is read
+    // from source so the three facets share one assertion shape.
     expect(read("brand-filter.tsx")).toContain(
       'className="relative flex min-h-10 items-center space-x-2 cursor-pointer"',
     );

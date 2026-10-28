@@ -61,16 +61,70 @@ test.describe("Search + navigation (P1-26..P1-30, P1-36, P1-39)", () => {
       page.getByRole("heading", { name: "Classic Tee" }).first(),
       "/search results page did not list the seeded product",
     ).toBeVisible({ timeout: 20_000 });
-    // The header is the static "Search" shell (#671 stopped reading `?q=` on
-    // the server, so there is no query-specific "Search results for" title);
-    // the query reaches the grid on mount, and its count line tracks it.
+    // The server does not read `?q=` (#671), so the static shell is the bare
+    // "Search" page; the query reaches the grid on mount, and the title is
+    // rendered inside the grid's provider so it names the query and carries the
+    // grid's own count.
     await expect(
-      page.getByRole("heading", { level: 1, name: "Search" }),
+      page.getByRole("heading", {
+        level: 1,
+        name: 'Search results for "Classic Tee"',
+      }),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page.getByText(/\d+ products? found for "Classic Tee"/),
+      "the results title's count line is missing",
     ).toBeVisible();
     await expect(
       page.getByText(/Viewing \d+ of \d+ products/).first(),
       "the filtered grid's count line is missing",
     ).toBeVisible();
+  });
+
+  test("P1-26b: a second drawer search FROM /search replaces the grid and the title", async ({
+    page,
+  }) => {
+    // `/search?q=a` -> `/search?q=b` is a soft navigation onto the same static
+    // page: nothing React renders changes, so the grid used to keep the first
+    // query's products under the old URL. `SearchQueryRemount` is what notices.
+    await page.goto(
+      `${BASE_URL}/search?q=${encodeURIComponent("Classic Tee")}`,
+    );
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: 'Search results for "Classic Tee"',
+      }),
+    ).toBeVisible({ timeout: 20_000 });
+
+    await page.getByRole("button", { name: "Search" }).first().click();
+    const input = page.getByPlaceholder("Search products…");
+    await expect(input, "search drawer did not open").toBeVisible({
+      timeout: 15_000,
+    });
+    await input.fill("Wool Beanie");
+    await expect(
+      page.getByRole("heading", { name: "Wool Beanie" }).first(),
+      "drawer quick-results did not include the second seeded product",
+    ).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: /view more results/i }).click();
+    await page.waitForURL(/\/search\?q=Wool/, { timeout: 20_000 });
+
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: 'Search results for "Wool Beanie"',
+      }),
+      "the title did not follow the soft navigation",
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page.getByRole("heading", { name: "Wool Beanie" }).first(),
+      "the grid did not follow the soft navigation",
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page.getByRole("heading", { name: "Classic Tee" }),
+      "the previous query's product is still in the grid",
+    ).toHaveCount(0);
   });
 
   test("P1-27: junk query shows the no-results state (drawer AND /search page)", async ({

@@ -40,6 +40,8 @@ vi.mock("@/lib/sdk", () => ({
     collections: {
       getCategory: (slug: string): unknown => getCategory(slug),
       getFilters: (slug: string): unknown => getFilters(slug),
+      // `getCategoryData` reads the swatch-capable method; same payload.
+      getFiltersWithSwatches: (slug: string): unknown => getFilters(slug),
     },
   },
 }));

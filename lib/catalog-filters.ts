@@ -71,6 +71,33 @@ function sleep(ms: number): Promise<void> {
  * is the behaviour the caller had before this existed: a loud failure that
  * recovers on the next request, rather than a quiet one that sticks.
  *
+ * # Why `getFiltersWithSwatches` and not `getFilters`
+ *
+ * The filter bar draws a colour swatch beside each colour option, and the
+ * colours are `swatchColor` / `swatchColor2` on each `attributes[].options[]`
+ * entry. The SDK's SHARED facet read (`getFilters`) selects `slug name count`
+ * and nothing else, so calling it and reading `option.swatchColor` compiles
+ * (the field is on the generated type) and is `undefined` on every option — a
+ * swatch feature that ships entirely inert. `getFiltersWithSwatches` is the
+ * SDK's explicit opt-in that adds the two fields to the selection. It is the
+ * SAME aggregation with two more scalars per option: no extra origin read, no
+ * extra round trip, no change to any cache identity.
+ *
+ * **It requires a swatch-capable gateway, and the failure is total.** A gateway
+ * that predates the fields rejects the document WHOLESALE at validation
+ * (`Cannot query field "swatchColor" on type "ProductFilterOption"`) rather
+ * than answering with the fields it does have, which is why the SDK made it a
+ * separate method instead of a flag. This function throws after its retry, and
+ * the listing routes await it, so on an incapable gateway those routes fail to
+ * prerender. Both HeadKit estates' supergraphs carry the fields (platform
+ * #639/#640/#643); check `ProductFilterOption` on a gateway before pointing a
+ * storefront at one that has not been promoted.
+ *
+ * The VALUES are a second, independent capability: a store whose HeadKit theme
+ * predates 0.4.73 answers the empty string for both fields on every option, and
+ * the shopper sees the text-only rows they always have. `lib/facet-swatch.ts`
+ * owns that degradation.
+ *
  * @param options.read - seam for tests only.
  * @param options.delay - seam for tests only.
  */
@@ -80,8 +107,10 @@ export async function fetchCatalogFilters(options?: {
 }): Promise<ProductFilters> {
   const read =
     options?.read ??
+    // The swatch-capable read, NOT `getFilters` — see "Why
+    // `getFiltersWithSwatches`" above.
     ((client: ClientSDK): Promise<ProductFilters> =>
-      client.collections.getFilters());
+      client.collections.getFiltersWithSwatches());
   const delay = options?.delay ?? sleep;
 
   let lastError: unknown;

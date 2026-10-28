@@ -101,7 +101,14 @@ export async function getCategoryData(categorySlug: string) {
 
   const [category, productFilter] = await Promise.all([
     sdk.collections.getCategory(categorySlug),
-    sdk.collections.getFilters(categorySlug),
+    // The SWATCH-CAPABLE facet read, not `getFilters`: this entry is what
+    // `/collections/[...slug]` and `/shop/[...slug]`'s category branch hand to
+    // the filter bar, so `swatchColor` / `swatchColor2` have to be in the
+    // selection here or they arrive `undefined` on every option while still
+    // type-checking. Same aggregation, two more scalars per option: no extra
+    // origin read and no change to this entry's cache identity. It REQUIRES a
+    // gateway carrying both fields — see `lib/catalog-filters.ts`.
+    sdk.collections.getFiltersWithSwatches(categorySlug),
   ]);
 
   return { category, productFilter };

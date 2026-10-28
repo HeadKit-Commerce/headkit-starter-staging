@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { cacheLife, cacheTag } from "next/cache";
 import { getCatalogFilters } from "@/lib/catalog-filters";
-import { CollectionHeader } from "@/components/headkit-ui/collection/collection-header";
 import { CollectionProductsSkeleton } from "@/components/headkit-ui/skeletons/collection-page-skeleton";
 import { CollectionPage } from "@/components/headkit-ui/collection/collection-page";
+import { SearchQueryRemount } from "@/components/headkit-ui/collection/search-query-remount";
+import { SearchResultsHeading } from "@/components/headkit-ui/collection/search-results-heading";
 import {
   buildProductListFilter,
   DEFAULT_FILTER_VALUES,
@@ -76,7 +77,9 @@ async function getSearchFilters() {
  * open until an uncached `collections.list` finished, which is what a crawler
  * records as a slow page even when the edge cache says HIT. The catalog stays
  * hidden on `?q=` until that fetch commits, so it is not shown and then
- * replaced.
+ * replaced. The title (`Search results for "q"`) renders inside the grid's
+ * provider for the same reason, and `SearchQueryRemount` re-applies both when
+ * a soft navigation (the search drawer's "View more results") changes `?q=`.
  */
 export const instant = true;
 export const ensureStatic = "navigation";
@@ -89,12 +92,6 @@ export default function Page(): ReactNode {
           name: crumb.name,
           href: crumb.uri,
         }))}
-      />
-      <CollectionHeader
-        name="Search"
-        description={SEARCH_DESCRIPTION}
-        breadcrumbs={[...SEARCH_BREADCRUMBS]}
-        childBasePath="/collections"
       />
       <SearchQueryShell />
       <SearchProductsShell />
@@ -157,14 +154,23 @@ async function SearchProductsShell() {
   ]);
   return (
     <div data-search-catalog="">
-      <CollectionPage
-        initialProducts={productsResult.products}
-        initialTotal={productsResult.total}
-        productFilter={productFilter}
-        initialPage={1}
-        itemsPerPage={PER_PAGE}
-        scopedSearchFacets
-      />
+      <SearchQueryRemount>
+        <CollectionPage
+          header={
+            <SearchResultsHeading
+              title="Search"
+              description={SEARCH_DESCRIPTION}
+              breadcrumbs={[...SEARCH_BREADCRUMBS]}
+            />
+          }
+          initialProducts={productsResult.products}
+          initialTotal={productsResult.total}
+          productFilter={productFilter}
+          initialPage={1}
+          itemsPerPage={PER_PAGE}
+          scopedSearchFacets
+        />
+      </SearchQueryRemount>
     </div>
   );
 }

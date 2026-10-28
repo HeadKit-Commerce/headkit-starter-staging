@@ -1,15 +1,10 @@
 "use server";
 
 import type {
-  BrandSummary,
   ProductListFilter,
   ProductSummaryFieldsFragment,
 } from "@headkit/sdk";
-import {
-  getCachedCatalogPage,
-  getCachedFilterBrands,
-  scopeFromFilter,
-} from "@/lib/catalog-cache";
+import { getCachedCatalogPage, scopeFromFilter } from "@/lib/catalog-cache";
 
 export type CollectionPageResult = {
   products: ProductSummaryFieldsFragment[];
@@ -100,9 +95,4 @@ export async function listSearchProducts(
     const plain = await listCollectionProducts(filter, page, perPage);
     return { ...plain, matchedProductIds: null };
   }
-}
-
-/** Brand facet options for the PLP filter drawer (same-origin, no CORS). */
-export async function listFilterBrands(): Promise<BrandSummary[]> {
-  return getCachedFilterBrands();
 }

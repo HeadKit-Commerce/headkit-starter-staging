@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { cacheTag } from "next/cache";
 import { cacheLifeForProfile } from "@/lib/cache-profile";
-import type { BrandSummary, ProductListFilter } from "@headkit/sdk";
+import type { ProductListFilter } from "@headkit/sdk";
 import { TAG } from "@/lib/cache-tags";
 import { headkit, headkitNoRetry } from "@/lib/sdk";
 import { normalizeFilterKey } from "@/components/headkit-ui/collection/utils";
@@ -109,25 +109,14 @@ export async function getCachedSearchFacets(productIds: number[]) {
   "use cache: remote";
   cacheLifeForProfile("hours", "max");
   cacheTag(TAG.route("shop"), TAG.products, TAG.catalog);
-  return headkitNoRetry.collections.getFilters(
+  // The swatch-capable read, like the un-scoped facet reads (see
+  // `lib/catalog-filters.ts`): a query's Colour facet draws the same dots.
+  return headkitNoRetry.collections.getFiltersWithSwatches(
     undefined,
     undefined,
     undefined,
     productIds,
   );
-}
-
-/** Shared brand facet list for PLP filter drawers. */
-export async function getCachedFilterBrands(): Promise<BrandSummary[]> {
-  "use cache: remote";
-  cacheLifeForProfile("hours", "max");
-  cacheTag(TAG.brands, "catalog:filters");
-  const result = await headkit.brands.list({
-    perPage: 100,
-    orderby: "name",
-    order: "asc",
-  });
-  return result.brands;
 }
 
 /** Infer catalog scope from a list filter (used by Server Actions). */

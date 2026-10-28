@@ -1,6 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { facetSwatch } from "@/lib/facet-swatch";
+import { SwatchDot } from "@/components/headkit-ui/swatch-dot";
 import { useCollection } from "./collection-context";
 import { FACET_DRAWER_GRID_CLASS } from "./facet-panel";
 import { formatOptionName } from "./utils";
@@ -40,6 +42,10 @@ export function AttributeFilter({
       {attribute.options?.map((option) => {
         if (!option) return null;
         const isSelected = current.includes(option.slug);
+        // Null on every option of every facet until the store's theme sends
+        // colours — see `lib/facet-swatch.ts`. Null draws NOTHING, so the row
+        // is byte-for-byte the text-only row it has always been.
+        const swatch = facetSwatch(option);
         return (
           <label
             key={option.slug}
@@ -74,6 +80,32 @@ export function AttributeFilter({
                 });
               }}
             />
+            {swatch && (
+              // `aria-hidden` on the WRAPPER, not on the dot: `SwatchDot` ends
+              // with its own `sr-only` label (the card needs it, because there
+              // the dot's link carries no visible text), and here the row's
+              // visible text is already the checkbox's accessible name — so
+              // without this the control announces the colour twice. The
+              // wrapper is also what carries the row's 8px gap: `space-x-2`
+              // puts the margin on every child but the LAST, so the flex ITEM
+              // has to be this span. `shrink-0` keeps the 16px box at 16px in
+              // a column narrow enough to squeeze it. `SwatchDot` and not
+              // `VariantSwatch` because this row is a `<label>` around an
+              // `sr-only` checkbox: a nested `<button>` would reintroduce the
+              // axe `target-size` defect `swatch-dot.tsx` exists to avoid. No
+              // `imageSrc` / `attributeId` / `commerceSrc`: the facet payload
+              // carries no option image, and `SwatchPhotoLayer` returns null
+              // for that combination without an effect or a request.
+              <span aria-hidden="true" className="flex shrink-0">
+                <SwatchDot
+                  label={option.name}
+                  isSelected={isSelected}
+                  color1={swatch.color1}
+                  color2={swatch.color2}
+                  optionSlug={option.slug}
+                />
+              </span>
+            )}
             <span className={cn("text-sm", isSelected && "font-bold")}>
               {formatOptionName(option.name)}
               {option.count > 0 && (

@@ -29,6 +29,9 @@ interface CollectionPageProps {
   /** `/search`: filter options counted over the query's matches. See
    *  `CollectionProviderProps.scopedSearchFacets`. */
   scopedSearchFacets?: boolean;
+  /** Rendered inside the provider, above the grid — for a title that reads the
+   *  provider's own query and total (`/search`). */
+  header?: React.ReactNode;
 }
 
 /** The identity-bearing half of `CollectionPageProps` — everything that decides
@@ -102,6 +105,7 @@ export function CollectionPage({
   initialBrands,
   preferHeaderLcp = false,
   scopedSearchFacets = false,
+  header,
 }: CollectionPageProps) {
   const swatchImagesEnabled = experimentalSwatchImagesEnabled();
   return (
@@ -140,6 +144,7 @@ export function CollectionPage({
         initialBrands={initialBrands}
         scopedSearchFacets={scopedSearchFacets}
       >
+        {header}
         <div
           className="headkit-collection flex flex-col gap-4"
           data-headkit-collection

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/popover";
 import { useCatalogDisplay } from "@/components/headkit-ui/catalog-display-provider";
 import { useCollection } from "./collection-context";
+import { FILTER_PANEL_WIDTH_CLASS } from "./filter-overlay";
 import { SortKey, SortKeyLabels, type SortKeyType } from "./utils";
 
 /** Highlight the URL sort, or the route/branding default when ?sort= is absent. */
@@ -40,7 +41,11 @@ export function SortMenu() {
       <NavigationMenuTrigger className="cursor-pointer">
         Sort
       </NavigationMenuTrigger>
-      <NavigationMenuContent className="rounded-none!">
+      {/* Same width as the facet panels: a facet panel that fills the bar
+          beside a Sort panel that shrink-wraps is the same inconsistency. */}
+      <NavigationMenuContent
+        className={cn("rounded-none!", FILTER_PANEL_WIDTH_CLASS)}
+      >
         <div className="p-4 flex flex-col gap-2 items-end">
           {(Object.keys(SortKey) as SortKeyType[]).map((key) => (
             <div

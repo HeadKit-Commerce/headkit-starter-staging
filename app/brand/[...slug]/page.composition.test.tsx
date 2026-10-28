@@ -26,7 +26,12 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/sdk", () => ({
   headkit: {
     brands: { get: brandGet },
-    collections: { list, getFilters: filters },
+    collections: {
+      list,
+      getFilters: filters,
+      // `getCatalogFilters` reads the swatch-capable method; same payload.
+      getFiltersWithSwatches: filters,
+    },
   },
 }));
 vi.mock("next/cache", () => ({ cacheLife, cacheTag }));
