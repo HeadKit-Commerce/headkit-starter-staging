@@ -12,6 +12,7 @@ import {
   heroImageSizes,
   heroLayoutClasses,
   heroMediaClasses,
+  heroPaginationClasses,
   type HeroLayout,
 } from "@/lib/hero-layout";
 
@@ -142,7 +143,13 @@ export const MainCarousel = ({
 
   return (
     <div className={cn("headkit-hero-carousel overflow-hidden", shellClass)}>
-      {items.length > 1 ? <HeroRotator>{slides}</HeroRotator> : slides}
+      {items.length > 1 ? (
+        <HeroRotator paginationClassName={heroPaginationClasses(heroLayout)}>
+          {slides}
+        </HeroRotator>
+      ) : (
+        slides
+      )}
     </div>
   );
 };

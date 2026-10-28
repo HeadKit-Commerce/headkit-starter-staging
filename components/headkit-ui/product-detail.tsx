@@ -83,10 +83,8 @@ import { distinctShortDescription } from "@/lib/product-excerpt";
 import { productSubtitle } from "@/lib/product-subtitle";
 import { isColorAttrSlug } from "@/components/headkit-ui/collection/utils";
 import { buildEnquiryInitialValues } from "@/lib/enquiry-form-values";
-import {
-  attributesForColourway,
-  colourSlugFromProductPath,
-} from "@/lib/product-colourway-nav";
+import { colourSlugFromProductPath } from "@/lib/product-colourway-nav";
+import { defaultAttributesForColour } from "@/lib/default-size-selection";
 import { findSwatchAttribute } from "@/lib/swatch-attribute";
 import {
   isBackorderStockStatus,
@@ -271,6 +269,38 @@ export function ProductDetail({
   const isVariable =
     product.type?.toUpperCase() === VARIABLE || variationAttributes.length > 0;
   const isGiftCard = product.isGiftCard === true;
+
+  // The colour and size axes, resolved once, and the one rule that picks the
+  // size for a colour — the first IN-STOCK size, with a preferred (remembered
+  // or previously selected) size winning while it is in stock.
+  // `lib/default-size-selection.ts` owns the rule; this is the only place the
+  // PDP resolves a size for a colour, on load and on every colour change.
+  // Picking the first variation, or keeping whatever size was selected, let a
+  // shopper land on a sold-out size.
+  const colorKey = findSwatchAttribute(variationAttributes)?.slug;
+  const sizeKey = variationAttributes.find((a) => isSizeAttrSlug(a.slug))?.slug;
+  const sizeOptions = useMemo(
+    () =>
+      variationAttributes
+        .find((a) => a.slug === sizeKey)
+        ?.fullOptions.map((o) => o.slug) ?? [],
+    [variationAttributes, sizeKey],
+  );
+  const attributesForColourInStock = useCallback(
+    (
+      colour: string | undefined,
+      preferredSize: string | undefined,
+    ): Record<string, string> =>
+      defaultAttributesForColour({
+        variations: product.variations,
+        colorKey,
+        colour,
+        sizeKey,
+        sizeOptions,
+        preferredSize,
+      }),
+    [product.variations, colorKey, sizeKey, sizeOptions],
+  );
   const [giftCardValues, setGiftCardValues] =
     useState<GiftCardFormValues | null>(null);
   const [isGiftCardFormValid, setIsGiftCardFormValid] = useState(false);
@@ -330,27 +360,11 @@ export function ProductDetail({
   >(() => {
     if (!isVariable) return {};
 
-    // Path-based mode: color comes from URL segment, size defaults from first matching variation.
-    // localStorage is read in a useEffect to avoid SSR/hydration mismatch.
+    // Path-based mode: color comes from URL segment, size defaults to the
+    // first IN-STOCK size for it. localStorage is read in a useEffect to avoid
+    // SSR/hydration mismatch.
     if (productBasePath) {
-      const colorKey = findSwatchAttribute(variationAttributes)?.slug;
-      const attrs: Record<string, string> = {};
-      if (colorKey && initialColor) attrs[colorKey] = initialColor;
-
-      const firstMatch = product.variations.find(
-        (v) =>
-          !initialColor ||
-          v.attributes.some(
-            (a) =>
-              (!colorKey || a.key === colorKey) && a.value === initialColor,
-          ),
-      );
-      if (firstMatch) {
-        for (const a of firstMatch.attributes) {
-          if (!attrs[a.key]) attrs[a.key] = a.value;
-        }
-      }
-      return attrs;
+      return attributesForColourInStock(initialColor, undefined);
     }
 
     // Search-params mode (existing behavior)
@@ -376,15 +390,18 @@ export function ProductDetail({
   // (deferred to avoid SSR/hydration mismatch).
   useEffect(() => {
     if (!productBasePath || !isVariable) return;
-    const sizeKey = variationAttributes.find((a) =>
-      isSizeAttrSlug(a.slug),
-    )?.slug;
     if (!sizeKey) return;
     const saved = localStorage.getItem(`headkit:size:${product.slug}`);
     if (!saved) return;
+    // The remembered size wins only while its variation for the colour is in
+    // stock; otherwise the first in-stock size stands.
     setSelectedAttributes((prev) => {
-      if (prev[sizeKey] === saved) return prev;
-      return { ...prev, [sizeKey]: saved };
+      const next = attributesForColourInStock(
+        colorKey ? prev[colorKey] : undefined,
+        saved,
+      );
+      if (next[sizeKey] === prev[sizeKey]) return prev;
+      return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally run once on mount only
@@ -407,7 +424,6 @@ export function ProductDetail({
   // selected colourway (and cascade size if needed) from the path.
   useEffect(() => {
     if (!productBasePath || !isVariable) return;
-    const colorKey = findSwatchAttribute(variationAttributes)?.slug;
     if (!colorKey) return;
 
     const colourFromPath = colourSlugFromProductPath(pathname, productBasePath);
@@ -415,19 +431,19 @@ export function ProductDetail({
 
     setSelectedAttributes((prev) => {
       if (prev[colorKey] === colourFromPath) return prev;
-      return attributesForColourway(
-        product.variations,
-        colorKey,
+      // Re-evaluate the size for the new colour.
+      return attributesForColourInStock(
         colourFromPath,
-        prev,
+        sizeKey ? prev[sizeKey] : undefined,
       );
     });
   }, [
     pathname,
     productBasePath,
     isVariable,
-    variationAttributes,
-    product.variations,
+    colorKey,
+    sizeKey,
+    attributesForColourInStock,
   ]);
 
   const syncUrlWithAttributes = useCallback(
@@ -445,11 +461,6 @@ export function ProductDetail({
   const updateAttributes = useCallback(
     (next: Record<string, string>) => {
       if (productBasePath) {
-        const colorKey = findSwatchAttribute(variationAttributes)?.slug;
-        const sizeKey = variationAttributes.find((a) =>
-          isSizeAttrSlug(a.slug),
-        )?.slug;
-
         // Persist size to localStorage on every change
         if (sizeKey && next[sizeKey]) {
           localStorage.setItem(`headkit:size:${product.slug}`, next[sizeKey]);
@@ -476,7 +487,8 @@ export function ProductDetail({
     [
       productBasePath,
       product.slug,
-      variationAttributes,
+      colorKey,
+      sizeKey,
       selectedAttributes,
       syncUrlWithAttributes,
     ],
@@ -1010,7 +1022,6 @@ export function ProductDetail({
     }
   };
 
-  const colorKey = findSwatchAttribute(variationAttributes)?.slug;
   const selectedColor = colorKey ? selectedAttributes[colorKey] : undefined;
   // The stock slot is the five-minute availability read, prerendered with
   // the page. `LiveAvailability` matches `selectedVariation` and publishes
@@ -1189,6 +1200,20 @@ export function ProductDetail({
                             selectedAttributes[attr.slug] ?? ""
                           }
                           onClick={() => {
+                            // A colour click re-evaluates the size: the
+                            // current size stays only while it is in stock
+                            // for the new colour, else the first in-stock one.
+                            if (attr.slug === colorKey) {
+                              updateAttributes(
+                                attributesForColourInStock(
+                                  option.slug,
+                                  sizeKey
+                                    ? selectedAttributes[sizeKey]
+                                    : undefined,
+                                ),
+                              );
+                              return;
+                            }
                             const next = {
                               ...selectedAttributes,
                               [attr.slug]: option.slug,

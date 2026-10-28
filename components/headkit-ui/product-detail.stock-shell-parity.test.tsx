@@ -189,22 +189,20 @@ describe("PDP availability line: server slot vs client render", () => {
     ).toBe(availabilityLine(slotMarkup));
   });
 
-  it("is a REAL comparison: a different colour's first variation renders different markup", async () => {
+  it("is a REAL comparison: a sold-out colourway renders different markup", async () => {
     // Negative control. Without this, the assertion above would also pass if
-    // `availabilityLine` matched something constant.
-    const other = {
+    // `availabilityLine` matched something constant. Every size of the
+    // colourway is sold out, so the PDP has no in-stock size to land on.
+    const soldOut = {
       ...PRODUCT,
-      variations: [
-        {
-          ...PRODUCT.variations[0]!,
-          stockStatus: "outofstock",
-        },
-        ...PRODUCT.variations.slice(1),
-      ],
+      variations: PRODUCT.variations.map((variation) => ({
+        ...variation,
+        stockStatus: "outofstock",
+      })),
     };
     const shifted = renderToStaticMarkup(
       <ProductDetail
-        product={other as never}
+        product={soldOut as never}
         productBasePath={BASE_PATH}
         initialColor={COLOR}
       />,
@@ -217,5 +215,42 @@ describe("PDP availability line: server slot vs client render", () => {
       />,
     );
     expect(availabilityLine(shifted)).not.toBe(availabilityLine(baseline));
+  });
+
+  it("lands on the first IN-STOCK size when the first-listed size is sold out", () => {
+    // `default-size-selection.ts` picks the first in-stock size in option
+    // order, not the colourway's first variation: a sold-out size must not
+    // decide the prerendered availability line. 61 is first in PAYLOAD order
+    // and 49 first in OPTION order, so the old "first variation" pick lands on
+    // 61 and both are sold out here.
+    const stocked = {
+      ...PRODUCT,
+      variations: PRODUCT.variations.map((variation) => ({
+        ...variation,
+        stockStatus: "instock",
+      })),
+    };
+    const firstSizeSoldOut = {
+      ...stocked,
+      variations: stocked.variations.map((variation) => ({
+        ...variation,
+        stockStatus: ["49", "61"].includes(
+          String(variation.attributes[1]?.value ?? ""),
+        )
+          ? "outofstock"
+          : "instock",
+      })),
+    };
+    const render = (product: unknown): string =>
+      renderToStaticMarkup(
+        <ProductDetail
+          product={product as never}
+          productBasePath={BASE_PATH}
+          initialColor={COLOR}
+        />,
+      );
+    expect(availabilityLine(render(firstSizeSoldOut))).toBe(
+      availabilityLine(render(stocked)),
+    );
   });
 });

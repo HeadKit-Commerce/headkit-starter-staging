@@ -41,3 +41,29 @@ export function heroMediaClasses(heroLayout: HeroLayout): string {
   }
   return `${base} md:max-h-[70svh]`;
 }
+
+/**
+ * Where the hero's pagination row sits.
+ *
+ * From `md` up the text column is absolutely positioned over the photo, so the
+ * row is simply 20 px above the hero's own bottom edge, identical for every
+ * layout.
+ *
+ * Below `md` the text sits in flow BENEATH the image, so the hero's bottom edge
+ * is the bottom of the text and the row has to be anchored to the IMAGE's
+ * instead. The media box is `aspect-square w-full` in all three layouts
+ * (`heroMediaClasses`), so its height is exactly the hero's own width, and the
+ * only thing that differs is whether the shell is inset (`mx-5`, so 2.5rem
+ * narrower than the viewport) or full width. 27px = the 10px dot plus 17px of
+ * clearance above the image's bottom edge. The arithmetic holds at any width.
+ *
+ * NB the `_-_` spelling: without the underscores around the minus signs the
+ * arbitrary-value utility emits NO RULE AT ALL and the row loses its offset.
+ */
+export function heroPaginationClasses(heroLayout: HeroLayout): string {
+  const mobileTop =
+    heroLayout === "inset"
+      ? "top-[calc(100vw_-_2.5rem_-_27px)]"
+      : "top-[calc(100vw_-_27px)]";
+  return `${mobileTop} md:top-auto md:bottom-5`;
+}
