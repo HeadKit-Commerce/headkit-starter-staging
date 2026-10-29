@@ -150,7 +150,7 @@ describe("productToMarkdown", () => {
 
   it("states price, the was-price and availability", () => {
     const { body } = productToMarkdown(product, opts);
-    expect(body).toMatch(/\*\*A\$1,299\.00\*\* · Was A\$1,499\.00 · In stock/);
+    expect(body).toMatch(/\*\*\$1,299\.00\*\* · Was \$1,499\.00 · In stock/);
   });
 
   it("renders a variable product's range and never a was-price beside it", () => {
@@ -158,7 +158,7 @@ describe("productToMarkdown", () => {
       { ...product, price: "25 - 36", regularPrice: "40", onSale: true },
       opts,
     );
-    expect(body).toContain("**A$25.00 – A$36.00**");
+    expect(body).toContain("**$25.00 – $36.00**");
     expect(body).not.toContain("Was");
   });
 
@@ -217,10 +217,10 @@ describe("collectionToMarkdown", () => {
     expect(body).toContain("# Road & Gravel");
     expect(body).toContain("> Everything for the road.");
     expect(body).toContain(
-      `- [Alpha](${ORIGIN}/shop/road/a) · **A$10.00** · In stock`,
+      `- [Alpha](${ORIGIN}/shop/road/a) · **$10.00** · In stock`,
     );
     expect(body).toContain(
-      `- [Beta \\[new\\]](${ORIGIN}/products/b) · **A$20.00** · Sold out`,
+      `- [Beta \\[new\\]](${ORIGIN}/products/b) · **$20.00** · Sold out`,
     );
   });
 

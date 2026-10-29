@@ -285,7 +285,7 @@ describe("the order confirmation on a fully refunded shortfall order", () => {
     expect(html).toMatch(/<h1[^>]*>Sorry — your items sold out<\/h1>/);
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(visible).toContain(
-      "The items in this order sold out while your payment was processing. We've refunded the full A$499.00 , including shipping, to your original payment method (Afterpay).",
+      "The items in this order sold out while your payment was processing. We've refunded the full $499.00 , including shipping, to your original payment method (Afterpay).",
     );
     expect(visible).not.toMatch(/confirmed/i);
     expect(visible).not.toContain("Thanks,");
@@ -302,10 +302,10 @@ describe("the order confirmation on a fully refunded shortfall order", () => {
     const visible = text(html);
     expect(html).toContain("Sold out — refunded");
     expect(html).toContain("line-through");
-    expect(visible).toContain("Paid with Afterpay A$499.00");
-    expect(visible).toContain("Refunded −A$499.00");
-    expect(visible).toContain("Total charged A$0.00");
-    expect(visible).not.toMatch(/\bTotal A\$/);
+    expect(visible).toContain("Paid with Afterpay $499.00");
+    expect(visible).toContain("Refunded −$499.00");
+    expect(visible).toContain("Total charged $0.00");
+    expect(visible).not.toMatch(/\bTotal \$/);
   });
 
   it("sends no GA4 purchase", async () => {
@@ -321,7 +321,7 @@ describe("the order confirmation on a partly refunded shortfall order", () => {
     const visible = text(html);
     expect(html).toMatch(/<h2[^>]*>Sorry — part of your order sold out<\/h2>/);
     expect(visible).toContain(
-      "2 × Specialized MY16 Stumpjumper/Epic Upper Eyelet Shock Bolt sold out while your payment was processing. We've refunded A$19.90 to your original payment method. The rest of your order is confirmed below.",
+      "2 × Specialized MY16 Stumpjumper/Epic Upper Eyelet Shock Bolt sold out while your payment was processing. We've refunded $19.90 to your original payment method. The rest of your order is confirmed below.",
     );
     expect(html).toMatch(/<h1[^>]*>Thanks, Callan!<\/h1>/);
     expect(visible).toContain("The rest of your order is confirmed.");
@@ -337,25 +337,25 @@ describe("the order confirmation on a partly refunded shortfall order", () => {
   it("tags the kept and the sold-out lines, and nets the refund", async () => {
     const visible = text(await render(PARTIAL_ORDER));
     expect(visible).toMatch(
-      /Pro Tool 750ml Storage Bottle Qty 1 Confirmed A\$19\.95/,
+      /Pro Tool 750ml Storage Bottle Qty 1 Confirmed \$19\.95/,
     );
-    expect(visible).toMatch(/Shock Bolt Qty 2 Sold out — refunded A\$19\.90/);
-    expect(visible).toContain("Paid A$51.85");
-    expect(visible).toContain("Refunded −A$19.90");
-    expect(visible).toContain("Total charged A$31.95");
+    expect(visible).toMatch(/Shock Bolt Qty 2 Sold out — refunded \$19\.90/);
+    expect(visible).toContain("Paid $51.85");
+    expect(visible).toContain("Refunded −$19.90");
+    expect(visible).toContain("Total charged $31.95");
     expect(visible).toContain(
       "We'll get the rest of your order ready to ship.",
     );
   });
 
   it("prints the tax inside Total charged, after it, and agrees with GA4", async () => {
-    // #279066: A$51.85 paid, A$19.90 refunded, order tax A$4.71. The tax on the
-    // A$31.95 kept is A$2.90 — A$4.71 is the original order's, and must not sit
-    // above Total charged where it reads as the GST on A$31.95.
+    // #279066: $51.85 paid, $19.90 refunded, order tax $4.71. The tax on the
+    // $31.95 kept is $2.90 — $4.71 is the original order's, and must not sit
+    // above Total charged where it reads as the GST on $31.95.
     const html = await render(PARTIAL_ORDER);
     const visible = text(html);
-    expect(visible).toContain("Total charged A$31.95 Includes tax A$2.90");
-    expect(visible).not.toContain("A$4.71");
+    expect(visible).toContain("Total charged $31.95 Includes tax $2.90");
+    expect(visible).not.toContain("$4.71");
     expect(visible.match(/Includes tax/g)).toHaveLength(1);
     const event = ga4Event(html) as { ecommerce: { tax: number } };
     expect(event.ecommerce.tax).toBe(2.9);
@@ -390,9 +390,9 @@ describe("an order without a shortfall renders as before", () => {
     expect(html).not.toContain("line-through");
     expect(visible).toContain("Your order is confirmed.");
     expect(visible).toContain("You will receive a confirmation email shortly.");
-    expect(visible).toContain("Total A$51.85");
-    expect(visible).toContain("Includes tax A$4.71 Total A$51.85");
-    expect(visible).toMatch(/Payment A\$51\.85/);
+    expect(visible).toContain("Total $51.85");
+    expect(visible).toContain("Includes tax $4.71 Total $51.85");
+    expect(visible).toMatch(/Payment \$51\.85/);
     expect(visible).not.toContain("What happens next");
     const event = ga4Event(html) as { ecommerce: { value: number } };
     expect(event.ecommerce.value).toBe(51.85);

@@ -110,7 +110,7 @@ describe("stockShortfallNotice", () => {
   });
 });
 
-/** A A$19.95 bottle kept, two A$9.95 shock bolts sold out. */
+/** A $19.95 bottle kept, two $9.95 shock bolts sold out. */
 const bottle = {
   id: "8001",
   name: "Pro Tool 750ml Storage Bottle",
@@ -210,8 +210,8 @@ describe("splitOrderLines", () => {
 
 describe("shortfallNetTax", () => {
   it("is the tax on what was charged, not on the original total", () => {
-    // A$51.85 paid, A$19.90 refunded, order tax A$4.71. WooCommerce's refund
-    // carries -A$1.81 tax, so the kept tax is 4.71 - 1.81 = A$2.90.
+    // $51.85 paid, $19.90 refunded, order tax $4.71. WooCommerce's refund
+    // carries -$1.81 tax, so the kept tax is 4.71 - 1.81 = $2.90.
     expect(shortfallNetTax(b8, 51.85, 4.71)).toBe(2.9);
   });
 
@@ -283,19 +283,19 @@ describe("stockShortfallNotice — the payment method and the bolded amount", ()
     );
     expect(got?.title).toBe("Sorry — your items sold out");
     expect(got?.body).toBe(
-      "The items in this order sold out while your payment was processing. We've refunded the full A$499.00, including shipping, to your original payment method (Afterpay).",
+      "The items in this order sold out while your payment was processing. We've refunded the full $499.00, including shipping, to your original payment method (Afterpay).",
     );
   });
 
   it("is the unchanged sentence when no method is known", () => {
     expect(stockShortfallNotice(boltsSoldOut, "AUD")?.body).toBe(
-      "2 × Specialized MY16 Stumpjumper/Epic Upper Eyelet Shock Bolt sold out while your payment was processing. We've refunded A$19.90 to your original payment method. The rest of your order is confirmed below.",
+      "2 × Specialized MY16 Stumpjumper/Epic Upper Eyelet Shock Bolt sold out while your payment was processing. We've refunded $19.90 to your original payment method. The rest of your order is confirmed below.",
     );
   });
 
   it("carries the formatted refund total so the page can bold it", () => {
     const got = stockShortfallNotice(boltsSoldOut, "AUD");
-    expect(got?.amount).toBe("A$19.90");
+    expect(got?.amount).toBe("$19.90");
     expect(got?.body).toContain(got?.amount);
   });
 
@@ -319,7 +319,7 @@ describe("stockShortfallNotice — the payment method and the bolded amount", ()
         "AUD",
         "Zip",
       )?.body,
-    ).toContain("A$70.00 to your original payment method (Zip) and");
+    ).toContain("$70.00 to your original payment method (Zip) and");
   });
 });
 
