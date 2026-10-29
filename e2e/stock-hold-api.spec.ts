@@ -62,6 +62,27 @@ import {
 
 const ALL = Object.values(HOLD);
 
+// Playwright's 30 s default is too tight for this file, and it is time, not a
+// hang. Every case drives real Stripe TEST calls (~1-2 s each from a CI runner)
+// and a `docker exec wp eval` per fixture reset, and the cases that finalize an
+// order add a 5-6 s WooCommerce ProcessCheckout per order.
+//
+// Measured on 16 CI Playwright reports (2026-10-24..28, one worker): the plain
+// cases pass in 5-28 s (p95 <= 24.5 s); the five SETTLE cases below were cut at
+// 30 s in 52 of 109 attempts ("every line short": 24 of 28), always on a Stripe
+// or gateway call that was merely in flight (`Request context disposed`), never
+// on the settle poll's own 90 s deadline. Their passes ran 13-33 s at the
+// median with the longest at 37.6 s, so their real duration is only known from
+// below.
+//
+//   - CASE_TIMEOUT: ~3.5x the slowest plain pass, for every case in the file.
+//   - SETTLE_CASE_TIMEOUT: the settle poll's own 90 s deadline plus ~90 s for
+//     the steps ahead of it, so a refund that never comes still fails with the
+//     poll's message ("the short order never reached Refunded") instead of a
+//     bare timeout. It is a ceiling, not a wait: a healthy run does not use it.
+const CASE_TIMEOUT = 90_000;
+const SETTLE_CASE_TIMEOUT = 180_000;
+
 /** Build a paid Express order for `lines`: hold, confirm with a good card, finalize. */
 async function buyNow(
   api: APIRequestContext,
@@ -79,6 +100,8 @@ async function buyNow(
 }
 
 test.describe("Stock hold — server side (plan v3)", () => {
+  test.describe.configure({ timeout: CASE_TIMEOUT });
+
   test.beforeAll(async ({ request }) => {
     resetHoldProducts(ALL);
     const cart = await cartWith(request, { [HOLD.lastUnit]: 1 });
@@ -410,6 +433,7 @@ test.describe("Stock hold — server side (plan v3)", () => {
   test("hold lapsed and the only unit sold elsewhere: the paid order is placed, then fully refunded incl. shipping (cases 7/12)", async ({
     request,
   }) => {
+    test.setTimeout(SETTLE_CASE_TIMEOUT);
     const cart = await cartWith(request, { [HOLD.lastUnit]: 1 });
     const intent = await createPaymentIntent(request, cart);
     const pi = intentId(intent.data!.commerce.createPaymentIntent.clientSecret);
@@ -459,6 +483,7 @@ test.describe("Stock hold — server side (plan v3)", () => {
   test("one line short of two: only that line refunded, to the cent; shipping kept; Processing (cases 11, 14 shape, 34)", async ({
     request,
   }) => {
+    test.setTimeout(SETTLE_CASE_TIMEOUT);
     resetHoldProducts([HOLD.plenty], { [HOLD.plenty]: 1 });
     const cart = await cartWith(request, { [HOLD.plenty]: 1, [HOLD.three]: 1 });
     const intent = await createPaymentIntent(request, cart);
@@ -521,6 +546,7 @@ test.describe("Stock hold — server side (plan v3)", () => {
   test("every line short: the whole capture refunded incl. shipping, Refunded (case 13)", async ({
     request,
   }) => {
+    test.setTimeout(SETTLE_CASE_TIMEOUT);
     resetHoldProducts([HOLD.plenty], { [HOLD.plenty]: 1 });
     const cart = await cartWith(request, {
       [HOLD.lastUnit]: 1,
@@ -552,6 +578,7 @@ test.describe("Stock hold — server side (plan v3)", () => {
   test("3 ordered, a stock sync leaves 2: one unit's share refunded, stock to 0, Processing (cases 14 and 20)", async ({
     request,
   }) => {
+    test.setTimeout(SETTLE_CASE_TIMEOUT);
     const cart = await cartWith(request, { [HOLD.three]: 3 });
     const intent = await createPaymentIntent(request, cart);
     const pi = intentId(intent.data!.commerce.createPaymentIntent.clientSecret);
@@ -717,6 +744,7 @@ test.describe("Stock hold — server side (plan v3)", () => {
   test("amount guard plus shortfall: a flagged order stays On hold after the settle step refunds its short line (case 33)", async ({
     request,
   }) => {
+    test.setTimeout(SETTLE_CASE_TIMEOUT);
     resetHoldProducts([HOLD.plenty], { [HOLD.plenty]: 1 });
     const cart = await cartWith(request, { [HOLD.three]: 1, [HOLD.plenty]: 1 });
     const intent = await createPaymentIntent(request, cart);

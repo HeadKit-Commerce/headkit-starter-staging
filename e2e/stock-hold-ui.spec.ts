@@ -121,6 +121,58 @@ async function clickChallenge(
   throw new Error(`Stripe's 3D Secure challenge did not close after ${button}`);
 }
 
+/**
+ * Wait until the Pay button has stopped moving.
+ *
+ * Playwright's own "stable" check is two animation frames, but Stripe resizes
+ * its iframes (card fields, saved-info section) asynchronously after the last
+ * keystroke, so the button can shift between that check and the mouse event.
+ * Nothing is wrong with a shopper's click — they aim after the page has
+ * settled — but a click sent at the stale position goes to an iframe or to
+ * empty space and no `click` event reaches the page.
+ *
+ * Seen on the cases that click Pay: 14 attempts of 74 through `payAfterSettle`
+ * alone, in 16 CI reports, each costing the 90 s `waitForURL` that follows. Two
+ * captured ones (CI, 2026-10-28) had the button enabled, the same document and
+ * node afterwards, no alert, no remount, reload or server-action POST, and — in
+ * the second — no `click` event on the document at all: the app never saw the
+ * click, so this is the harness and not the Pay button.
+ */
+async function payButtonSettled(page: Page, stableMs = 1_000): Promise<void> {
+  const top = () =>
+    payButton(page)
+      .first()
+      .evaluate((el) => Math.round(el.getBoundingClientRect().top));
+  await expect(payButton(page)).toBeEnabled({ timeout: 45_000 });
+  let last = await top();
+  let since = Date.now();
+  await eventually(
+    async () => {
+      const now = await top();
+      if (now !== last) {
+        last = now;
+        since = Date.now();
+      }
+      return Date.now() - since >= stableMs;
+    },
+    15_000,
+    "the Pay button kept moving",
+    100,
+  );
+}
+
+/** Click Pay once the button has stopped moving (see `payButtonSettled`). */
+async function clickPay(page: Page): Promise<void> {
+  await payButtonSettled(page);
+  await payButton(page).click();
+}
+
+/** `payAndAwaitSuccess`, sent once the Pay button has stopped moving. */
+async function payAfterSettle(page: Page): Promise<string> {
+  await payButtonSettled(page);
+  return payAndAwaitSuccess(page);
+}
+
 async function openCheckout(page: Page, cart: string): Promise<void> {
   await installCartCookie(page.context(), cart);
   await page.goto(`${BASE_URL}/checkout`);
@@ -147,7 +199,7 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
     await openCheckout(page, cart);
     await walkToPayment(page, "hold-card@example.com");
     await fillCard(page, CARD_OK);
-    const sessionId = await payAndAwaitSuccess(page);
+    const sessionId = await payAfterSettle(page);
     const { orderId } = await awaitOrderConfirmation(page);
 
     const order = wooOrder(orderId);
@@ -170,7 +222,7 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
     await openCheckout(page, cart);
     await walkToPayment(page, "hold-retry@example.com");
     await fillCard(page, CARD_DECLINED);
-    await payButton(page).click();
+    await clickPay(page);
     await expect(
       page.getByText(/your card (was|has been) declined/i).first(),
     ).toBeVisible({ timeout: 60_000 });
@@ -184,7 +236,7 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
     await expect(payButton(page)).toBeEnabled({ timeout: 30_000 });
     await fillCard(page, CARD_OK);
     await page.waitForTimeout(2_000);
-    await payAndAwaitSuccess(page);
+    await payAfterSettle(page);
     const { orderId } = await awaitOrderConfirmation(page);
     const order = wooOrder(orderId);
     expect(order.status).toBe("processing");
@@ -201,7 +253,7 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
     await openCheckout(page, cart);
     await walkToPayment(page, "hold-3ds-fail@example.com");
     await fillCard(page, CARD_3DS);
-    await payButton(page).click();
+    await clickPay(page);
     await challengeFrame(page);
 
     expect(
@@ -229,7 +281,7 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
     await openCheckout(page, cart);
     await walkToPayment(page, "hold-3ds-ok@example.com");
     await fillCard(page, CARD_3DS);
-    await payButton(page).click();
+    await clickPay(page);
     await clickChallenge(page, "#test-source-authorize-3ds");
     await page.waitForURL(/\/checkout\/success\?session_id=/, {
       timeout: 90_000,
@@ -312,7 +364,7 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
 
     await walkToPayment(page, "hold-b6@example.com");
     await fillCard(page, CARD_OK);
-    await payAndAwaitSuccess(page);
+    await payAfterSettle(page);
     const { orderId } = await awaitOrderConfirmation(page);
     const order = wooOrder(orderId);
     expect(order.status).toBe("processing");
@@ -389,7 +441,7 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
     await fillCard(page, CARD_OK);
 
     await holdCheckoutStock(api, theirs);
-    await payButton(page).click();
+    await clickPay(page);
     await expect(
       page.getByText(UNAVAILABLE("Hold Last Unit")).first(),
     ).toBeVisible({ timeout: 45_000 });
@@ -402,7 +454,7 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
       /* the element may have kept the card */
     });
     await page.waitForTimeout(2_000);
-    await payAndAwaitSuccess(page);
+    await payAfterSettle(page);
     const { orderId } = await awaitOrderConfirmation(page);
     const order = wooOrder(orderId);
     expect(order.status).toBe("processing");
@@ -418,7 +470,7 @@ test.describe("Stock hold — the shopper's checkout (plan v3)", () => {
     await fillCard(page, CARD_OK);
     setOption("hk_e2e_slow_hold_seconds", "8");
     try {
-      await payButton(page).click();
+      await clickPay(page);
       await expect(page.getByText(HOLD_FAILED).first()).toBeVisible({
         timeout: 30_000,
       });
