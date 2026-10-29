@@ -13,6 +13,7 @@ import { getFloatVal } from "@/lib/utils";
 import { createServerHeadkit } from "@/lib/sdk.server";
 import { CheckoutTestModeBanner } from "@/components/checkout/test-mode-banner";
 import { isOfflineOnlyCart } from "@/lib/payment-gateways";
+import { getCountryPolicy } from "@/lib/country-policy";
 import {
   checkoutBannerMessage,
   checkoutFailurePath,
@@ -129,9 +130,18 @@ export async function CheckoutSessionGate({
     }
   })();
 
-  const [created, pickupLocations] = await Promise.all([
+  // `countryPolicy` is the store's WooCommerce selling / shipping locations
+  // for the pre-charge country gate, read on its own (`lib/country-policy.ts`)
+  // and NEVER off the branding bundle: that bundle answers a default whenever
+  // dashboard-api is unconfigured, and a payment-safety gate may not depend
+  // on it. It never throws; a failed read is "no gate" for this request,
+  // logged. Read here, behind the page's Suspense boundary and after its
+  // `await connection()`, so it neither delays the shell nor runs in a
+  // prerender (its cached scope throws on failure).
+  const [created, pickupLocations, countryPolicy] = await Promise.all([
     sessionPromise,
     pickupPromise,
+    getCountryPolicy(),
   ]);
 
   if (created) {
@@ -221,6 +231,11 @@ export async function CheckoutSessionGate({
         {...(customerEmail && { customerEmail })}
         isAuthenticated={isAuthenticated}
         allowedCountries={["AU", "NZ"]}
+        // Distinct from the literal above, which is the SHIPPING list the
+        // Stripe session collects addresses against. This decides whether a
+        // payment may be taken at all, before any charge
+        // (`lib/allowed-countries.ts`).
+        countryPolicy={countryPolicy}
         bnplMessagingEnabled={bnplMessagingEnabled}
       />
     </>

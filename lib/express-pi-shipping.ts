@@ -147,3 +147,36 @@ export function expressSheetDestination(
     country,
   };
 }
+
+/**
+ * The countries an express confirm will SEND to `processCheckoutAction`, for
+ * the pre-charge country gate (`lib/allowed-countries.ts`).
+ *
+ * The billing country is the sheet's billing country and FALLS BACK to the
+ * sheet destination, exactly as the order payload in `express-checkout-pi.tsx`
+ * builds it — a wallet may report no billing address, and the destination is
+ * then what WooCommerce validates as the billing country. Gating on the
+ * billing field alone would let that fallback through to a post-charge
+ * refusal. The shipping country is reported only for a cart that ships to the
+ * sheet's address; Click & Collect has no destination to refuse.
+ */
+export function expressConfirmCountries(
+  event: {
+    billingDetails?: {
+      address?: { country?: string | null } | null;
+    } | null;
+    shippingAddress?: ExpressSheetShippingAddress | null;
+  },
+  needsShipping: boolean,
+): { billingCountry: string; shippingCountry: string } {
+  const destination = expressSheetDestination(event.shippingAddress);
+  return {
+    billingCountry:
+      event.billingDetails?.address?.country ?? destination?.country ?? "",
+    // The raw sheet country rather than the destination's: the destination
+    // also needs a city and postcode, and a refusal must not wait on those.
+    shippingCountry: needsShipping
+      ? trimmed(event.shippingAddress?.address?.country)
+      : "",
+  };
+}

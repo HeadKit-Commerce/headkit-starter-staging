@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { useForm } from "react-hook-form";
+import React, { useEffect, useMemo, useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { BillingAddressElement } from "@stripe/react-stripe-js/checkout";
 import {
@@ -30,6 +30,13 @@ import {
 } from "@/lib/checkout-address-state";
 import { PhoneInput } from "@/components/ui/phone-input-lazy";
 import { useCheckoutActions } from "@/app/checkout/checkout-actions-context";
+import {
+  billingCountryFieldMessage,
+  countryRefusal,
+  isCountryAllowed,
+  logCountryRefusal,
+  type AllowedCountries,
+} from "@/lib/allowed-countries";
 
 const addressSchema = z
   .object({
@@ -70,6 +77,14 @@ interface BillingAddressStepProps {
   onNext: (data: z.infer<typeof addressSchema>) => void;
   defaultValues?: z.infer<typeof addressSchema> | undefined;
   buttonLabel?: string | undefined;
+  /**
+   * The store's billing / shipping country policy (`lib/country-policy.ts`).
+   * A disallowed billing country cannot leave this step. It is a VALIDATION,
+   * not a narrowed control: the Checkout-mode `BillingAddressElement` takes
+   * only `contacts` / `display` / `fields` — no `allowedCountries` — so
+   * Stripe's own country list cannot be restricted. Omitted gates nothing.
+   */
+  countryPolicy?: AllowedCountries | undefined;
 }
 
 const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
@@ -89,6 +104,7 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
     },
   },
   buttonLabel = "Next",
+  countryPolicy,
 }) => {
   const { actions } = useCheckoutActions();
   /** When using Stripe BillingAddressElement, track completion and last value so we can enable submit and pass data even if form sync is delayed or value shape differs. */
@@ -105,10 +121,48 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
     phone: string;
   } | null>(null);
 
+  // The country rule is part of the SCHEMA, not only a submit check: both
+  // buttons are `disabled={!form.formState.isValid}`, so a rule the resolver
+  // does not know would leave Continue live on a disallowed country and move
+  // the refusal a step later, to Pay.
+  const billingPolicy = countryPolicy?.billing;
+  const schema = useMemo(
+    () =>
+      addressSchema.superRefine((data, ctx) => {
+        const message = billingCountryFieldMessage(
+          data.billingAddress.country,
+          billingPolicy,
+        );
+        if (message) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message,
+            path: ["billingAddress", "country"],
+          });
+        }
+      }),
+    [billingPolicy],
+  );
+
   const form = useForm<z.infer<typeof addressSchema>>({
-    resolver: zodResolver(addressSchema),
+    resolver: zodResolver(schema),
     defaultValues,
   });
+
+  // A SEEDED disallowed country (a saved WordPress address) would otherwise
+  // leave a disabled button with nothing on screen saying why: react-hook-form
+  // holds no error until a validation runs, and a disabled button never
+  // starts one.
+  const watchedCountry = useWatch({
+    control: form.control,
+    name: "billingAddress.country",
+  });
+  useEffect(() => {
+    if (!watchedCountry || isCountryAllowed(watchedCountry, billingPolicy)) {
+      return;
+    }
+    void form.trigger("billingAddress.country");
+  }, [watchedCountry, billingPolicy, form]);
 
   // CKA-04 (visible prefill): seed the Stripe BillingAddressElement from the
   // saved WP billing address via `contacts` at element CREATION (create-only —
@@ -156,6 +210,27 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
             phone: "",
           }),
     };
+
+    // COUNTRY GATE at submit as well as in the schema, and not redundant: the
+    // payload prefers `lastBillingValue` — the Stripe element's last complete
+    // value — which the resolver never saw. Nothing is written (the session
+    // update below is a write) and the step does not advance.
+    const refusal = countryRefusal({
+      billingCountry: payload.billingAddress.country,
+      policy: countryPolicy,
+    });
+    if (refusal) {
+      logCountryRefusal(refusal, countryPolicy, "billing-step");
+      form.setError("billingAddress.country", {
+        type: "custom",
+        message:
+          billingCountryFieldMessage(
+            payload.billingAddress.country,
+            billingPolicy,
+          ) ?? refusal.message,
+      });
+      return;
+    }
 
     if (actions && payload.billingAddress?.line1) {
       const name = [
@@ -301,6 +376,16 @@ const BillingAddressStep: React.FC<BillingAddressStepProps> = ({
               }
             }}
           />
+          {/* Stripe's element owns the country control, so this branch has no
+              FormField — and no FormMessage — for it. Without this line a
+              refused country shows only a disabled Continue button. Only the
+              country RULE's issue (`custom`) is shown, so a store with no
+              policy renders exactly what it rendered before. */}
+          {form.formState.errors.billingAddress?.country?.type === "custom" ? (
+            <p role="alert" className="text-sm text-red-600">
+              {form.formState.errors.billingAddress.country.message}
+            </p>
+          ) : null}
           {/* Workaround: Stripe BillingAddressElement does not return phone in event.value. Remove when fixed. */}
           <FormField
             name="billingAddress.phone"

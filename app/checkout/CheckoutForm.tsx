@@ -44,6 +44,7 @@ import { getFullCartAction, selectShippingAction } from "@/lib/cart-actions";
 import { restoreDeliveryRateAfterPickup } from "@/lib/restore-delivery-rate";
 import { personalSavedAddressInput } from "@/lib/checkout-address-seed";
 import type { AddressInput } from "@headkit/sdk";
+import type { AllowedCountries } from "@/lib/allowed-countries";
 import { useDebugRegister } from "@headkit/sdk/debug";
 import { CheckoutFormSkeleton } from "@/components/checkout/checkout-form-skeleton";
 import {
@@ -95,6 +96,7 @@ function CheckoutSteps({
   initialStep,
   initialEmail,
   onRefreshSession,
+  countryPolicy,
 }: {
   sessionId: string;
   shippingOptionMapping?: Array<{
@@ -131,6 +133,11 @@ function CheckoutSteps({
    * shoppers). Not destructured to avoid an unused-var warning.
    */
   isAuthenticated?: boolean;
+  /**
+   * The store's billing / shipping country policy (`lib/country-policy.ts`),
+   * for the billing and payment steps' pre-charge gate. Omitted gates nothing.
+   */
+  countryPolicy?: AllowedCountries | undefined;
 }) {
   const { cartData, setCartData } = useCartContext();
 
@@ -871,6 +878,7 @@ function CheckoutSteps({
             <BillingAddressStep
               enableStripe={true}
               onNext={handleBillingNext}
+              {...(countryPolicy && { countryPolicy })}
               defaultValues={
                 formData.billingAddress
                   ? {
@@ -914,6 +922,7 @@ function CheckoutSteps({
               <BillingAddressStep
                 enableStripe={true}
                 onNext={handleBillingNext}
+                {...(countryPolicy && { countryPolicy })}
                 defaultValues={
                   formData.billingAddress
                     ? {
@@ -967,9 +976,11 @@ function CheckoutSteps({
               formData.deliveryMethod === DeliveryStepEnum.SHIPPING_TO_HOME
             }
             shippingAddress={formData.shippingAddress}
+            billingAddress={formData.billingAddress}
             sessionId={sessionId}
             onSessionExpired={handleSessionExpired}
             onConfirmingChange={setIsConfirmingPayment}
+            {...(countryPolicy && { countryPolicy })}
           />
         </AccordionWrapper>
       </div>
@@ -1001,6 +1012,7 @@ export function CheckoutForm({
   initialStep,
   initialEmail,
   isAuthenticated = false,
+  countryPolicy,
 }: {
   checkoutSession: CheckoutSessionProp;
   cartSidebar: ReactNode;
@@ -1031,6 +1043,13 @@ export function CheckoutForm({
    * CheckoutElementsProvider options below.
    */
   isAuthenticated?: boolean;
+  /**
+   * The store's billing / shipping country policy, read server-side
+   * (`lib/country-policy.ts`). Threaded to the express wallet and to the
+   * billing and payment steps, each of which refuses a disallowed country
+   * before any charge. Omitted gates nothing (`lib/allowed-countries.ts`).
+   */
+  countryPolicy?: AllowedCountries | undefined;
 }) {
   const [stripePromise, setStripePromise] =
     useState<Promise<Stripe | null> | null>(null);
@@ -1152,7 +1171,11 @@ export function CheckoutForm({
         {/* PI Express — OUTSIDE CheckoutElementsProvider so it does not wait
             on useCheckout() and can use shippingaddresschange. */}
         {showExpress && cartData ? (
-          <ExpressCheckoutTop stripePromise={stripePromise} cart={cartData} />
+          <ExpressCheckoutTop
+            stripePromise={stripePromise}
+            cart={cartData}
+            {...(countryPolicy && { countryPolicy })}
+          />
         ) : null}
         <CheckoutElementsProvider
           key={checkoutSession.sessionId}
@@ -1220,6 +1243,7 @@ export function CheckoutForm({
                 initialEmail: sessionPrefillEmail,
               })}
               {...(onRefreshSession && { onRefreshSession })}
+              {...(countryPolicy && { countryPolicy })}
             />
           </CheckoutActionsProvider>
         </CheckoutElementsProvider>

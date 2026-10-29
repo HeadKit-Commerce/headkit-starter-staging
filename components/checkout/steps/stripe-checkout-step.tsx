@@ -23,6 +23,11 @@ import {
   releaseCheckoutStockAction,
 } from "@/app/checkout/actions";
 import { useStockRefusal } from "@/components/checkout/stock-alerts";
+import {
+  countryRefusal,
+  logCountryRefusal,
+  type AllowedCountries,
+} from "@/lib/allowed-countries";
 
 interface StripePaymentStepProps {
   /**
@@ -37,6 +42,18 @@ interface StripePaymentStepProps {
    * billing = shipping on the session after an uncheck → re-check.
    */
   shippingAddress?: AddressInput | null;
+  /**
+   * The billing address the Billing step pushed to the session — the
+   * Click & Collect and no-shipping flows, where this step renders no billing
+   * element of its own. Read only by the country gate.
+   */
+  billingAddress?: AddressInput | null;
+  /**
+   * The store's billing / shipping country policy (`lib/country-policy.ts`).
+   * Pay refuses a disallowed country before any write or confirm. Omitted
+   * gates nothing, so the submit is exactly what it was.
+   */
+  countryPolicy?: AllowedCountries | undefined;
   /**
    * ENG-784: the active Checkout Session id, used on a confirm error to ask
    * the SERVER whether the session is dead (status !== "open" — D7, never
@@ -157,6 +174,8 @@ async function waitForBillingUnmount(): Promise<void> {
 export function StripePaymentStep({
   showBillingSameAsShipping = false,
   shippingAddress = null,
+  billingAddress = null,
+  countryPolicy,
   sessionId,
   onSessionExpired,
   onConfirmingChange,
@@ -205,6 +224,39 @@ export function StripePaymentStep({
     setIsSubmitting(true);
     setError(null);
     try {
+      // COUNTRY GATE — first, above every write: `updateBillingAddress` below
+      // is itself a write to the Stripe session, and the stock hold reserves
+      // WooCommerce stock. WooCommerce validates the country only when the
+      // order is created, after `confirm()` has taken the money, so this is
+      // where card and BNPL payments from a country the store does not sell
+      // or ship to are stopped rather than refunded.
+      //
+      // WHICH billing country: the one this submit SENDS. On Ship-to-Home it
+      // is the distinct address the shopper entered, else the shipping address
+      // the "same as shipping" box copies; on the other flows the Billing step
+      // already pushed it to the session. The destination is checked on
+      // Ship-to-Home only — Click & Collect has none, and the two lists are
+      // separate (a store may invoice more countries than it ships to).
+      const billingCountry = showBillingSameAsShipping
+        ? isDistinctBilling(lastBillingValue, shippingAddress)
+          ? lastBillingValue?.country
+          : shippingAddress?.country
+        : billingAddress?.country || checkout.billingAddress?.address.country;
+      const refusal = countryRefusal({
+        billingCountry,
+        shippingCountry: showBillingSameAsShipping
+          ? shippingAddress?.country
+          : undefined,
+        policy: countryPolicy,
+      });
+      if (refusal) {
+        logCountryRefusal(refusal, countryPolicy, "card-confirm");
+        // `finally` re-enables Pay, so the shopper can change the address and
+        // try again.
+        setError(refusal.message);
+        return;
+      }
+
       if (showBillingSameAsShipping) {
         const distinct = isDistinctBilling(lastBillingValue, shippingAddress);
 
@@ -361,6 +413,8 @@ export function StripePaymentStep({
     billingElementComplete,
     lastBillingValue,
     shippingAddress,
+    billingAddress,
+    countryPolicy,
     sessionId,
     onSessionExpired,
     onConfirmingChange,

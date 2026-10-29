@@ -90,6 +90,11 @@ const FINITE_IN_BOTH_PROFILES: { file: string; fn: string; why: string }[] = [
     why: "carries the store's indexing switch and canonical domain",
   },
   {
+    file: "lib/country-policy.ts",
+    fn: "readCountryPolicy",
+    why: "is the pre-charge country gate's policy; pinning it at max would hold a changed selling location until the next deploy",
+  },
+  {
     file: "lib/product-cache.ts",
     fn: "getProductStock",
     why: "is the five-minute availability read; pinning it at max would hold stock until the next deploy",

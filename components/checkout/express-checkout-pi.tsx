@@ -32,10 +32,16 @@ import { paymentIntentIdFromClientSecret } from "@/lib/stock-hold";
 import { hasSelectedPickupRate } from "@/lib/shipping-rates";
 import {
   decodeExpressShippingRateId,
+  expressConfirmCountries,
   expressPiAmountFromCart,
   expressSheetDestination,
   expressShippingRatesFromCart,
 } from "@/lib/express-pi-shipping";
+import {
+  countryRefusal,
+  logCountryRefusal,
+  type AllowedCountries,
+} from "@/lib/allowed-countries";
 import { buildCheckoutAppearance } from "@/lib/stripe-appearance";
 import {
   personNameFromAddressValue,
@@ -72,8 +78,10 @@ type CartLike = Pick<
 
 function ExpressCheckoutPiInner({
   cartNeedsShipping,
+  countryPolicy,
 }: {
   cartNeedsShipping: boolean;
+  countryPolicy?: AllowedCountries | undefined;
 }): React.ReactElement {
   const stripe = useStripe();
   const elements = useElements();
@@ -96,6 +104,22 @@ function ExpressCheckoutPiInner({
 
   const onShippingAddressChange = useCallback(
     async (event: StripeExpressCheckoutElementShippingAddressChangeEvent) => {
+      // COUNTRY GATE, before the cart write: a destination the store does not
+      // ship to is refused here with the real reason, rather than as a
+      // generic failure after a round trip. The sheet's own error is
+      // generic, so the sentence is shown on the page as well. Confirm
+      // re-checks it below for an account where this event never fires.
+      const shippingRefusal = countryRefusal({
+        shippingCountry: event.address?.country,
+        policy: countryPolicy,
+      });
+      if (shippingRefusal) {
+        logCountryRefusal(shippingRefusal, countryPolicy, "wallet-address");
+        setError(shippingRefusal.message);
+        event.reject();
+        return;
+      }
+      setError(null);
       const destination = expressSheetDestination({
         name: event.name,
         address: event.address,
@@ -131,7 +155,7 @@ function ExpressCheckoutPiInner({
         event.reject();
       }
     },
-    [setCartData, syncAmountFromCart],
+    [setCartData, syncAmountFromCart, countryPolicy],
   );
 
   const onShippingRateChange = useCallback(
@@ -173,6 +197,31 @@ function ExpressCheckoutPiInner({
       if (!stripe || !elements) {
         event.paymentFailed({ reason: "fail" });
         setError("Payment is not ready. Please try again.");
+        return;
+      }
+
+      // COUNTRY GATE — before the cart write, the stock hold and the
+      // PaymentIntent. The sheet's billing details are the first and only
+      // place a wallet reveals its billing country, and nothing has been
+      // charged yet, so this is the last moment the payment can be STOPPED
+      // rather than refunded: WooCommerce validates the country only when the
+      // order is created, after `confirmPayment` has taken the money. The
+      // countries are the ones this confirm will send (billing falls back to
+      // the destination, as the order payload below does). The page shows
+      // the sentence too, because a dismissed sheet takes its message with it.
+      const refusal = countryRefusal({
+        ...expressConfirmCountries(event, cartNeedsShipping),
+        policy: countryPolicy,
+      });
+      if (refusal) {
+        logCountryRefusal(refusal, countryPolicy, "wallet-confirm");
+        event.paymentFailed({
+          reason:
+            refusal.axis === "billing"
+              ? "invalid_billing_address"
+              : "address_unserviceable",
+        });
+        setError(refusal.message);
         return;
       }
 
@@ -360,6 +409,7 @@ function ExpressCheckoutPiInner({
       syncAmountFromCart,
       router,
       handleStockRefusal,
+      countryPolicy,
     ],
   );
 
@@ -430,9 +480,16 @@ function ExpressCheckoutPiInner({
 export function ExpressCheckoutPi({
   stripePromise,
   cart,
+  countryPolicy,
 }: {
   stripePromise: Promise<Stripe | null>;
   cart: CartLike;
+  /**
+   * The store's billing / shipping country policy (`lib/country-policy.ts`).
+   * A wallet whose billing or delivery country it refuses is stopped before
+   * the PaymentIntent is created. Omitted gates nothing.
+   */
+  countryPolicy?: AllowedCountries | undefined;
 }): React.ReactElement | null {
   const amount = expressPiAmountFromCart(cart);
   const currency = (cart.currency?.code ?? "aud").toLowerCase();
@@ -452,7 +509,10 @@ export function ExpressCheckoutPi({
 
   return (
     <Elements stripe={stripePromise} options={options}>
-      <ExpressCheckoutPiInner cartNeedsShipping={needsShipping} />
+      <ExpressCheckoutPiInner
+        cartNeedsShipping={needsShipping}
+        {...(countryPolicy && { countryPolicy })}
+      />
     </Elements>
   );
 }

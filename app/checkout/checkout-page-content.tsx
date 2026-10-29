@@ -43,6 +43,7 @@ import {
   scheduleForgetCheckoutLines,
   unseenRemovedLines,
 } from "@/lib/shopper-cart-edit";
+import type { AllowedCountries } from "@/lib/allowed-countries";
 import { checkoutBannerMessage } from "@/lib/checkout-failure";
 /**
  * The ONE banner mechanism for a failure that arrived at `/checkout` as
@@ -128,6 +129,15 @@ interface CheckoutPageContentProps {
   isAuthenticated?: boolean;
   allowedCountries?: string[];
   /**
+   * The store's billing / shipping country policy, read server-side in
+   * `checkout-session-gate.tsx` (`lib/country-policy.ts`) and threaded to the express wallet, the
+   * billing step and the payment step, which refuse a disallowed country
+   * before any charge. Omitted gates nothing. NOT the same thing as
+   * `allowedCountries` above — that is the shipping list the Stripe session
+   * collects addresses against, and the two may differ.
+   */
+  countryPolicy?: AllowedCountries;
+  /**
    * Commerce's `bnplMessagingEnabled` (see `lib/stripe-config.ts`), read
    * server-side in page.tsx. Only the FLAG travels: the publishable key and account
    * the badge renders against come from the checkout session, which is the
@@ -168,6 +178,7 @@ function CheckoutPageBody({
   customerEmail,
   isAuthenticated = false,
   allowedCountries = ["AU", "NZ"],
+  countryPolicy,
   bnplMessagingEnabled = false,
 }: Omit<CheckoutPageContentProps, "initialStockAlerts">) {
   const router = useRouter();
@@ -698,6 +709,7 @@ function CheckoutPageBody({
           checkoutSession={checkoutSession}
           pickupLocationsFromApi={pickupLocationsFromApi}
           isAuthenticated={isAuthenticated}
+          {...(countryPolicy && { countryPolicy })}
           {...(returnUrl && { onRefreshSession: refreshSession })}
           {...(initialStep && { initialStep: initialStep as Step })}
           {...(initialEmail && { initialEmail })}

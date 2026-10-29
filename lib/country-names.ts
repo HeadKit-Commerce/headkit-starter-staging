@@ -127,12 +127,19 @@ export function countryName(code: string): string {
   }
 }
 
-/** "Australia or New Zealand" — the list a shopper reads, never codes. */
-export function countryNameList(codes: readonly string[]): string {
+/**
+ * "Australia or New Zealand" — the list a shopper reads, never codes. The
+ * conjunction is the sentence's choice: alternatives read "or", a set the
+ * store serves ("We deliver to …") reads "and".
+ */
+export function countryNameList(
+  codes: readonly string[],
+  conjunction: "or" | "and" = "or",
+): string {
   const names = codes.map((code) => countryName(code));
   if (names.length === 0) return "";
   if (names.length === 1) return names[0] ?? "";
-  return `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+  return `${names.slice(0, -1).join(", ")} ${conjunction} ${names[names.length - 1]}`;
 }
 
 /** Every assignable country code, sorted by English name. */

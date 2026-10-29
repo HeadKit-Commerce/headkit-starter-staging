@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeExpressShippingRateId,
   encodeExpressShippingRateId,
+  expressConfirmCountries,
   expressPiAmountFromCart,
   expressSheetDestination,
   expressShippingRatesFromCart,
@@ -146,5 +147,66 @@ describe("expressSheetDestination", () => {
       postcode: "2000",
       country: "AU",
     });
+  });
+});
+
+describe("expressConfirmCountries", () => {
+  const sheet = {
+    name: "Ada Lovelace",
+    address: {
+      line1: "1 George St",
+      city: "Sydney",
+      postal_code: "2000",
+      country: "AU",
+    },
+  };
+
+  it("reports the sheet's billing country when the wallet gives one", () => {
+    expect(
+      expressConfirmCountries(
+        {
+          billingDetails: { address: { country: "US" } },
+          shippingAddress: sheet,
+        },
+        true,
+      ),
+    ).toEqual({ billingCountry: "US", shippingCountry: "AU" });
+  });
+
+  it("falls back to the destination for billing, as the order payload does", () => {
+    expect(expressConfirmCountries({ shippingAddress: sheet }, true)).toEqual({
+      billingCountry: "AU",
+      shippingCountry: "AU",
+    });
+    expect(
+      expressConfirmCountries(
+        { billingDetails: { address: null }, shippingAddress: sheet },
+        true,
+      ),
+    ).toEqual({ billingCountry: "AU", shippingCountry: "AU" });
+  });
+
+  it("reports no shipping country for a cart that does not ship to the sheet", () => {
+    expect(
+      expressConfirmCountries(
+        {
+          billingDetails: { address: { country: "NZ" } },
+          shippingAddress: sheet,
+        },
+        false,
+      ),
+    ).toEqual({ billingCountry: "NZ", shippingCountry: "" });
+  });
+
+  it("refuses on the sheet country even before the address is complete", () => {
+    expect(
+      expressConfirmCountries(
+        {
+          billingDetails: { address: { country: "AU" } },
+          shippingAddress: { address: { country: "US" } },
+        },
+        true,
+      ).shippingCountry,
+    ).toBe("US");
   });
 });
