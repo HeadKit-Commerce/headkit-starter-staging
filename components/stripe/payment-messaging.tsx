@@ -13,6 +13,7 @@ import {
   Elements,
   PaymentMethodMessagingElement,
 } from "@stripe/react-stripe-js";
+import type { Appearance } from "@stripe/stripe-js";
 import {
   buildCheckoutAppearance,
   buildCheckoutFonts,
@@ -123,6 +124,20 @@ export function messagingStripeLoadOptions(
   stripeAccountId: string | null | undefined,
 ): { stripeAccount?: string } {
   return stripeAccountId ? { stripeAccount: stripeAccountId } : {};
+}
+
+/**
+ * The badge's Appearance, exported for test: the checkout's shared appearance
+ * (brand colours, radius, font family) with the theme switched to `"stripe"`.
+ *
+ * The `"flat"` theme the checkout fields use paints the provider marks GREY and
+ * overrides `logoColor: "color"` — measured side by side on the real element:
+ * flat + colour → grey, stripe + colour → mint Afterpay / pink Klarna. The badge
+ * has its own `<Elements>`, so this reaches the badge only; the Payment Element,
+ * address fields and express buttons keep {@link buildCheckoutAppearance} as is.
+ */
+export function messagingAppearance(): Appearance {
+  return { ...buildCheckoutAppearance(), theme: "stripe" };
 }
 
 /**
@@ -302,7 +317,7 @@ export function PaymentMethodMessaging({
    */
   const [loadFailed, setLoadFailed] = useState(false);
 
-  const appearance = useMemo(() => buildCheckoutAppearance(), []);
+  const appearance = useMemo(() => messagingAppearance(), []);
   // Same pairing as checkout: the appearance names the brand family, this is
   // what lets the Stripe iframe load it. Without it the badge renders in the
   // system stack while the price above it renders in the brand face.
@@ -344,6 +359,9 @@ export function PaymentMethodMessaging({
             options={{
               amount: Math.round(price * 100),
               currency: normalizedCurrency,
+              // The provider marks in their own colours, not Stripe's default
+              // black. Needs `messagingAppearance()`'s `stripe` theme to take.
+              logoColor: "color",
             }}
             onLoadError={() => setLoadFailed(true)}
           />

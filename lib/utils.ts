@@ -159,18 +159,42 @@ export function getStoreCurrency(): string {
 }
 
 /**
+ * The locale a currency is printed in when the caller names none, so a store
+ * sees its own symbol rather than `en-US`'s disambiguated one: under `en-US`
+ * AUD prints `A$750.00`, NZD `NZ$750.00`, CAD `CA$750.00` and SGD `SGD 750.00`,
+ * while a shopper in those countries expects a plain `$750.00`. GBP is listed
+ * for completeness — `en-GB` and `en-US` agree on `£`. Anything not listed
+ * keeps `en-US`, which is also what USD uses, so those outputs do not move.
+ */
+const PRICE_LOCALE_BY_CURRENCY: Readonly<Record<string, string>> = {
+  AUD: "en-AU",
+  CAD: "en-CA",
+  GBP: "en-GB",
+  NZD: "en-NZ",
+  SGD: "en-SG",
+  USD: "en-US",
+};
+
+/** The locale {@link formatPrice} uses for `currency` when given none. */
+export function defaultPriceLocale(currency: string): string {
+  return PRICE_LOCALE_BY_CURRENCY[currency.toUpperCase()] ?? "en-US";
+}
+
+/**
  * Format a numeric price with currency symbol using Intl.NumberFormat.
  * Pass the cart/order `currency.code` when one exists; omitting `currency`
  * falls back to the store display currency ({@link getStoreCurrency}).
+ * Omitting `locale` takes {@link defaultPriceLocale}; an explicit one wins.
  */
 export function formatPrice(
   value: number,
   currency?: string,
-  locale = "en-US",
+  locale?: string,
 ): string {
-  return new Intl.NumberFormat(locale, {
+  const code = currency || getStoreCurrency();
+  return new Intl.NumberFormat(locale ?? defaultPriceLocale(code), {
     style: "currency",
-    currency: currency || getStoreCurrency(),
+    currency: code,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);

@@ -37,7 +37,7 @@ describe("stockShortfallNotice", () => {
     expect(got?.fullyRefunded).toBe(false);
     expect(got?.title).toBe("Sorry — part of your order sold out");
     expect(got?.body).toBe(
-      "Base layer - M sold out while your payment was processing. We've refunded A$17.27 to your original payment method. The rest of your order is confirmed below.",
+      "Base layer - M sold out while your payment was processing. We've refunded $17.27 to your original payment method. The rest of your order is confirmed below.",
     );
   });
 
@@ -53,7 +53,7 @@ describe("stockShortfallNotice", () => {
     );
     expect(got?.fullyRefunded).toBe(true);
     expect(got?.body).toBe(
-      "The items in this order sold out while your payment was processing. We've refunded the full A$195.00, including shipping, to your original payment method.",
+      "The items in this order sold out while your payment was processing. We've refunded the full $195.00, including shipping, to your original payment method.",
     );
   });
 
@@ -61,10 +61,10 @@ describe("stockShortfallNotice", () => {
     expect(
       stockShortfallNotice({ ...partial, refundStatus: "PENDING" }, "AUD")
         ?.body,
-    ).toContain("We're refunding A$17.27");
+    ).toContain("We're refunding $17.27");
     expect(
       stockShortfallNotice({ ...partial, refundStatus: "FAILED" }, "AUD")?.body,
-    ).toContain("Our team will refund A$17.27");
+    ).toContain("Our team will refund $17.27");
   });
 
   it("splits a refund between the card and a gift card", () => {
@@ -78,7 +78,7 @@ describe("stockShortfallNotice", () => {
       "AUD",
     );
     expect(got?.body).toContain(
-      "We've refunded A$80.00 — A$70.00 to your original payment method and A$10.00 to your gift card.",
+      "We've refunded $80.00 — $70.00 to your original payment method and $10.00 to your gift card.",
     );
     const giftOnly = stockShortfallNotice(
       {
@@ -90,7 +90,7 @@ describe("stockShortfallNotice", () => {
       "AUD",
     );
     expect(giftOnly?.body).toContain(
-      "We've refunded A$50.00 to your gift card.",
+      "We've refunded $50.00 to your gift card.",
     );
   });
 

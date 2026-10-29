@@ -38,6 +38,9 @@ import { useClientTheme } from "@/components/headkit-ui/client-theme-provider";
 import { formatPrice, getStoreCurrency } from "@/lib/utils";
 import { cartItemsDisplayTotal } from "@/lib/cart-prices";
 import { buildViewCartFromCart, pushGa4Ecommerce } from "@/lib/ga4-ecommerce";
+import { PaymentMethodMessaging } from "@/components/stripe/payment-messaging";
+import { getStripeBnplConfigAction } from "@/lib/stripe-bnpl-config-action";
+import type { StorefrontStripeConfig } from "@/lib/stripe-config";
 import { StockAlertList } from "./stock-alert-list";
 
 const GIFT_MESSAGE_DEBOUNCE_MS = 400;
@@ -76,6 +79,22 @@ export function CartDrawer() {
     getCartAction().then((cart) => setCartData(cart));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The store's Stripe config, for the BNPL line under the subtotal. The drawer
+  // is client-only and mounted with no server props, so it can only reach the
+  // config through a server action — and a server action is a POST, so it waits
+  // for the first OPEN rather than joining the hydration burst on every page.
+  // Quote mode never shows a price, so it never asks. A failed read leaves the
+  // line off; the config is decorative and must not break the bag.
+  const [bnplConfig, setBnplConfig] = useState<StorefrontStripeConfig | null>(
+    null,
+  );
+  const bnplRequested = useRef(false);
+  useEffect(() => {
+    if (!cartOpen || isQuoteMode || bnplRequested.current) return;
+    bnplRequested.current = true;
+    getStripeBnplConfigAction().then(setBnplConfig, () => undefined);
+  }, [cartOpen, isQuoteMode]);
 
   const displayCart = optimisticCart ?? cartData;
   const items = displayCart?.items ?? [];
@@ -261,6 +280,22 @@ export function CartDrawer() {
                 {formatPrice(totalPrice, currency.code)}
               </p>
             </div>
+          )}
+          {/* BNPL instalment messaging, under the subtotal it describes — the
+              figure the shopper is about to pay, before shipping.
+              `PaymentMethodMessaging` returns null when its own gate fails
+              (store toggle off, no `acct_`, currency Stripe does not accept)
+              and reserves no margin until Stripe actually paints a message, so
+              an ineligible buyer country or an amount above the BNPL ceiling
+              collapses to nothing rather than leaving a gap. */}
+          {!isQuoteMode && bnplConfig && (
+            <PaymentMethodMessaging
+              price={totalPrice}
+              currency={currency.code}
+              publishableKey={bnplConfig.publishableKey}
+              stripeAccountId={bnplConfig.accountId || null}
+              enabled={bnplConfig.bnplMessagingEnabled}
+            />
           )}
           {checkoutIsExternal ? (
             <a

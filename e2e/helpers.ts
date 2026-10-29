@@ -902,14 +902,32 @@ export interface TaxedLine {
   minorUnit: number;
 }
 
+/**
+ * The locale the storefront's `formatPrice` picks per currency — a deliberate
+ * copy of `PRICE_LOCALE_BY_CURRENCY` in `lib/utils.ts`, because the e2e specs
+ * do not import app code. AUD prints `$110.00`, not `A$110.00`; keep the two
+ * in step.
+ */
+const PRICE_LOCALE_BY_CURRENCY: Readonly<Record<string, string>> = {
+  AUD: "en-AU",
+  CAD: "en-CA",
+  GBP: "en-GB",
+  NZD: "en-NZ",
+  SGD: "en-SG",
+  USD: "en-US",
+};
+
 /** Format a major-unit figure the way the storefront's `formatPrice` does. */
 export function money(value: number, currency = "AUD"): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return new Intl.NumberFormat(
+    PRICE_LOCALE_BY_CURRENCY[currency.toUpperCase()] ?? "en-US",
+    {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    },
+  ).format(value);
 }
 
 /** Resolve the taxed fixture's product id, failing loudly if the seed is missing. */

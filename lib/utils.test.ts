@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import {
+  defaultPriceLocale,
   formatPrice,
   getStoreCurrency,
   getFloatVal,
@@ -89,8 +90,29 @@ describe("getStoreCurrency", () => {
 
 describe("formatPrice", () => {
   it("formats an explicit currency code (cart/order path)", () => {
-    expect(formatPrice(14, "AUD")).toBe("A$14.00");
+    expect(formatPrice(14, "AUD")).toBe("$14.00");
     expect(formatPrice(14, "USD")).toBe("$14.00");
+  });
+
+  it("prints each currency in its own locale when no locale is passed", () => {
+    // en-US would disambiguate these as A$ / NZ$ / CA$ / "SGD 84.95".
+    expect(formatPrice(84.95, "AUD")).toBe("$84.95");
+    expect(formatPrice(84.95, "aud")).toBe("$84.95");
+    expect(formatPrice(84.95, "NZD")).toBe("$84.95");
+    expect(formatPrice(84.95, "CAD")).toBe("$84.95");
+    expect(formatPrice(84.95, "SGD")).toBe("$84.95");
+    expect(formatPrice(84.95, "GBP")).toBe("£84.95");
+    expect(formatPrice(1234.5, "AUD")).toBe("$1,234.50");
+  });
+
+  it("keeps USD and unlisted currencies exactly as en-US printed them", () => {
+    expect(formatPrice(1499, "USD")).toBe("$1,499.00");
+    expect(formatPrice(84.95, "EUR")).toBe("€84.95");
+    expect(formatPrice(84.95, "HKD")).toBe("HK$84.95");
+  });
+
+  it("lets an explicitly passed locale win over the currency default", () => {
+    expect(formatPrice(84.95, "AUD", "en-US")).toBe("A$84.95");
   });
 
   it("falls back to the store currency when no code is passed (catalog path, F6)", () => {
@@ -121,5 +143,21 @@ describe("getFloatVal", () => {
     expect(getFloatVal("")).toBe(0);
     expect(getFloatVal(null)).toBe(0);
     expect(getFloatVal(undefined)).toBe(0);
+  });
+});
+
+describe("defaultPriceLocale", () => {
+  it("maps a currency to its own locale, case-insensitively", () => {
+    expect(defaultPriceLocale("AUD")).toBe("en-AU");
+    expect(defaultPriceLocale("nzd")).toBe("en-NZ");
+    expect(defaultPriceLocale("CAD")).toBe("en-CA");
+    expect(defaultPriceLocale("GBP")).toBe("en-GB");
+    expect(defaultPriceLocale("SGD")).toBe("en-SG");
+    expect(defaultPriceLocale("USD")).toBe("en-US");
+  });
+
+  it("falls back to en-US for a currency with no entry", () => {
+    expect(defaultPriceLocale("EUR")).toBe("en-US");
+    expect(defaultPriceLocale("JPY")).toBe("en-US");
   });
 });

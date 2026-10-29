@@ -10,6 +10,9 @@ import {
   LinkPayIcon,
   PayPalIcon,
   CreditCardIcon,
+  AfterpayIcon,
+  KlarnaIcon,
+  ZipIcon,
 } from "@/components/icon";
 import type { IconType } from "react-icons";
 
@@ -46,6 +49,32 @@ const WALLET_LABELS: Record<string, string> = {
   google_pay: "Google Pay",
   link: "Link",
 };
+
+/**
+ * Friendly labels for Stripe's raw BNPL `payment_method_types` values, which
+ * reach this component either as the session's `paymentMethod` or verbatim as
+ * WooCommerce's `paymentMethodTitle` (e.g. "Afterpay_clearpay").
+ */
+const BNPL_LABELS: Record<string, string> = {
+  afterpay_clearpay: "Afterpay",
+  klarna: "Klarna",
+  zip: "Zip",
+};
+
+const BNPL_ICONS: Record<string, IconType> = {
+  afterpay_clearpay: AfterpayIcon,
+  klarna: KlarnaIcon,
+  zip: ZipIcon,
+};
+
+/** The BNPL key a raw method id or title names, or `undefined` for anything else. */
+function bnplKeyOf(raw: string | null | undefined): string | undefined {
+  const key = raw
+    ?.trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return key && BNPL_LABELS[key] ? key : undefined;
+}
 
 /** Human display name for a Stripe card brand code, e.g. "visa" → "Visa". */
 const CARD_BRAND_LABELS: Record<string, string> = {
@@ -171,6 +200,19 @@ export function PaymentMethodDisplay({
       <span className="inline-flex items-center gap-2">
         <PayPalIcon aria-hidden className="h-5 w-5 shrink-0" />
         <span>PayPal</span>
+      </span>
+    );
+  }
+
+  // BNPL (Afterpay / Klarna / Zip) from the session's method id, or from a
+  // title WooCommerce stored as that same raw id.
+  const bnplKey = bnplKeyOf(paymentMethod) ?? bnplKeyOf(paymentMethodTitle);
+  if (bnplKey) {
+    const Icon = BNPL_ICONS[bnplKey] ?? CreditCardIcon;
+    return (
+      <span className="inline-flex items-center gap-2">
+        <Icon aria-hidden className="h-5 w-5 shrink-0" />
+        <span>{BNPL_LABELS[bnplKey]}</span>
       </span>
     );
   }

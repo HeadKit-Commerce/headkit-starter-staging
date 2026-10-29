@@ -581,20 +581,33 @@ describe("addonPricePrefix", () => {
 
   it("derives the symbol Intl produces for the store's currency", () => {
     // The multi-character half — the currencies that reproduce UAT gap 2.
-    expect(addonPricePrefix("AUD").symbol).toBe("A$");
-    expect(addonPricePrefix("NZD").symbol).toBe("NZ$");
-    expect(addonPricePrefix("CAD").symbol).toBe("CA$");
+    // AUD / NZD / CAD used to be here; `formatPrice` now prints them in their
+    // own locale, so they join the single-character half below.
+    expect(addonPricePrefix("BRL").symbol).toBe("R$");
+    expect(addonPricePrefix("HKD").symbol).toBe("HK$");
     // CHF formats as `CHF 0.00`; the separating space is stripped with the
     // digits, so three characters reach the reservation, not four.
     expect(addonPricePrefix("CHF").symbol).toBe("CHF");
     // The single-character half — the currencies that never showed the defect.
     expect(addonPricePrefix("USD").symbol).toBe("$");
+    expect(addonPricePrefix("AUD").symbol).toBe("$");
+    expect(addonPricePrefix("NZD").symbol).toBe("$");
+    expect(addonPricePrefix("CAD").symbol).toBe("$");
     expect(addonPricePrefix("EUR").symbol).toBe("€");
     expect(addonPricePrefix("GBP").symbol).toBe("£");
   });
 
   it("never yields an empty symbol for a currency the store can be set to", () => {
-    for (const currency of ["AUD", "NZD", "CAD", "CHF", "USD", "EUR", "GBP"]) {
+    for (const currency of [
+      "AUD",
+      "NZD",
+      "CAD",
+      "CHF",
+      "BRL",
+      "USD",
+      "EUR",
+      "GBP",
+    ]) {
       expect(
         addonPricePrefix(currency).symbol.length,
         `${currency} rendered no symbol at all`,
@@ -602,23 +615,24 @@ describe("addonPricePrefix", () => {
     }
   });
 
-  it("reserves STRICTLY more room the longer the prefix is — USD < AUD < CHF", () => {
+  it("reserves STRICTLY more room the longer the prefix is — USD < BRL < CHF", () => {
     // An INEQUALITY over the parsed multiplier, deliberately not an equality
     // against a literal padding string: a literal would re-encode exactly the
     // kind of constant this function exists to remove, and would pass while the
     // reservation was wrong for every currency at once.
-    expect(reserved("USD")).toBeLessThan(reserved("AUD"));
-    expect(reserved("AUD")).toBeLessThan(reserved("CHF"));
+    expect(reserved("USD")).toBeLessThan(reserved("BRL"));
+    expect(reserved("BRL")).toBeLessThan(reserved("CHF"));
   });
 
-  it("fails if AUD ever stops being multi-character, so the coverage above cannot go vacuous", () => {
+  it("fails if HKD ever stops being multi-character, so the coverage above cannot go vacuous", () => {
     // The self-invalidation guard. If a future formatPrice or locale change
-    // renders AUD as a bare `$`, every multi-character case above silently
+    // renders HKD as a bare `$`, every multi-character case above silently
     // becomes a single-character case and stops testing the defect. This is
-    // where that goes red instead.
+    // where that goes red instead. (AUD was the guard until `formatPrice`
+    // began printing it as `$`; HKD has no entry in its locale map.)
     expect(
-      addonPricePrefix("AUD").symbol.length,
-      "AUD no longer renders a multi-character symbol — the multi-character " +
+      addonPricePrefix("HKD").symbol.length,
+      "HKD no longer renders a multi-character symbol — the multi-character " +
         "coverage in this describe is now vacuous and the geometric e2e case " +
         "will report absence of failure rather than a pass",
     ).toBeGreaterThan(1);

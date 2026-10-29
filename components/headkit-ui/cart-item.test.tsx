@@ -190,8 +190,8 @@ describe("cart drawer line — the price includes tax", () => {
         },
       }),
     );
-    expect(markup).toContain("A$1,359.00");
-    expect(markup).not.toContain("A$1,235.00");
+    expect(markup).toContain("$1,359.00");
+    expect(markup).not.toContain("$1,235.00");
   });
 });
 
@@ -207,11 +207,11 @@ describe("cart drawer line — add-ons are echoed", () => {
 
   it("shows the line total AND the priced selection's own price", () => {
     const markup = render(line({ addons: ADDONS }));
-    expect(markup).toContain("A$22.00");
-    expect(markup).toContain("+A$50.00");
+    expect(markup).toContain("$22.00");
+    expect(markup).toContain("+$50.00");
     // Two figures: the line total and the one paid selection. The Event
     // Message selection is free (price "0") and prints nothing.
-    expect(markup.split("A$").length - 1).toBe(2);
+    expect(markup.split("$").length - 1).toBe(2);
   });
 
   it("renders both panels in a stable order when a line carries both", () => {
@@ -268,6 +268,6 @@ describe("cart drawer line — quote mode shows no money anywhere", () => {
   it("shows the priced suffix again once quote mode is off", () => {
     // Guards the guard: without this the cases above would pass against a
     // component that never renders a suffix at all.
-    expect(render(line({ addons: ADDONS }))).toContain("+A$50.00");
+    expect(render(line({ addons: ADDONS }))).toContain("+$50.00");
   });
 });

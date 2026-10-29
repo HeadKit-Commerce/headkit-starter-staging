@@ -160,12 +160,12 @@ describe("LineItemDisplay — a line with add-ons echoes them", () => {
     const markup = renderToStaticMarkup(
       <LineItemDisplay {...BASE} addons={ORDER_230} />,
     );
-    expect(markup).toContain("A$22.00");
-    expect(markup).toContain("+A$10.00");
-    expect(markup).toContain("+A$50.00");
+    expect(markup).toContain("$22.00");
+    expect(markup).toContain("+$10.00");
+    expect(markup).toContain("+$50.00");
     // Three figures: the line total plus the two priced selections. The third
     // selection (Event Message, price "0") contributes none.
-    expect(markup.split("A$").length - 1).toBe(3);
+    expect(markup.split("$").length - 1).toBe(3);
   });
 
   it("passes the line's currency down to the add-on panel", () => {
@@ -228,20 +228,20 @@ describe("LineItemDisplay — the two price gates are independent", () => {
     // Guards the guard: without this every negative case below would pass
     // against a component that renders no money at all.
     const markup = render(false, false);
-    expect(markup).toContain("A$22.00");
-    expect(markup).toContain("+A$50.00");
+    expect(markup).toContain("$22.00");
+    expect(markup).toContain("+$50.00");
   });
 
   it("hideLineTotal drops the line total and LEAVES the add-on suffixes", () => {
     const markup = render(true, false);
-    expect(markup).not.toContain("A$22.00");
-    expect(markup).toContain("+A$50.00");
+    expect(markup).not.toContain("$22.00");
+    expect(markup).toContain("+$50.00");
   });
 
   it("hideAddonPrices drops the suffixes and LEAVES the line total", () => {
     const markup = render(false, true);
-    expect(markup).toContain("A$22.00");
-    expect(markup).not.toContain("+A$50.00");
+    expect(markup).toContain("$22.00");
+    expect(markup).not.toContain("+$50.00");
   });
 
   it("both set renders no currency at all", () => {

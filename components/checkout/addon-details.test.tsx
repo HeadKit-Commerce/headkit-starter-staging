@@ -225,10 +225,10 @@ describe("AddonDetails — quote mode carries the selection but no money", () =>
   it("differs from the priced render ONLY by the suffixes", () => {
     const priced = render([ORDER_230[1]!]);
     const quoted = renderQuote([ORDER_230[1]!]);
-    expect(priced).toContain("+A$50.00");
-    expect(quoted).not.toContain("+A$50.00");
+    expect(priced).toContain("+$50.00");
+    expect(quoted).not.toContain("+$50.00");
     expect(quoted).toBe(
-      priced.replace('<span class="shrink-0">+A$50.00</span>', ""),
+      priced.replace('<span class="shrink-0">+$50.00</span>', ""),
     );
   });
 
@@ -259,7 +259,7 @@ describe("AddonDetails — each priced option shows its own price", () => {
       },
     ]);
     expect(markup).toContain("Hardcover Book");
-    expect(markup).toContain("+A$50.00");
+    expect(markup).toContain("+$50.00");
   });
 
   it("renders a quantity_based price with `each`, and a percentage as a percentage", () => {
@@ -284,7 +284,7 @@ describe("AddonDetails — each priced option shows its own price", () => {
         priceType: "percentage_based",
       },
     ]);
-    expect(markup).toContain("+A$20.00 each");
+    expect(markup).toContain("+$20.00 each");
     expect(markup).toContain("+10%");
   });
 
@@ -305,7 +305,7 @@ describe("AddonDetails — each priced option shows its own price", () => {
         priceType: "flat_fee",
       },
     ];
-    expect(render(priced, "AUD")).toContain("+A$5.00");
+    expect(render(priced, "AUD")).toContain("+$5.00");
     expect(render(priced, "USD")).toContain("+$5.00");
   });
 
@@ -330,10 +330,10 @@ describe("AddonDetails — each priced option shows its own price", () => {
       },
       free("1900000003", "Backdrop Design", "White"),
     ]);
-    expect(markup).toContain("+A$10.00");
-    expect(markup).toContain("+A$50.00");
+    expect(markup).toContain("+$10.00");
+    expect(markup).toContain("+$50.00");
     // Two suffixes, not four: the free rows contribute no money at all.
-    expect(markup.split("A$").length - 1).toBe(2);
+    expect(markup.split("$").length - 1).toBe(2);
   });
 
   it("never renders the raw price_type string", () => {

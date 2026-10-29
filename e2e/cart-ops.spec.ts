@@ -104,7 +104,7 @@ test.describe("Cart ops: UI add-to-cart, drawer ops, persistence (Gap 4)", () =>
       "added product name missing from the drawer",
     ).toBeVisible();
     await expect(
-      drawer(page).getByText("A$22.00").first(),
+      drawer(page).getByText("$22.00").first(),
       "line price missing/wrong in the drawer",
     ).toBeVisible();
 
@@ -113,7 +113,7 @@ test.describe("Cart ops: UI add-to-cart, drawer ops, persistence (Gap 4)", () =>
       .getByRole("button", { name: "Increase quantity" })
       .click();
     await expect(
-      drawer(page).getByText("A$44.00").first(),
+      drawer(page).getByText("$44.00").first(),
       "line subtotal did not recompute after increment",
     ).toBeVisible({ timeout: 15_000 });
 
@@ -122,7 +122,7 @@ test.describe("Cart ops: UI add-to-cart, drawer ops, persistence (Gap 4)", () =>
       .getByRole("button", { name: "Decrease quantity" })
       .click();
     await expect(
-      drawer(page).getByText("A$22.00").first(),
+      drawer(page).getByText("$22.00").first(),
       "line subtotal did not recompute after decrement",
     ).toBeVisible({ timeout: 15_000 });
 

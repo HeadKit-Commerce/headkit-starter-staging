@@ -99,3 +99,86 @@ export const LinkPayIcon: IconType = ({ size, color, title, ...rest }) => (
     </text>
   </svg>
 );
+
+/**
+ * BNPL brand marks. react-icons ships none of these, so each is a
+ * minimal inline-SVG pill in the brand's own colours, following the same
+ * IconType contract as LinkPayIcon above.
+ */
+export const AfterpayIcon: IconType = ({ size, title, ...rest }) => (
+  <svg
+    viewBox="0 0 64 24"
+    width={size ?? "1em"}
+    height={size ?? "1em"}
+    role="img"
+    xmlns="http://www.w3.org/2000/svg"
+    {...rest}
+  >
+    {title ? <title>{title}</title> : null}
+    <rect width="64" height="24" rx="6" fill="#B2FCE4" />
+    <text
+      x="32"
+      y="16.5"
+      textAnchor="middle"
+      fontSize="10"
+      fontWeight="700"
+      fontFamily="inherit"
+      fill="#000000"
+      stroke="none"
+    >
+      Afterpay
+    </text>
+  </svg>
+);
+
+export const KlarnaIcon: IconType = ({ size, title, ...rest }) => (
+  <svg
+    viewBox="0 0 56 24"
+    width={size ?? "1em"}
+    height={size ?? "1em"}
+    role="img"
+    xmlns="http://www.w3.org/2000/svg"
+    {...rest}
+  >
+    {title ? <title>{title}</title> : null}
+    <rect width="56" height="24" rx="6" fill="#FFB3C7" />
+    <text
+      x="28"
+      y="16.5"
+      textAnchor="middle"
+      fontSize="11"
+      fontWeight="700"
+      fontFamily="inherit"
+      fill="#000000"
+      stroke="none"
+    >
+      Klarna
+    </text>
+  </svg>
+);
+
+export const ZipIcon: IconType = ({ size, title, ...rest }) => (
+  <svg
+    viewBox="0 0 36 24"
+    width={size ?? "1em"}
+    height={size ?? "1em"}
+    role="img"
+    xmlns="http://www.w3.org/2000/svg"
+    {...rest}
+  >
+    {title ? <title>{title}</title> : null}
+    <rect width="36" height="24" rx="6" fill="#000000" />
+    <text
+      x="18"
+      y="16.5"
+      textAnchor="middle"
+      fontSize="11"
+      fontWeight="700"
+      fontFamily="inherit"
+      fill="#FFFFFF"
+      stroke="none"
+    >
+      Zip
+    </text>
+  </svg>
+);

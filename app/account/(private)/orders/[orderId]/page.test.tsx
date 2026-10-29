@@ -55,7 +55,7 @@ function order(overrides: Record<string, unknown> = {}) {
     databaseId: 230,
     date: null,
     status: "processing",
-    total: "A$110.00",
+    total: "$110.00",
     paymentMethodTitle: "Credit card",
     currency: { code: "AUD" },
     totals: {
@@ -120,11 +120,11 @@ describe("account order detail — a quote store's history still shows the money
   it("renders the per-option add-on price suffix", async () => {
     // The pre-purchase surfaces suppress this in quote mode; order history
     // must not, because the charge already happened.
-    expect(await render("quote")).toContain("+A$50.00");
+    expect(await render("quote")).toContain("+$50.00");
   });
 
   it("renders the line price beside each row", async () => {
-    expect(await render("quote")).toContain("A$110.00");
+    expect(await render("quote")).toContain("$110.00");
   });
 
   it("renders the whole totals block", async () => {
@@ -132,20 +132,20 @@ describe("account order detail — a quote store's history still shows the money
     expect(markup).toContain(">Subtotal</p>");
     expect(markup).toContain(">Includes tax</p>");
     expect(markup).toContain(">Total</h2>");
-    expect(markup).toContain("A$121.00");
+    expect(markup).toContain("$121.00");
   });
 
   it("is unaffected by a quote payment method on the order itself", async () => {
     getOrderAction.mockResolvedValue(
       order({ paymentMethodTitle: "Quote request" }),
     );
-    expect(await render("payment")).toContain("+A$50.00");
+    expect(await render("payment")).toContain("+$50.00");
   });
 });
 
 /** The money in a labelled totals row, e.g. `row(markup, "Subtotal")`. */
 function row(markup: string, label: string): number {
-  const match = new RegExp(`>${label}</p><p>−?A\\$([\\d,]+\\.\\d\\d)</p>`).exec(
+  const match = new RegExp(`>${label}</p><p>−?\\$([\\d,]+\\.\\d\\d)</p>`).exec(
     markup,
   );
   if (!match?.[1]) {
@@ -174,8 +174,8 @@ describe("account order detail — the totals block reconciles", () => {
 
   it("renders the inclusive line total and the add-on price", async () => {
     const markup = await render("payment");
-    expect(markup).toContain("A$110.00");
-    expect(markup).toContain("+A$50.00");
+    expect(markup).toContain("$110.00");
+    expect(markup).toContain("+$50.00");
     expect(markup).toContain(">Includes tax</p>");
   });
 });
