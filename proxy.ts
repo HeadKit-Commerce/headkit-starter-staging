@@ -4,12 +4,14 @@ import {
   INDEXNOW_KEY_FILE,
   maintenanceGate,
   requestHost,
+  type MaintenanceGateResult,
 } from "@/lib/maintenance";
 import {
   canonicalRedirectUrl,
   isCanonicalRedirectCandidate,
 } from "@/lib/canonical-redirect-request";
 import { legacyFacetRedirectPath } from "@/lib/legacy-facet-redirect";
+import { markdownRewritePath } from "@/lib/markdown/representation";
 
 /** Must match `DEFAULT_POSTS_BASE_PATH` in lib/posts-base-path.ts (internal route). */
 const DEFAULT_POSTS_BASE_PATH = "news";
@@ -225,6 +227,24 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const maintenance = await maintenanceGate(request);
   if (maintenance.response) return maintenance.response;
 
+  // Markdown twin of a page (`Accept: text/markdown`, or a `.md` suffix). Ahead
+  // of everything below on purpose: a flat `/products/{slug}` would otherwise
+  // pay the canonical-redirect subrequest and 308 onto the nested HTML URL,
+  // which has no Markdown form. It needs neither the posts base path nor the
+  // host-indexing header — the mirror answers `X-Robots-Tag: noindex` itself.
+  // For a browser this is one pathname test and, on the four mirrored
+  // families only, one `includes` on `Accept`: `lib/markdown/representation.ts`.
+  const markdownPath = markdownRewritePath(
+    request.method,
+    request.nextUrl.pathname,
+    request.headers.get("accept"),
+  );
+  if (markdownPath) {
+    const url = request.nextUrl.clone();
+    url.pathname = markdownPath;
+    return withMaintenanceHeaders(NextResponse.rewrite(url), maintenance);
+  }
+
   // V1 facet query keys (`?brands=`, `?pa_color=`) fold into the canonical
   // `/f/<slug>` path here, ahead of the canonical lookup below: the facet then
   // rides in the PATH, where the route's own `permanentRedirect` preserves it,
@@ -261,9 +281,18 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (robotsTag) {
     response.headers.set(ROBOTS_TAG_HEADER, robotsTag);
   }
-  // Only set when a config store is connected: lets an operator confirm the
-  // exact key this host reads, and that the gate is armed at all, before a
-  // window rather than after.
+  return withMaintenanceHeaders(response, maintenance);
+}
+
+/**
+ * Only set when a config store is connected: lets an operator confirm the
+ * exact key this host reads, and that the gate is armed at all, before a
+ * window rather than after.
+ */
+function withMaintenanceHeaders(
+  response: NextResponse,
+  maintenance: MaintenanceGateResult,
+): NextResponse {
   if (maintenance.key) {
     response.headers.set("x-hk-maintenance-key", maintenance.key);
   }
@@ -309,6 +338,9 @@ export const config = {
     "/account",
     "/account/:path*",
     "/:key.txt",
+    // Markdown twins (`/index.md`, `/products/foo.md`). The catch-all below
+    // excludes every dotted path, so `.md` has to be listed.
+    "/:path*.md",
     // Blog base-path rewrite + legacy /news → canonical Posts-page slug.
     // Exclude Next internals and common static file extensions.
     "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
