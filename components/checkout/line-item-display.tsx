@@ -62,6 +62,13 @@ export interface LineItemDisplayProps {
    * REQUIRED for the same reason as {@link hideLineTotal}.
    */
   hideAddonPrices: boolean;
+  /**
+   * The line's state on an order that lost items to stock after payment
+   * (`lib/stock-shortfall.ts`), or null on every other order. `sold-out`
+   * strikes the line through and tags it with the refund; `kept` tags a line
+   * that is still coming on a partly refunded order.
+   */
+  shortfallTag?: { kind: "sold-out" | "kept"; label: string } | null;
 }
 
 export function LineItemDisplay({
@@ -75,12 +82,16 @@ export function LineItemDisplay({
   addons = [],
   hideLineTotal,
   hideAddonPrices,
+  shortfallTag = null,
 }: LineItemDisplayProps) {
   const displayName = stripTitleMarkers(decodeHtmlEntities(name));
   const imageSrc = images[0]?.src ?? "/assets/HeadKit-Fallback.png";
   const imageAlt = stripTitleMarkers(
     decodeHtmlEntities(images[0]?.alt ?? name),
   );
+  // A sold-out line keeps its text but reads as struck off the order; the tag
+  // beside it carries the meaning. A normal line keeps its original classes.
+  const soldOut = shortfallTag?.kind === "sold-out";
 
   return (
     <div className="space-y-1.5">
@@ -108,11 +119,23 @@ export function LineItemDisplay({
             `quote/quote-cart-items.tsx`, `headkit-ui/product-multi-add.tsx`)
             already carry it; this row was the one that did not. */}
         <div className="flex min-w-0 flex-1 flex-col justify-between">
-          <p className="font-medium text-sm capitalize text-gray-900 truncate">
+          <p
+            className={
+              soldOut
+                ? "font-medium text-sm capitalize text-gray-700 line-through truncate"
+                : "font-medium text-sm capitalize text-gray-900 truncate"
+            }
+          >
             {displayName}
           </p>
           {variation.length > 0 && (
-            <div className="flex flex-wrap text-xs text-gray-500">
+            <div
+              className={
+                soldOut
+                  ? "flex flex-wrap text-xs text-gray-700"
+                  : "flex flex-wrap text-xs text-gray-500"
+              }
+            >
               {variation.map((v, i) => (
                 <span key={v.attribute}>
                   {i > 0 && <span className="px-1">/</span>}
@@ -121,11 +144,37 @@ export function LineItemDisplay({
               ))}
             </div>
           )}
-          <p className="text-xs text-gray-400">Qty {quantity}</p>
+          <p
+            className={
+              soldOut ? "text-xs text-gray-700" : "text-xs text-gray-400"
+            }
+          >
+            Qty {quantity}
+          </p>
+          {shortfallTag && (
+            <p>
+              <span
+                data-testid="line-item-shortfall-tag"
+                className={
+                  soldOut
+                    ? "inline-block rounded-[4px] bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800"
+                    : "inline-block rounded-[4px] bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-700"
+                }
+              >
+                {shortfallTag.label}
+              </span>
+            </p>
+          )}
         </div>
 
         {!hideLineTotal && (
-          <div className="shrink-0 text-sm font-medium text-gray-900">
+          <div
+            className={
+              soldOut
+                ? "shrink-0 text-sm font-medium text-gray-700 line-through"
+                : "shrink-0 text-sm font-medium text-gray-900"
+            }
+          >
             {formatPrice(lineTotal, currency)}
           </div>
         )}

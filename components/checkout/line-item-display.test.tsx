@@ -262,3 +262,42 @@ describe("LineItemDisplay — the two price gates are independent", () => {
     }
   });
 });
+
+describe("LineItemDisplay — a line on an order that lost items to stock", () => {
+  const markup = (shortfallTag?: {
+    kind: "sold-out" | "kept";
+    label: string;
+  }): string =>
+    renderToStaticMarkup(
+      <LineItemDisplay
+        {...BASE}
+        {...(shortfallTag === undefined ? {} : { shortfallTag })}
+      />,
+    );
+
+  it("renders a line with no tag byte-for-byte as before", () => {
+    const plain = markup();
+    expect(markup(undefined)).toBe(plain);
+    expect(
+      renderToStaticMarkup(<LineItemDisplay {...BASE} shortfallTag={null} />),
+    ).toBe(plain);
+    expect(plain).not.toContain("line-through");
+    expect(plain).not.toContain("line-item-shortfall-tag");
+  });
+
+  it("strikes a sold-out line through and tags it with the refund", () => {
+    const out = markup({ kind: "sold-out", label: "Sold out — refunded" });
+    expect(out).toContain("line-through");
+    expect(out).toMatch(
+      /data-testid="line-item-shortfall-tag"[^>]*>Sold out — refunded</,
+    );
+  });
+
+  it("tags a kept line without striking it", () => {
+    const out = markup({ kind: "kept", label: "Confirmed" });
+    expect(out).not.toContain("line-through");
+    expect(out).toMatch(
+      /data-testid="line-item-shortfall-tag"[^>]*>Confirmed</,
+    );
+  });
+});

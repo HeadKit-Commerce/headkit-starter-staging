@@ -40,6 +40,8 @@ export interface StockShortfallNotice {
   fullyRefunded: boolean;
   title: string;
   body: string;
+  /** The formatted refund total, as it appears in `body` (the page bolds it). */
+  amount: string;
 }
 
 /** "A, B and C" */
@@ -70,23 +72,30 @@ function refundPhrase(
 /**
  * The alert for an order's shortfall, or null when there is none — the
  * branch every order without a shortfall takes.
+ *
+ * `paymentMethodLabel` (see {@link refundMethodLabel}) is appended to "your
+ * original payment method" when known; omitted, the sentence is unchanged.
  */
 export function stockShortfallNotice(
   shortfall: StockShortfall | null | undefined,
   currency: string,
+  paymentMethodLabel?: string | null,
 ): StockShortfallNotice | null {
   if (!shortfall || shortfall.lines.length === 0) {
     return null;
   }
   const money = (value: string): string =>
     formatPrice(getFloatVal(value), currency);
+  const original = paymentMethodLabel
+    ? `your original payment method (${paymentMethodLabel})`
+    : "your original payment method";
   const giftCard = getFloatVal(shortfall.giftCardRefund);
   const destination =
     giftCard > 0 && getFloatVal(shortfall.paymentRefund) > 0
-      ? ` — ${money(shortfall.paymentRefund)} to your original payment method and ${money(shortfall.giftCardRefund)} to your gift card`
+      ? ` — ${money(shortfall.paymentRefund)} to ${original} and ${money(shortfall.giftCardRefund)} to your gift card`
       : giftCard > 0
         ? " to your gift card"
-        : " to your original payment method";
+        : ` to ${original}`;
   const refund = `${refundPhrase(shortfall.refundStatus, money(shortfall.refundTotal), shortfall.fullyRefunded)}${shortfall.fullyRefunded ? ", including shipping," : ""}${destination}.`;
 
   if (shortfall.fullyRefunded) {
@@ -94,18 +103,52 @@ export function stockShortfallNotice(
       fullyRefunded: true,
       title: "Sorry — your items sold out",
       body: `The items in this order sold out while your payment was processing. ${refund}`,
+      amount: money(shortfall.refundTotal),
     };
   }
+  // WooCommerce stores `&amp;` in a line name.
   const names = joinNames(
-    shortfall.lines.map((l) =>
-      l.quantity > 1 ? `${l.quantity} × ${l.name}` : l.name,
-    ),
+    shortfall.lines.map((l) => {
+      const name = decodeHtmlEntities(l.name);
+      return l.quantity > 1 ? `${l.quantity} × ${name}` : name;
+    }),
   );
   return {
     fullyRefunded: false,
     title: "Sorry — part of your order sold out",
     body: `${names} sold out while your payment was processing. ${refund} The rest of your order is confirmed below.`,
+    amount: money(shortfall.refundTotal),
   };
+}
+
+/**
+ * The shopper-facing name of the method the money went back to, or null.
+ *
+ * Read off the order's `paymentMethodTitle` because the clean confirmation URL
+ * carries no Stripe session. Only names a shopper recognises are returned;
+ * a card title ("Visa ending 4242 (Stripe)") answers null, and the sentence
+ * then says "your original payment method" alone rather than echo a
+ * gateway-shaped string. "Afterpay [Test]" and Stripe's raw
+ * `afterpay_clearpay` both answer "Afterpay".
+ */
+export function refundMethodLabel(
+  paymentMethodTitle: string | null | undefined,
+): string | null {
+  const title = (paymentMethodTitle ?? "").toLowerCase();
+  if (!title) return null;
+  const known: ReadonlyArray<readonly [RegExp, string]> = [
+    [/\bafterpay/, "Afterpay"],
+    [/\bclearpay\b/, "Clearpay"],
+    [/\bklarna\b/, "Klarna"],
+    [/\bzip\b/, "Zip"],
+    [/\bpaypal\b/, "PayPal"],
+    [/\bapple pay\b/, "Apple Pay"],
+    [/\bgoogle pay\b/, "Google Pay"],
+  ];
+  for (const [pattern, label] of known) {
+    if (pattern.test(title)) return label;
+  }
+  return null;
 }
 
 /** One order line as {@link splitOrderLines} reads it. */
@@ -231,4 +274,108 @@ export function shortfallNetTax(
   const refunded = Math.min(getFloatVal(shortfall.refundTotal), orderTotal);
   const charged = Math.max(orderTotal - refunded, 0);
   return cents((orderTax * charged) / orderTotal);
+}
+
+/** The Paid / Refunded / Total charged rows. */
+export interface ShortfallMoneySummary {
+  paidLabel: string;
+  paid: number;
+  refundedLabel: string;
+  refunded: number;
+  chargedLabel: string;
+  charged: number;
+}
+
+/**
+ * The money rows that replace the Total row on a shortfall order. `paid` is
+ * the order total — WooCommerce keeps the original grand total on a refunded
+ * order and records refunds beside it — and `charged` is what is left once
+ * the refund lands. Until it has landed the labels say so rather than claim
+ * the money is back.
+ */
+export function shortfallMoneySummary(
+  shortfall: StockShortfall,
+  orderTotal: number,
+  paymentMethodLabel?: string | null,
+): ShortfallMoneySummary {
+  const refunded = cents(
+    Math.min(getFloatVal(shortfall.refundTotal), orderTotal),
+  );
+  const done = shortfall.refundStatus === "REFUNDED";
+  return {
+    paidLabel: paymentMethodLabel ? `Paid with ${paymentMethodLabel}` : "Paid",
+    paid: cents(orderTotal),
+    refundedLabel: done
+      ? "Refunded"
+      : shortfall.refundStatus === "PENDING"
+        ? "Refund in progress"
+        : "Refund due",
+    refunded,
+    chargedLabel: done ? "Total charged" : "Total after refund",
+    charged: cents(Math.max(orderTotal - refunded, 0)),
+  };
+}
+
+/** The tag beside a sold-out line. */
+export function shortfallLineTag(
+  status: StockShortfall["refundStatus"],
+): string {
+  switch (status) {
+    case "REFUNDED":
+      return "Sold out — refunded";
+    case "PENDING":
+      return "Sold out — refund in progress";
+    case "FAILED":
+      return "Sold out — refund due";
+  }
+}
+
+/** The tag beside a line that is still coming, on a partly refunded order. */
+export const SHORTFALL_KEPT_LINE_TAG = "Confirmed";
+
+/** The status line and "What happens next" copy around the notice. */
+export interface ShortfallStatusCopy {
+  /** The order-status pill. */
+  statusLabel: string;
+  /** The line under the heading: "This order won't be shipped." or the email promise. */
+  subline: string;
+  nextSteps: string;
+}
+
+/**
+ * The copy around the notice. The email promise is the theme's: ONE customer
+ * email, sent once the refund exists — so a refund our team still owes
+ * (FAILED) promises no email.
+ */
+export function shortfallStatusCopy(
+  shortfall: StockShortfall,
+  options: { isPickup?: boolean } = {},
+): ShortfallStatusCopy {
+  const status = shortfall.refundStatus;
+  if (shortfall.fullyRefunded) {
+    return {
+      statusLabel: status === "REFUNDED" ? "Refunded" : "Refund pending",
+      subline: "This order won't be shipped.",
+      nextSteps:
+        status === "REFUNDED"
+          ? "Refunds can take a few business days to show on your statement. You don't need to do anything. We've also emailed you a copy of this."
+          : status === "PENDING"
+            ? "Your refund is being processed and can take a few business days to show on your statement. You don't need to do anything. We'll email you once it's through."
+            : "Our team will refund you by hand. You don't need to do anything.",
+    };
+  }
+  const ready = options.isPickup
+    ? "We'll get the rest of your order ready for collection."
+    : "We'll get the rest of your order ready to ship.";
+  return {
+    statusLabel: "Confirmed",
+    subline:
+      status === "FAILED"
+        ? "You will receive a confirmation email shortly."
+        : "We'll send one email with your order and the refund.",
+    nextSteps:
+      status === "FAILED"
+        ? `${ready} Our team will refund the sold-out items by hand.`
+        : `${ready} The refund can take a few business days to show on your statement.`,
+  };
 }
