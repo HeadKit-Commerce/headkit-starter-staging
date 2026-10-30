@@ -25,6 +25,8 @@ import {
   DeliveryStepEnum,
 } from "@/components/checkout/utils";
 import { ContactFormStep } from "@/components/checkout/steps/contact-form-step";
+import { ContactAccountRow } from "@/components/checkout/steps/contact-account-row";
+import { useAuth } from "@/components/headkit-ui/auth-context";
 import { DeliveryMethodStep } from "@/components/checkout/steps/delivery-method-step";
 import { ShippingOptionsStep } from "@/components/checkout/steps/shipping-options-step";
 import { BillingAddressStep } from "@/components/checkout/steps/billing-address-step";
@@ -96,6 +98,7 @@ function CheckoutSteps({
   initialStep,
   initialEmail,
   onRefreshSession,
+  isAuthenticated: isAuthenticatedFromServer = false,
   countryPolicy,
 }: {
   sessionId: string;
@@ -127,10 +130,12 @@ function CheckoutSteps({
     opts?: { notice?: "cart_changed" },
   ) => Promise<void>;
   /**
-   * ENG-783: logged-in shopper. Accepted (threading stays in place) but not
-   * consumed at the step level — the actual prefill gate lives one level up
-   * in CheckoutForm (provider `defaultValues.email` is suppressed for authed
-   * shoppers). Not destructured to avoid an unused-var warning.
+   * ENG-783: logged-in shopper, resolved SERVER-side from the `hk-auth-token`
+   * cookie at render. The prefill gate itself lives one level up in
+   * CheckoutForm (provider `defaultValues.email` is suppressed for authed
+   * shoppers); here it is only the floor under the live client value, which is
+   * what the Contact step's sign-in row reads — a shopper who signs in
+   * mid-checkout never re-renders the server component.
    */
   isAuthenticated?: boolean;
   /**
@@ -222,6 +227,18 @@ function CheckoutSteps({
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
 
   const [emailMarketingEnabled, setEmailMarketingEnabled] = useState(false);
+  // The Contact step's inline customer sign-in. The state lives HERE and not in
+  // the step because the control that opens it renders in the accordion's header
+  // band (`AccordionWrapper`'s `rightMenu`), a sibling of the step, not a child.
+  const [signInOpen, setSignInOpen] = useState(false);
+  // The server-resolved flag is a FLOOR, never the whole answer: it is read from
+  // the `hk-auth-token` cookie during the RSC render, and a shopper who signs in
+  // from the step below never re-runs that render. `useAuth` is the live value.
+  // OR, so the two can only move towards authenticated within one checkout —
+  // which matches there being no sign-OUT control here (see
+  // `contact-account-row.tsx`).
+  const { isAuthenticated: isAuthenticatedLive } = useAuth();
+  const isAuthenticated = isAuthenticatedFromServer || isAuthenticatedLive;
   const [formData, setFormData] = useState<FormData>({
     email: initialEmail ?? "",
     newsletter: false,
@@ -514,6 +531,34 @@ function CheckoutSteps({
     goToStep(CheckoutFormStepEnum.DELIVERY_METHOD);
   };
 
+  /**
+   * A shopper signed in from the Contact step.
+   *
+   * The Checkout Session is RECREATED rather than patched, and that is the whole
+   * mechanism. `ContactDetailsElement` takes no options in Checkout Sessions
+   * custom mode and the provider reads `defaultValues.email` once at mount, so
+   * nothing can write the account email into the mounted element — only a new
+   * session (the provider is keyed on `sessionId`) can display it. The recreate
+   * also runs `createCheckoutSessionAction` WITH the auth cookie now set, so the
+   * WooCommerce draft order is stamped with the real customer id instead of the
+   * guest it would otherwise carry. `refreshSession` expires the session it
+   * replaces (SUPERSEDED), so the guest one cannot be paid afterwards.
+   *
+   * It stays on CONTACT: the shopper has not yet confirmed their email.
+   *
+   * The cart's own billing email is written by `ContactFormStep` BEFORE this
+   * runs, not here. That is not a style choice: the source scan in
+   * `lib/checkout-address-seed.test.ts` requires this file to make no cart
+   * customer-address write of any kind, because a Click & Collect pickup address
+   * must never be persisted onto the WooCommerce customer — and the step already
+   * owns that write for its own email paths. The guard is a plain substring
+   * scan, so even naming the action in a comment here fails it.
+   */
+  const handleSignedIn = async (email: string) => {
+    if (!onRefreshSession) return;
+    await onRefreshSession(email, CheckoutFormStepEnum.CONTACT);
+  };
+
   const handleDeliveryNext = async (data: {
     deliveryMethod: DeliveryStepEnum;
     location?: string;
@@ -801,6 +846,13 @@ function CheckoutSteps({
           clickable={isStepCompleted(CheckoutFormStepEnum.CONTACT)}
           handleAccordionClick={() => goToStep(CheckoutFormStepEnum.CONTACT)}
           briefValue={getBriefValue(CheckoutFormStepEnum.CONTACT)}
+          rightMenu={
+            <ContactAccountRow
+              signInOpen={signInOpen}
+              onSignInOpenChange={setSignInOpen}
+              isAuthenticated={isAuthenticated}
+            />
+          }
         >
           <ContactFormStep
             enableStripe={true} // Stripe ContactDetailsElement (Checkout Sessions native) collects email + drives Link (ENG-748)
@@ -811,6 +863,9 @@ function CheckoutSteps({
             }}
             buttonLabel="Continue to Delivery"
             emailMarketingEnabled={emailMarketingEnabled}
+            signInOpen={signInOpen}
+            onSignInOpenChange={setSignInOpen}
+            onSignedIn={handleSignedIn}
             {...(onRefreshSession && { onRefreshSession })}
           />
         </AccordionWrapper>
@@ -1011,7 +1066,7 @@ export function CheckoutForm({
   onRefreshSession,
   initialStep,
   initialEmail,
-  isAuthenticated = false,
+  isAuthenticated: isAuthenticatedFromServer = false,
   countryPolicy,
 }: {
   checkoutSession: CheckoutSessionProp;
@@ -1054,6 +1109,18 @@ export function CheckoutForm({
   const [stripePromise, setStripePromise] =
     useState<Promise<Stripe | null> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The server flag is resolved from the `hk-auth-token` cookie during the RSC
+  // render, so it stays FALSE for a shopper who signs in from the Contact step.
+  // That matters here and nowhere else: ENG-783's rule at the provider options
+  // below is that `defaultValues.email` must NEVER be passed for an authed
+  // shopper, because a session created with a bound email-ful customer rejects
+  // the init-time updateEmail with an IntegrationError that fans out as
+  // `loaderror` on ALL elements (a dead checkout). The session recreated after a
+  // mid-checkout sign-in is created WITH the auth cookie, so it is exactly that
+  // bound-customer case — reading the stale server flag there would hand Stripe
+  // the one combination known to kill the page.
+  const { isAuthenticated: isAuthenticatedLive } = useAuth();
+  const isAuthenticated = isAuthenticatedFromServer || isAuthenticatedLive;
   // ENG-801 (quick-260714-n0w): freeze the email prefill PER SESSION.
   // `defaultValues` is an INIT-time Stripe option, but react-stripe-js
   // re-runs its init effect whenever the options prop changes (inline object

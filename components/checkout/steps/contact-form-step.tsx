@@ -27,6 +27,8 @@ import { CheckoutFormStepEnum } from "@/components/checkout/utils";
 import { subscribeEmailAction } from "@/lib/email-marketing-actions";
 import { reportSubscribeOutcome } from "@/lib/subscribe-outcome";
 import { useCartContext } from "@/components/headkit-ui/cart-context";
+import { useAuth } from "@/components/headkit-ui/auth-context";
+import { CheckoutSignInForm } from "@/components/checkout/steps/checkout-sign-in-form";
 
 const contactSchema = z.object({
   email: z.string().min(1, "Email is required").email("Invalid email"),
@@ -45,6 +47,21 @@ interface ContactFormStepProps {
   onRefreshSession?: (email: string, nextStep: string) => Promise<void>;
   /** When false/undefined, hide the newsletter opt-in (no email marketing provider). */
   emailMarketingEnabled?: boolean;
+  /**
+   * Whether the inline customer sign-in panel replaces the step body. Owned by
+   * `CheckoutSteps` because the control that toggles it renders in the
+   * accordion's header band (`ContactAccountRow`), not here.
+   */
+  signInOpen?: boolean;
+  onSignInOpenChange?: (open: boolean) => void;
+  /**
+   * Called with the account email once a shopper signs in from this step. The
+   * caller recreates the Checkout Session so the draft order is stamped with
+   * the customer and the ContactDetailsElement shows the account email — the
+   * element takes no options in Checkout Sessions custom mode and the provider
+   * reads `defaultValues.email` once at mount, so only a new session can.
+   */
+  onSignedIn?: (email: string) => void | Promise<void>;
 }
 
 const ContactFormStep: React.FC<ContactFormStepProps> = ({
@@ -54,8 +71,13 @@ const ContactFormStep: React.FC<ContactFormStepProps> = ({
   buttonLabel = "Next",
   onRefreshSession,
   emailMarketingEnabled = false,
+  signInOpen = false,
+  onSignInOpenChange,
+  onSignedIn,
 }) => {
   const checkoutState = useCheckout();
+  // The store's own customer session (NOT Stripe Link).
+  const { isAuthenticated, user } = useAuth();
   const { actions } = useCheckoutActions();
   const { setCartData } = useCartContext();
   const { toast } = useToast();
@@ -213,8 +235,51 @@ const ContactFormStep: React.FC<ContactFormStepProps> = ({
     }
   };
 
+  // The inline sign-in panel REPLACES the step body: the email field, the
+  // opt-in and Continue are all gone while it is up, so there is one thing to do.
+  if (signInOpen && !isAuthenticated) {
+    return (
+      <CheckoutSignInForm
+        onSuccess={async (email) => {
+          onSignInOpenChange?.(false);
+          try {
+            // Land the account email on the CART before the caller recreates
+            // the Checkout Session, so the two agree — the same write, with the
+            // same `keepCheckoutSession` reasoning, as the recreate branch of
+            // `handleSubmit` below (refreshSession supersedes the old session
+            // itself, ENG-784, so letting this mutation expire it first would
+            // race its own replacement). It lives here rather than in
+            // CheckoutForm because that file may contain no
+            // `updateCustomerAddressAction` at all — see `handleSignedIn` there.
+            const result = await updateCustomerAddressAction(
+              { billingAddress: { email } },
+              { keepCheckoutSession: true },
+            );
+            if (!result.success) throw new Error(result.error);
+            setCartData(result.cart);
+            await onSignedIn?.(email);
+          } catch {
+            // The shopper IS signed in — only the checkout refresh failed, so
+            // say that and leave them on a usable step rather than a dead one.
+            toast({
+              variant: "destructive",
+              title: "Signed in",
+              description:
+                "We could not refresh your checkout. Please check your email address before continuing.",
+            });
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
+      {isAuthenticated && user?.email ? (
+        <p className="text-sm text-brand-fg" data-testid="contact-signed-in">
+          Signed in as {user.email}
+        </p>
+      ) : null}
       <Form {...form}>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           {/* Prefill lives at the provider (CheckoutElementsProvider

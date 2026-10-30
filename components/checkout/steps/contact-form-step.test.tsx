@@ -59,6 +59,19 @@ vi.mock("@/components/headkit-ui/cart-context", () => ({
 const toast = vi.fn();
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 
+/** The store's own customer session; signed out unless a case says otherwise. */
+const setAuthToken = vi.fn();
+let authState: {
+  isAuthenticated: boolean;
+  user: { email: string; firstName?: string } | null;
+} = { isAuthenticated: false, user: null };
+vi.mock("@/components/headkit-ui/auth-context", () => ({
+  useAuth: () => ({ ...authState, setAuthToken }),
+}));
+
+const login = vi.fn();
+vi.mock("@/lib/account-actions", () => ({ login }));
+
 vi.mock("@/lib/email-marketing-actions", () => ({
   subscribeEmailAction: vi.fn(async () => ({ success: true })),
 }));
@@ -75,6 +88,9 @@ async function render(props: {
   enableStripe: boolean;
   email: string;
   onNext: (data: unknown) => void;
+  signInOpen?: boolean;
+  onSignInOpenChange?: (open: boolean) => void;
+  onSignedIn?: (email: string) => void | Promise<void>;
 }): Promise<HTMLDivElement> {
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -85,6 +101,13 @@ async function render(props: {
         enableStripe={props.enableStripe}
         onNext={props.onNext}
         defaultValues={{ email: props.email, newsletter: false }}
+        {...(props.signInOpen !== undefined && {
+          signInOpen: props.signInOpen,
+        })}
+        {...(props.onSignInOpenChange && {
+          onSignInOpenChange: props.onSignInOpenChange,
+        })}
+        {...(props.onSignedIn && { onSignedIn: props.onSignedIn })}
       />,
     );
   });
@@ -103,6 +126,7 @@ async function submit(container: HTMLDivElement): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  authState = { isAuthenticated: false, user: null };
   // mockReset also drops an unconsumed mockImplementationOnce, so one case's
   // scripted failure can never leak into the next.
   updateCustomerAddressAction.mockReset();
@@ -208,5 +232,249 @@ describe("ContactFormStep: the email reaches the cart on every submit", () => {
     expect(updateEmail).toHaveBeenCalledWith("returning@example.test");
     expect(updateCustomerAddressAction).toHaveBeenCalledTimes(1);
     expect(onNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Types into a controlled React input the way a keystroke would. */
+async function type(
+  container: HTMLElement,
+  selector: string,
+  value: string,
+): Promise<void> {
+  const input = container.querySelector(selector);
+  if (!(input instanceof HTMLInputElement)) {
+    throw new Error(`no input matched ${selector}`);
+  }
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  await act(async () => {
+    setter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function signInWith(
+  container: HTMLDivElement,
+  email: string,
+  password: string,
+): Promise<void> {
+  await type(container, "input[type=email]", email);
+  await type(container, "input[type=password]", password);
+  await submit(container);
+}
+
+const SIGNED_IN = {
+  success: true as const,
+  data: {
+    token: "jwt-token",
+    refreshToken: "refresh-token",
+    userId: "42",
+    email: "account@example.test",
+    firstName: "Ada",
+    lastName: "Checkout",
+  },
+};
+
+describe("ContactFormStep: the inline customer sign-in", () => {
+  it("shows no sign-in panel unless the shopper opened it", async () => {
+    checkoutState = { type: "loading" };
+    const container = await render({
+      enableStripe: true,
+      email: "",
+      onNext: vi.fn(),
+    });
+
+    expect(
+      container.querySelector("[data-testid=checkout-sign-in]"),
+    ).toBeNull();
+    expect(
+      container.querySelector("[data-testid=stripe-contact-element]"),
+    ).not.toBeNull();
+  });
+
+  it("opening it REPLACES the step body: no contact element, no Continue", async () => {
+    checkoutState = { type: "loading" };
+    const container = await render({
+      enableStripe: true,
+      email: "",
+      onNext: vi.fn(),
+      signInOpen: true,
+    });
+
+    expect(
+      container.querySelector("[data-testid=checkout-sign-in]"),
+    ).not.toBeNull();
+    expect(container.querySelector("input[type=password]")).not.toBeNull();
+    expect(
+      container.querySelector("[data-testid=stripe-contact-element]"),
+    ).toBeNull();
+    expect(
+      container.querySelector("a[href='/account/forgot-password']"),
+    ).not.toBeNull();
+  });
+
+  it("a wrong password shows the error and leaves checkout untouched", async () => {
+    checkoutState = { type: "loading" };
+    login.mockResolvedValueOnce({
+      success: false,
+      error: "Invalid email or password",
+    });
+    const onSignedIn = vi.fn();
+    const onSignInOpenChange = vi.fn();
+    const container = await render({
+      enableStripe: true,
+      email: "",
+      onNext: vi.fn(),
+      signInOpen: true,
+      onSignInOpenChange,
+      onSignedIn,
+    });
+
+    await signInWith(container, "account@example.test", "wrong-password");
+
+    expect(login).toHaveBeenCalledWith(
+      "account@example.test",
+      "wrong-password",
+    );
+    expect(container.querySelector("[role=alert]")?.textContent).toBe(
+      "Invalid email or password",
+    );
+    // Nothing a failed sign-in may touch: no token, no cart write, no new
+    // Checkout Session, and the panel stays up to retry or go back to guest.
+    expect(setAuthToken).not.toHaveBeenCalled();
+    expect(updateCustomerAddressAction).not.toHaveBeenCalled();
+    expect(onSignedIn).not.toHaveBeenCalled();
+    expect(onSignInOpenChange).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("a failure that carries no message still says so in one sentence", async () => {
+    checkoutState = { type: "loading" };
+    login.mockResolvedValueOnce({ success: false });
+    const onSignedIn = vi.fn();
+    const container = await render({
+      enableStripe: true,
+      email: "",
+      onNext: vi.fn(),
+      signInOpen: true,
+      onSignedIn,
+    });
+
+    await signInWith(container, "account@example.test", "wrong-password");
+
+    expect(container.querySelector("[role=alert]")?.textContent).toBe(
+      "Invalid email or password",
+    );
+    expect(setAuthToken).not.toHaveBeenCalled();
+    expect(onSignedIn).not.toHaveBeenCalled();
+  });
+
+  it("signing in stores the token, writes the account email to the cart, THEN asks for a new session", async () => {
+    checkoutState = { type: "loading" };
+    login.mockResolvedValueOnce(SIGNED_IN);
+    const order: string[] = [];
+    setAuthToken.mockImplementation(() => order.push("token"));
+    updateCustomerAddressAction.mockImplementation(async () => {
+      order.push("cart");
+      return { success: true, cart: CART };
+    });
+    const onSignedIn = vi.fn(async () => {
+      order.push("session");
+    });
+    const onSignInOpenChange = vi.fn();
+    const container = await render({
+      enableStripe: true,
+      email: "",
+      onNext: vi.fn(),
+      signInOpen: true,
+      onSignInOpenChange,
+      onSignedIn,
+    });
+
+    await signInWith(container, "typed@example.test", "right-password");
+
+    expect(setAuthToken).toHaveBeenCalledWith("jwt-token", {
+      id: "42",
+      email: "account@example.test",
+      firstName: "Ada",
+      lastName: "Checkout",
+      refreshToken: "refresh-token",
+    });
+    // The ACCOUNT's email wins over whatever was typed, and the cart write keeps
+    // the live session: refreshSession supersedes it itself (ENG-784).
+    expect(updateCustomerAddressAction).toHaveBeenCalledWith(
+      { billingAddress: { email: "account@example.test" } },
+      { keepCheckoutSession: true },
+    );
+    expect(setCartData).toHaveBeenCalledWith(CART);
+    expect(onSignedIn).toHaveBeenCalledWith("account@example.test");
+    expect(onSignInOpenChange).toHaveBeenCalledWith(false);
+    expect(order).toEqual(["token", "cart", "session"]);
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("a cart write that fails leaves the shopper signed in on a usable step", async () => {
+    checkoutState = { type: "loading" };
+    login.mockResolvedValueOnce(SIGNED_IN);
+    updateCustomerAddressAction.mockImplementationOnce(async () => ({
+      success: false as const,
+      error: "store said no",
+    }));
+    const onSignedIn = vi.fn();
+    const container = await render({
+      enableStripe: true,
+      email: "",
+      onNext: vi.fn(),
+      signInOpen: true,
+      onSignedIn,
+    });
+
+    await signInWith(container, "account@example.test", "right-password");
+
+    expect(setAuthToken).toHaveBeenCalledTimes(1);
+    // No session is recreated against a cart that never took the email.
+    expect(onSignedIn).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ variant: "destructive", title: "Signed in" }),
+    );
+  });
+
+  it("a signed-in shopper never gets the panel back, and sees who they are", async () => {
+    checkoutState = { type: "loading" };
+    authState = {
+      isAuthenticated: true,
+      user: { email: "account@example.test", firstName: "Ada" },
+    };
+    const container = await render({
+      enableStripe: true,
+      email: "account@example.test",
+      onNext: vi.fn(),
+      signInOpen: true,
+    });
+
+    expect(
+      container.querySelector("[data-testid=checkout-sign-in]"),
+    ).toBeNull();
+    expect(
+      container.querySelector("[data-testid=contact-signed-in]")?.textContent,
+    ).toBe("Signed in as account@example.test");
+    expect(
+      container.querySelector("[data-testid=stripe-contact-element]"),
+    ).not.toBeNull();
+  });
+
+  it("a guest sees no signed-in line", async () => {
+    checkoutState = { type: "loading" };
+    const container = await render({
+      enableStripe: true,
+      email: "",
+      onNext: vi.fn(),
+    });
+
+    expect(
+      container.querySelector("[data-testid=contact-signed-in]"),
+    ).toBeNull();
   });
 });
